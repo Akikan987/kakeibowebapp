@@ -68,6 +68,33 @@ export async function seedCategoriesIfEmpty() {
   await db.categories.bulkPut(rows)
 }
 
+/**
+ * 同じ名前の品目が複数あるときに1つだけ残し、残りを論理削除する。
+ * 端末ごとに既定品目のIDが違っても重複が増えないようにするための後始末。
+ * 残す1つは「IDが最小のもの」＝どの端末でも同じ結果になる。
+ */
+export async function dedupeCategories(): Promise<boolean> {
+  const all = await db.categories.filter((c) => !c.deleted).toArray()
+  const byName = new Map<string, Category[]>()
+  for (const c of all) {
+    const list = byName.get(c.name) ?? []
+    list.push(c)
+    byName.set(c.name, list)
+  }
+  const losers: Category[] = []
+  for (const list of byName.values()) {
+    if (list.length < 2) continue
+    list.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+    losers.push(...list.slice(1))
+  }
+  if (losers.length === 0) return false
+  const ts = now()
+  await db.categories.bulkPut(
+    losers.map((c) => ({ ...c, deleted: true, updatedAt: ts })),
+  )
+  return true
+}
+
 /** ローカルを全消去（別アカウントでログインした時など） */
 export async function clearLocalData() {
   await db.transaction(

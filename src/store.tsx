@@ -26,6 +26,7 @@ import {
   activeSplits,
   clearLocalData,
   db,
+  dedupeCategories,
   seedCategoriesIfEmpty,
 } from './db'
 import {
@@ -235,8 +236,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           expenseSplits: await db.expenseSplits.toArray(),
           settlements: await db.settlements.toArray(),
         }
-        const since = Number(localStorage.getItem(LS_LAST_SYNC) ?? 0)
-        const res = await apiSync(token, since, local)
+        // 差分ではなく毎回すべてを取り直す。件数が少ないアプリなので、
+        // 取りこぼし（sinceのズレで古いレコードが届かない）を確実に防ぐ方を優先する。
+        const res = await apiSync(token, 0, local)
 
         // last-write-wins でローカルへ反映
         const apply = async <T extends { id: string; updatedAt: number }>(
@@ -257,10 +259,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         await apply(db.expenseSplits, res.changes.expenseSplits)
         await apply(db.settlements, res.changes.settlements)
 
+        // 端末ごとに既定品目のIDが違うと重複するので、取り込み後にまとめる。
+        // 消えた分は次回の同期で他の端末にも反映される。
+        const deduped = await dedupeCategories()
+
         setDebts(res.debts)
         localStorage.setItem(LS_LAST_SYNC, String(res.serverTime))
         setLastSync(res.serverTime)
         await reload()
+        // 重複整理で消した分をサーバーにも伝える
+        if (deduped) pendingSyncRef.current = true
         if (showMessage) notify('同期しました')
       } catch (err) {
         if (err instanceof ApiError && err.status === 401) {
