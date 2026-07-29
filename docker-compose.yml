@@ -1,0 +1,14 @@
+# 家計簿 Webアプリ（静的配信 + APIの中継）
+# 家計簿サーバー（kakeibo リポジトリの server/）が :8000 で動いている前提。
+name: kakeibowebapp
+
+services:
+  web:
+    build: .
+    container_name: kakeibo-web
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    extra_hosts:
+      # Linux でも host.docker.internal を使えるようにする
+      - "host.docker.internal:host-gateway"

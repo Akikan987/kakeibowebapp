@@ -1,0 +1,18 @@
+{
+  "name": "家計簿",
+  "short_name": "家計簿",
+  "description": "収入と支出を記録して、割り勘もできる家計簿アプリ",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F2F2F7",
+  "theme_color": "#F2F2F7",
+  "lang": "ja",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
