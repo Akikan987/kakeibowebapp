@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Button,
   Card,
@@ -11,6 +11,7 @@ import {
 } from '../components/ui'
 import { useStore } from '../store'
 import type { Category } from '../types'
+import { storageStatus } from '../offline'
 
 export function SettingsScreen() {
   const s = useStore()
@@ -20,6 +21,14 @@ export function SettingsScreen() {
   const [renameText, setRenameText] = useState('')
   const [dragIndex, setDragIndex] = useState<number | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+  const [storage, setStorage] = useState<{
+    persisted: boolean
+    usageMb: number | null
+  } | null>(null)
+
+  useEffect(() => {
+    void storageStatus().then(setStorage)
+  }, [])
   const replaceRef = useRef(false)
 
   const move = (from: number, to: number) => {
@@ -206,6 +215,32 @@ export function SettingsScreen() {
         >
           追加
         </button>
+      </Card>
+
+      <SectionHeader>この端末の保存状態</SectionHeader>
+      <Card className="p-4 text-sm">
+        <p className="text-ios-label2">
+          記録はこの端末の中にも保存されるので、サーバーが止まっていても使えます。
+        </p>
+        {storage && (
+          <>
+            <div className="mt-3 flex justify-between">
+              <span className="text-ios-label2">自動削除</span>
+              <span>
+                {storage.persisted ? 'されません（永続）' : '空き容量が減るとあり得ます'}
+              </span>
+            </div>
+            {storage.usageMb != null && (
+              <div className="mt-1 flex justify-between">
+                <span className="text-ios-label2">使用容量</span>
+                <span>{storage.usageMb} MB</span>
+              </div>
+            )}
+          </>
+        )}
+        <p className="mt-3 text-xs text-ios-label2">
+          ホーム画面に追加しておくと、より確実に残り、アプリのように起動できます。
+        </p>
       </Card>
 
       <SectionHeader>データ（収入・支出のバックアップ）</SectionHeader>

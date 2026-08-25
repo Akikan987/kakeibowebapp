@@ -1,9 +1,53 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import { VitePWA } from 'vite-plugin-pwa'
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [
+    react(),
+    tailwindcss(),
+    VitePWA({
+      registerType: 'autoUpdate',
+      includeAssets: ['icon.svg', 'apple-touch-icon.png'],
+      manifest: {
+        name: '家計簿',
+        short_name: '家計簿',
+        description: '収入と支出を記録して、割り勘もできる家計簿アプリ',
+        lang: 'ja',
+        start_url: '/',
+        scope: '/',
+        display: 'standalone',
+        background_color: '#F2F2F7',
+        theme_color: '#F2F2F7',
+        icons: [
+          { src: '/icon-192.png', sizes: '192x192', type: 'image/png' },
+          { src: '/icon-512.png', sizes: '512x512', type: 'image/png' },
+          {
+            src: '/icon-maskable-512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'maskable',
+          },
+        ],
+      },
+      workbox: {
+        // アプリ本体（HTML/JS/CSS/アイコン）を端末に保存し、サーバーが止まっていても起動できるようにする
+        globPatterns: ['**/*.{js,css,html,svg,png,webmanifest}'],
+        // 未知のURLは index.html を返す（SPA）。ただしAPIは除く。
+        navigateFallback: '/index.html',
+        navigateFallbackDenylist: [/^\/(auth|sync|users|health|docs|openapi\.json)/],
+        // APIはキャッシュせず必ずサーバーへ（データの正はサーバーとIndexedDB）
+        runtimeCaching: [
+          {
+            urlPattern: /^\/(auth|sync|users|health)/,
+            handler: 'NetworkOnly',
+          },
+        ],
+        cleanupOutdatedCaches: true,
+      },
+    }),
+  ],
   server: {
     // 開発時は API を自宅サーバーへ転送（本番は同一オリジンなので不要）
     proxy: {
