@@ -36,11 +36,11 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,svg,png,webmanifest}'],
         // 未知のURLは index.html を返す（SPA）。ただしAPIは除く。
         navigateFallback: '/index.html',
-        navigateFallbackDenylist: [/^\/(auth|sync|users|health|docs|openapi\.json)/],
+        navigateFallbackDenylist: [/^\/(auth|sync|users|ocr|health|docs|openapi\.json)/],
         // APIはキャッシュせず必ずサーバーへ（データの正はサーバーとIndexedDB）
         runtimeCaching: [
           {
-            urlPattern: /^\/(auth|sync|users|health)/,
+            urlPattern: /^\/(auth|sync|users|ocr|health)/,
             handler: 'NetworkOnly',
           },
         ],

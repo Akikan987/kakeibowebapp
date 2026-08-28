@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import {
   Button,
   Card,
@@ -21,6 +21,8 @@ export function AddScreen({
 }) {
   const s = useStore()
   const [draft, setDraft] = useState<ExpenseDraft>(() => initial ?? emptyDraft())
+  const [reading, setReading] = useState(false)
+  const receiptRef = useRef<HTMLInputElement>(null)
   const patch = (p: Partial<ExpenseDraft>) => setDraft((d) => ({ ...d, ...p }))
 
   // 種類（収入/支出）未選択なら選択画面
@@ -124,6 +126,51 @@ export function AddScreen({
 
       {!isIncome && (
         <>
+          <SectionHeader>レシートから入力</SectionHeader>
+          <Card className="p-3">
+            <button
+              className="w-full rounded-xl border border-ios-blue bg-white px-4 py-3 font-semibold text-ios-blue disabled:opacity-50"
+              disabled={reading}
+              onClick={() => receiptRef.current?.click()}
+            >
+              {reading ? '読み取り中…' : '📷 レシートを撮る / 選ぶ'}
+            </button>
+            <input
+              ref={receiptRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              hidden
+              onChange={async (e) => {
+                const file = e.target.files?.[0]
+                e.target.value = ''
+                if (!file) return
+                setReading(true)
+                try {
+                  const r = await s.readReceipt(file)
+                  if (r) {
+                    const next: Partial<ExpenseDraft> = {
+                      title: r.title || draft.title,
+                      amountYen: r.amountYen ? String(r.amountYen) : draft.amountYen,
+                      source: 'receipt_ocr',
+                    }
+                    if (r.date) {
+                      const d = new Date(`${r.date}T12:00:00`)
+                      if (!Number.isNaN(d.getTime())) next.purchasedAtMillis = d.getTime()
+                    }
+                    patch(next)
+                    s.notify('レシートを読み取りました')
+                  }
+                } finally {
+                  setReading(false)
+                }
+              }}
+            />
+            <p className="mt-2 text-xs text-ios-label2">
+              店名・合計金額・日付を自動で読み取ります（読み取り後に手で直せます）。
+            </p>
+          </Card>
+
           <SectionHeader>割り勘（他の人の負担）</SectionHeader>
           <Card className="space-y-3 p-3">
             {s.members.length === 0 ? (

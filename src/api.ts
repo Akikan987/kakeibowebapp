@@ -245,3 +245,44 @@ export async function apiSync(
     debts,
   }
 }
+
+// ---------------- レシートOCR ----------------
+
+export interface OcrResult {
+  title: string
+  amountYen: number
+  date: string
+  lines: string[]
+  text: string
+}
+
+/** レシート画像を送って、タイトル・金額・日付の候補を受け取る */
+export async function apiReadReceipt(
+  token: string,
+  file: File,
+): Promise<OcrResult> {
+  const form = new FormData()
+  form.append('file', file)
+  const res = await fetch('/ocr/receipt', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: form,
+  })
+  if (!res.ok) {
+    let detail = ''
+    try {
+      detail = (await res.json())?.detail ?? ''
+    } catch {
+      /* 本文が読めない場合は無視 */
+    }
+    throw new ApiError(res.status, detail)
+  }
+  const j = (await res.json()) as Record<string, unknown>
+  return {
+    title: String(j.title ?? ''),
+    amountYen: Number(j.amount_yen ?? 0),
+    date: String(j.date ?? ''),
+    lines: (j.lines as string[]) ?? [],
+    text: String(j.text ?? ''),
+  }
+}

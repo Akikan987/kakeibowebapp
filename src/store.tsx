@@ -15,7 +15,9 @@ import {
   apiRequestReset,
   apiResetPassword,
   apiSearchUser,
+  apiReadReceipt,
   apiSync,
+  type OcrResult,
   type SyncTables,
 } from './api'
 import {
@@ -149,6 +151,8 @@ interface Store {
   renameCategory: (c: Category, name: string) => Promise<void>
   deleteCategory: (c: Category) => Promise<void>
   reorderCategories: (ordered: Category[]) => Promise<void>
+  // レシートOCR
+  readReceipt: (file: File) => Promise<OcrResult | null>
   // バックアップ
   exportJson: () => void
   importJson: (file: File, replace: boolean) => Promise<void>
@@ -647,6 +651,30 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [autoSync, reload],
   )
 
+  // ---------------- レシートOCR ----------------
+
+  const readReceipt = useCallback(
+    async (file: File): Promise<OcrResult | null> => {
+      const token = account?.token
+      if (!token) {
+        notify('レシート読み取りにはログインが必要です', 'error')
+        return null
+      }
+      try {
+        return await apiReadReceipt(token, file)
+      } catch (err) {
+        notify(
+          err instanceof ApiError && err.status === 503
+            ? 'OCRサービスに接続できませんでした'
+            : 'レシートを読み取れませんでした',
+          'error',
+        )
+        return null
+      }
+    },
+    [account, notify],
+  )
+
   // ---------------- バックアップ ----------------
 
   const exportJson = useCallback(() => {
@@ -838,6 +866,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     renameCategory,
     deleteCategory,
     reorderCategories,
+    readReceipt,
     exportJson,
     importJson,
   }
