@@ -133,13 +133,12 @@ export function AddScreen({
               disabled={reading}
               onClick={() => receiptRef.current?.click()}
             >
-              {reading ? '読み取り中…' : '📷 レシートを撮る / 選ぶ'}
+              {reading ? "読み取り中…" : "📷 レシートを読み取る"}
             </button>
             <input
               ref={receiptRef}
               type="file"
               accept="image/*"
-              capture="environment"
               hidden
               onChange={async (e) => {
                 const file = e.target.files?.[0]
@@ -167,7 +166,7 @@ export function AddScreen({
               }}
             />
             <p className="mt-2 text-xs text-ios-label2">
-              店名・合計金額・日付を自動で読み取ります（読み取り後に手で直せます）。
+              カメラで撮影するか、アルバムの写真を選べます。店名・合計金額・日付を自動で読み取ります（あとから手で直せます）。
             </p>
           </Card>
 
