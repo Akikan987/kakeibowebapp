@@ -11,6 +11,8 @@ import {
 import {
   ApiError,
   apiLogin,
+  apiLogout,
+  apiLogoutAll,
   apiRegister,
   apiRequestReset,
   apiResetPassword,
@@ -52,6 +54,7 @@ const LS_ACCOUNT = 'kakeibo.account'
 const LS_OFFLINE = 'kakeibo.offline'
 const LS_LAST_SYNC = 'kakeibo.lastSync'
 const LS_OWNER = 'kakeibo.dataOwner'
+const LS_DIRTY = 'kakeibo.syncPending'
 
 const readAccount = (): Account | null => {
   try {
@@ -113,6 +116,8 @@ interface Store {
   hasEntered: boolean
   lastSync: number
   syncing: boolean
+  hasPendingChanges: boolean
+  syncError: boolean
   // メッセージ
   message: { text: string; kind: 'ok' | 'error' } | null
   clearMessage: () => void
@@ -125,18 +130,19 @@ interface Store {
     nickname: string,
     password: string,
   ) => Promise<void>
-  requestReset: (email: string) => Promise<void>
+  requestReset: (email: string) => Promise<boolean>
   resetPassword: (
     email: string,
     code: string,
     newPassword: string,
-  ) => Promise<void>
+  ) => Promise<boolean>
   enterOffline: () => void
   backToAuth: () => void
-  logout: () => void
-  syncNow: (showMessage?: boolean) => Promise<void>
+  logout: () => Promise<void>
+  logoutAll: () => Promise<void>
+  syncNow: (showMessage?: boolean) => Promise<boolean>
   // 明細
-  saveExpense: (draft: ExpenseDraft) => Promise<void>
+  saveExpense: (draft: ExpenseDraft) => Promise<boolean>
   deleteExpense: (e: Expense) => Promise<void>
   splitsOfExpense: (expenseId: string) => ExpenseSplit[]
   // メンバー
@@ -144,7 +150,7 @@ interface Store {
   deleteMember: (m: Member) => Promise<void>
   memberName: (id: string) => string
   // 清算
-  recordSettlement: (memberId: string, amount: number) => Promise<void>
+  recordSettlement: (memberId: string, amount: number) => Promise<boolean>
   deleteSettlement: (s: Settlement) => Promise<void>
   // 品目
   addCategory: (name: string) => Promise<void>
@@ -188,10 +194,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     Number(localStorage.getItem(LS_LAST_SYNC) ?? 0),
   )
   const [syncing, setSyncing] = useState(false)
+  const [hasPendingChanges, setHasPendingChanges] = useState(
+    () => localStorage.getItem(LS_DIRTY) === '1',
+  )
+  const [syncError, setSyncError] = useState(false)
   const [message, setMessage] = useState<Store['message']>(null)
 
   const syncingRef = useRef(false)
   const pendingSyncRef = useRef(false)
+  const changeVersionRef = useRef(0)
 
   const notify = useCallback(
     (text: string, kind: 'ok' | 'error' = 'ok') => setMessage({ text, kind }),
@@ -224,12 +235,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const token = account?.token
       if (!token) {
         if (showMessage) notify('先にログインしてください', 'error')
-        return
+        return false
       }
       if (syncingRef.current) {
         pendingSyncRef.current = true
-        return
+        return false
       }
+      const versionAtStart = changeVersionRef.current
       syncingRef.current = true
       setSyncing(true)
       try {
@@ -270,11 +282,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setDebts(res.debts)
         localStorage.setItem(LS_LAST_SYNC, String(res.serverTime))
         setLastSync(res.serverTime)
+        setSyncError(false)
+        if (changeVersionRef.current === versionAtStart) {
+          localStorage.removeItem(LS_DIRTY)
+          setHasPendingChanges(false)
+        }
         await reload()
         // 重複整理で消した分をサーバーにも伝える
         if (deduped) pendingSyncRef.current = true
         if (showMessage) notify('同期しました')
+        return true
       } catch (err) {
+        setSyncError(true)
         if (err instanceof ApiError && err.status === 401) {
           // トークン無効 → ローカルは残したままログイン画面へ
           localStorage.removeItem(LS_ACCOUNT)
@@ -286,6 +305,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             'error',
           )
         }
+        return false
       } finally {
         syncingRef.current = false
         setSyncing(false)
@@ -299,6 +319,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   )
 
   const autoSync = useCallback(() => {
+    changeVersionRef.current += 1
+    localStorage.setItem(LS_DIRTY, '1')
+    setHasPendingChanges(true)
     if (account?.token) void syncNow(false)
   }, [account, syncNow])
 
@@ -311,6 +334,26 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // 圏外で保存したデータは、オンライン復帰時に自動で再送する。
+  // サーバーだけが停止している場合にも、未同期中は1分ごとに再試行する。
+  useEffect(() => {
+    if (!account?.token) return
+    const retry = () => void syncNow(false)
+    const onVisible = () => {
+      if (document.visibilityState === 'visible' && navigator.onLine) retry()
+    }
+    window.addEventListener('online', retry)
+    document.addEventListener('visibilitychange', onVisible)
+    const timer = hasPendingChanges
+      ? window.setInterval(retry, 60 * 1000)
+      : undefined
+    return () => {
+      window.removeEventListener('online', retry)
+      document.removeEventListener('visibilitychange', onVisible)
+      if (timer !== undefined) window.clearInterval(timer)
+    }
+  }, [account, hasPendingChanges, syncNow])
 
   // ---------------- 認証 ----------------
 
@@ -392,8 +435,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       try {
         await apiRequestReset(email)
         notify('再設定コードをメールに送りました')
+        return true
       } catch {
         notify('送信に失敗しました', 'error')
+        return false
       }
     },
     [notify],
@@ -404,8 +449,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       try {
         await apiResetPassword(email, code, newPassword)
         notify('パスワードを再設定しました。ログインしてください')
+        return true
       } catch {
         notify('再設定に失敗しました（コードの期限切れ/不一致）', 'error')
+        return false
       }
     },
     [notify],
@@ -421,15 +468,33 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setOfflineMode(false)
   }, [])
 
-  const logout = useCallback(() => {
+  const clearSession = useCallback(() => {
     // ローカルデータは消さない（未同期の変更を守る）
     localStorage.removeItem(LS_ACCOUNT)
     localStorage.setItem(LS_OFFLINE, '0')
     setAccount(null)
     setOfflineMode(false)
     setDebts([])
+  }, [])
+
+  const logout = useCallback(async () => {
+    const token = account?.token
+    if (token) await apiLogout(token).catch(() => undefined)
+    clearSession()
     notify('ログアウトしました')
-  }, [notify])
+  }, [account, clearSession, notify])
+
+  const logoutAll = useCallback(async () => {
+    const token = account?.token
+    if (!token) return
+    try {
+      await apiLogoutAll(token)
+      clearSession()
+      notify('すべての端末からログアウトしました')
+    } catch {
+      notify('全端末ログアウトに失敗しました', 'error')
+    }
+  }, [account, clearSession, notify])
 
   // ---------------- 明細 ----------------
 
@@ -438,7 +503,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const amount = parseInt(draft.amountYen, 10)
       if (!Number.isFinite(amount)) {
         notify('金額を入力してください', 'error')
-        return
+        return false
       }
       const valid = draft.splits
         .map((s) => ({ memberId: s.memberId, amount: parseInt(s.amount, 10) }))
@@ -446,7 +511,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const splitSum = valid.reduce((a, b) => a + b.amount, 0)
       if (splitSum > amount) {
         notify(`割り勘の合計（¥${splitSum}）が金額を超えています`, 'error')
-        return
+        return false
       }
       const ts = now()
       const id = draft.editingId ?? newId()
@@ -482,6 +547,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       await reload()
       notify('保存しました')
       autoSync()
+      return true
     },
     [autoSync, notify, reload],
   )
@@ -567,7 +633,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     async (memberId: string, amount: number) => {
       if (!Number.isFinite(amount) || amount <= 0) {
         notify('清算額は1以上で入力してください', 'error')
-        return
+        return false
       }
       await db.settlements.put({
         id: newId(),
@@ -580,6 +646,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       await reload()
       notify('清算を記録しました')
       autoSync()
+      return true
     },
     [autoSync, notify, reload],
   )
@@ -664,9 +731,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         return await apiReadReceipt(token, file)
       } catch (err) {
         notify(
-          err instanceof ApiError && err.status === 503
-            ? 'OCRサービスに接続できませんでした'
-            : 'レシートを読み取れませんでした',
+          err instanceof ApiError && (err.status === 413 || err.status === 415)
+            ? err.detail
+            : err instanceof ApiError && err.status === 503
+              ? 'OCRサービスに接続できませんでした'
+              : 'レシートを読み取れませんでした',
           'error',
         )
         return null
@@ -723,12 +792,26 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           deleted: false,
         }))
         if (replace) {
-          const all = await db.expenses.toArray()
-          await db.expenses.bulkPut(
-            all.map((e) => ({ ...e, deleted: true, updatedAt: ts })),
-          )
+          await db.transaction('rw', db.expenses, db.expenseSplits, async () => {
+            const [allExpenses, allSplits] = await Promise.all([
+              db.expenses.toArray(),
+              db.expenseSplits.toArray(),
+            ])
+            if (allExpenses.length) {
+              await db.expenses.bulkPut(
+                allExpenses.map((e) => ({ ...e, deleted: true, updatedAt: ts })),
+              )
+            }
+            if (allSplits.length) {
+              await db.expenseSplits.bulkPut(
+                allSplits.map((s) => ({ ...s, deleted: true, updatedAt: ts })),
+              )
+            }
+            await db.expenses.bulkPut(rows)
+          })
+        } else {
+          await db.expenses.bulkPut(rows)
         }
-        await db.expenses.bulkPut(rows)
         await reload()
         notify(`${rows.length}件インポートしました`)
         autoSync()
@@ -743,10 +826,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const splitSumMap = useMemo(() => {
     const m = new Map<string, number>()
-    for (const s of splits)
+    const activeExpenseIds = new Set(expenses.map((e) => e.id))
+    for (const s of splits) {
+      if (!activeExpenseIds.has(s.expenseId)) continue
       m.set(s.expenseId, (m.get(s.expenseId) ?? 0) + s.amountYen)
+    }
     return m
-  }, [splits])
+  }, [expenses, splits])
 
   const splitSumOf = useCallback(
     (id: string) => splitSumMap.get(id) ?? 0,
@@ -843,6 +929,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     hasEntered: !!account?.token || offlineMode,
     lastSync,
     syncing,
+    hasPendingChanges,
+    syncError,
     message,
     clearMessage,
     notify,
@@ -853,6 +941,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     enterOffline,
     backToAuth,
     logout,
+    logoutAll,
     syncNow,
     saveExpense,
     deleteExpense,

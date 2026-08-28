@@ -65,6 +65,20 @@ export function SettingsScreen() {
               <div className="text-[13px] text-ios-label2">
                 最終同期: {formatDateTime(s.lastSync)}
               </div>
+              {s.hasPendingChanges && (
+                <div
+                  className="text-[13px]"
+                  style={{
+                    color: s.syncError
+                      ? 'var(--color-ios-red)'
+                      : 'var(--color-ios-orange)',
+                  }}
+                >
+                  {s.syncError
+                    ? '未同期の変更があります（接続を確認してください）'
+                    : '未同期の変更があります'}
+                </div>
+              )}
             </div>
             <Button disabled={s.syncing} onClick={() => s.syncNow()}>
               {s.syncing ? '同期中…' : '今すぐ同期'}
@@ -72,9 +86,16 @@ export function SettingsScreen() {
             <button
               className="w-full py-2 text-sm"
               style={{ color: 'var(--color-ios-red)' }}
-              onClick={s.logout}
+              onClick={() => void s.logout()}
             >
               ログアウト
+            </button>
+            <button
+              className="w-full py-2 text-sm"
+              style={{ color: 'var(--color-ios-red)' }}
+              onClick={() => void s.logoutAll()}
+            >
+              すべての端末からログアウト
             </button>
           </>
         ) : (

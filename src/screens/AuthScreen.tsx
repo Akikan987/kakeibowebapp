@@ -155,8 +155,7 @@ export function AuthScreen() {
               disabled={busy}
               onClick={() =>
                 run(async () => {
-                  await s.requestReset(email)
-                  setStep('resetConfirm')
+                  if (await s.requestReset(email)) setStep('resetConfirm')
                 })
               }
             >
@@ -195,9 +194,10 @@ export function AuthScreen() {
               disabled={busy}
               onClick={() =>
                 run(async () => {
-                  await s.resetPassword(email, code, password)
-                  setPassword('')
-                  setStep('login')
+                  if (await s.resetPassword(email, code, password)) {
+                    setPassword('')
+                    setStep('login')
+                  }
                 })
               }
             >

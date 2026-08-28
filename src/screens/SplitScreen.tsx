@@ -171,11 +171,14 @@ export function SplitScreen({ onOpenSettings }: { onOpenSettings: () => void }) 
             </Button>
             <Button
               onClick={async () => {
-                await s.recordSettlement(
-                  settleTarget.memberId,
-                  parseInt(settleAmount, 10),
-                )
-                setSettleTarget(null)
+                if (
+                  await s.recordSettlement(
+                    settleTarget.memberId,
+                    parseInt(settleAmount, 10),
+                  )
+                ) {
+                  setSettleTarget(null)
+                }
               }}
             >
               記録

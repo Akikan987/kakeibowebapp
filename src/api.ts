@@ -106,6 +106,12 @@ export const apiResetPassword = (
     body: { email, code, new_password: newPassword },
   })
 
+export const apiLogout = (token: string) =>
+  request<{ ok: boolean }>('/auth/logout', { method: 'POST', token })
+
+export const apiLogoutAll = (token: string) =>
+  request<{ ok: boolean }>('/auth/logout-all', { method: 'POST', token })
+
 export const apiSearchUser = (token: string, nickname: string) =>
   request<{ found: boolean; uid: string; nickname: string }>(
     `/users/search?nickname=${encodeURIComponent(nickname)}`,
@@ -261,6 +267,14 @@ export async function apiReadReceipt(
   token: string,
   file: File,
 ): Promise<OcrResult> {
+  const maxBytes = 8 * 1024 * 1024
+  if (file.size > maxBytes) {
+    throw new ApiError(413, '画像は8MB以下にしてください')
+  }
+  const allowed = new Set(['image/jpeg', 'image/png', 'image/webp'])
+  if (!allowed.has(file.type.toLowerCase())) {
+    throw new ApiError(415, 'JPEG・PNG・WebP画像を選んでください')
+  }
   const form = new FormData()
   form.append('file', file)
   const res = await fetch('/ocr/receipt', {

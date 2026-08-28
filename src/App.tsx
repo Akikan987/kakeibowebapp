@@ -48,7 +48,22 @@ export default function App() {
     <div className="mx-auto flex min-h-full max-w-2xl flex-col">
       <header className="sticky top-0 z-10 flex items-center justify-between bg-ios-bg/90 px-4 py-3 backdrop-blur">
         <span className="font-semibold">家計簿</span>
-        {s.syncing && <span className="text-xs text-ios-label2">同期中…</span>}
+        <span
+          className="text-xs"
+          style={{
+            color: s.syncError
+              ? 'var(--color-ios-red)'
+              : 'var(--color-ios-label2)',
+          }}
+        >
+          {s.syncing
+            ? '同期中…'
+            : s.syncError && s.hasPendingChanges
+              ? '未同期（接続待ち）'
+              : s.hasPendingChanges
+                ? '未同期'
+                : ''}
+        </span>
       </header>
 
       <main className="flex-1 pb-24">

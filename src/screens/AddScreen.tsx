@@ -275,8 +275,7 @@ export function AddScreen({
         <Button
           color={accent}
           onClick={async () => {
-            await s.saveExpense(draft)
-            onDone()
+            if (await s.saveExpense(draft)) onDone()
           }}
         >
           {draft.editingId ? '更新' : '保存'}
