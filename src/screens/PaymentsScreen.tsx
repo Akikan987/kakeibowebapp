@@ -11,6 +11,7 @@ import {
   toLocalInput,
   yen,
 } from '../components/ui'
+import { findCardPresets, type CardPreset } from '../cardPresets'
 import { DEFAULT_CASH_METHOD_ID, DEFAULT_OTHER_METHOD_ID } from '../db'
 import {
   type PaymentMethodDraft,
@@ -242,7 +243,7 @@ export function PaymentsScreen() {
         </Button>
       </div>
       <p className="px-5 py-2 text-xs text-ios-label2">
-        カード名から締め日・引き落とし日を自動入力する機能は、今後この登録情報に追加できます。
+        クレジットのカード名を入力すると、公式確認済みの候補から締め日・引き落とし日を補助入力できます。
       </p>
 
       {methodDraft && (
@@ -363,6 +364,14 @@ function PaymentMethodModal({
 }) {
   const patch = (value: Partial<PaymentMethodDraft>) =>
     onChange({ ...draft, ...value })
+  const presetCandidates =
+    draft.type === 'credit' ? findCardPresets(draft.name) : []
+  const applyPreset = (preset: CardPreset) =>
+    patch({
+      name: preset.name,
+      closingDay: preset.closingDay,
+      paymentDay: preset.paymentDay,
+    })
   return (
     <Modal title={draft.editingId ? '決済方法を編集' : '決済方法を追加'} onClose={onClose}>
       <div className="space-y-3">
@@ -388,6 +397,36 @@ function PaymentMethodModal({
           onChange={(e) => patch({ name: e.target.value })}
           placeholder={draft.type === 'credit' ? '例: 楽天カード' : '例: Suica'}
         />
+        {draft.type === 'credit' && draft.name.trim().length >= 2 && (
+          <div className="rounded-xl bg-ios-bg px-3 py-2.5">
+            <div className="text-xs font-medium text-ios-label2">
+              公式情報からの入力候補
+            </div>
+            {presetCandidates.length === 0 ? (
+              <p className="mt-1 text-xs text-ios-label2">
+                登録済みの候補はありません。締め日と引き落とし日を手入力してください。
+              </p>
+            ) : (
+              <div className="mt-1 space-y-2">
+                {presetCandidates.map((preset) => (
+                  <div key={preset.id} className="flex items-center gap-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-medium">{preset.name}</div>
+                      <div className="text-xs text-ios-label2">{preset.note}</div>
+                    </div>
+                    <button
+                      type="button"
+                      className="shrink-0 rounded-lg bg-white px-2.5 py-1.5 text-sm text-ios-blue"
+                      onClick={() => applyPreset(preset)}
+                    >
+                      反映
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
         {draft.type === 'credit' && (
           <>
             <div className="flex gap-2">
@@ -405,6 +444,19 @@ function PaymentMethodModal({
             <p className="text-xs text-ios-label2">
               締め日までの利用分を、翌月の引き落とし日として計算します。
             </p>
+            {presetCandidates.length > 0 && (
+              <p className="text-xs text-ios-label2">
+                候補は公式情報を{presetCandidates[0].verifiedAt}に確認。保存前に実際のカード明細も確認してください。{' '}
+                <a
+                  href={presetCandidates[0].officialUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-ios-blue underline"
+                >
+                  公式情報
+                </a>
+              </p>
+            )}
           </>
         )}
         <div className="flex gap-2 pt-1">
