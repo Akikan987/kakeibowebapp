@@ -11,7 +11,7 @@ import {
   toLocalInput,
   yen,
 } from '../components/ui'
-import { findCardPresets, type CardPreset } from '../cardPresets'
+import { CARD_PRESETS, findCardPresets, type CardPreset } from '../cardPresets'
 import { DEFAULT_CASH_METHOD_ID, DEFAULT_OTHER_METHOD_ID } from '../db'
 import {
   type PaymentMethodDraft,
@@ -364,8 +364,16 @@ function PaymentMethodModal({
 }) {
   const patch = (value: Partial<PaymentMethodDraft>) =>
     onChange({ ...draft, ...value })
+  const trimmedCardName = draft.name.trim()
   const presetCandidates =
-    draft.type === 'credit' ? findCardPresets(draft.name) : []
+    draft.type !== 'credit'
+      ? []
+      : trimmedCardName.length < 2
+        ? CARD_PRESETS
+        : findCardPresets(draft.name)
+  const selectedPreset = presetCandidates.find(
+    (preset) => preset.name === draft.name,
+  )
   const applyPreset = (preset: CardPreset) =>
     patch({
       name: preset.name,
@@ -397,10 +405,12 @@ function PaymentMethodModal({
           onChange={(e) => patch({ name: e.target.value })}
           placeholder={draft.type === 'credit' ? '例: 楽天カード' : '例: Suica'}
         />
-        {draft.type === 'credit' && draft.name.trim().length >= 2 && (
+        {draft.type === 'credit' && (
           <div className="rounded-xl bg-ios-bg px-3 py-2.5">
             <div className="text-xs font-medium text-ios-label2">
-              公式情報からの入力候補
+              {trimmedCardName.length < 2
+                ? '登録済みカードから選ぶ'
+                : '公式情報からの入力候補'}
             </div>
             {presetCandidates.length === 0 ? (
               <p className="mt-1 text-xs text-ios-label2">
@@ -444,11 +454,11 @@ function PaymentMethodModal({
             <p className="text-xs text-ios-label2">
               締め日までの利用分を、翌月の引き落とし日として計算します。
             </p>
-            {presetCandidates.length > 0 && (
+            {selectedPreset && (
               <p className="text-xs text-ios-label2">
-                候補は公式情報を{presetCandidates[0].verifiedAt}に確認。保存前に実際のカード明細も確認してください。{' '}
+                この候補は公式情報を{selectedPreset.verifiedAt}に確認。保存前に実際のカード明細も確認してください。{' '}
                 <a
-                  href={presetCandidates[0].officialUrl}
+                  href={selectedPreset.officialUrl}
                   target="_blank"
                   rel="noreferrer"
                   className="text-ios-blue underline"
