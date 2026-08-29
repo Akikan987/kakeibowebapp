@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
+import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
 import CreditCardRoundedIcon from '@mui/icons-material/CreditCardRounded'
 import GroupsRoundedIcon from '@mui/icons-material/GroupsRounded'
 import HomeRoundedIcon from '@mui/icons-material/HomeRounded'
@@ -12,8 +13,10 @@ import {
   Box,
   Container,
   Fab,
+  IconButton,
   Paper,
   Toolbar,
+  Tooltip,
   Typography,
 } from '@mui/material'
 import { Toast } from './components/ui'
@@ -27,19 +30,25 @@ import { SplitScreen } from './screens/SplitScreen'
 import { useStore, type ExpenseDraft } from './store'
 
 type Tab = 'home' | 'list' | 'add' | 'payments' | 'split' | 'settings'
+type MainTab = Exclude<Tab, 'add' | 'settings'>
 
 const TABS = [
   { key: 'home', label: 'ホーム', icon: <HomeRoundedIcon /> },
   { key: 'list', label: '履歴', icon: <ReceiptLongRoundedIcon /> },
   { key: 'payments', label: '決済', icon: <CreditCardRoundedIcon /> },
   { key: 'split', label: '割り勘', icon: <GroupsRoundedIcon /> },
-  { key: 'settings', label: '設定', icon: <SettingsRoundedIcon /> },
-] satisfies { key: Exclude<Tab, 'add'>; label: string; icon: React.ReactNode }[]
+] satisfies { key: MainTab; label: string; icon: React.ReactNode }[]
 
 export default function App() {
   const s = useStore()
   const [tab, setTab] = useState<Tab>('home')
+  const [settingsReturnTab, setSettingsReturnTab] = useState<Exclude<Tab, 'settings'>>('home')
   const [editDraft, setEditDraft] = useState<ExpenseDraft | null>(null)
+
+  const openSettings = () => {
+    if (tab !== 'settings') setSettingsReturnTab(tab)
+    setTab('settings')
+  }
 
   useEffect(() => {
     if (!s.message) return
@@ -95,6 +104,16 @@ export default function App() {
                   ? '未同期'
                   : ''}
           </Typography>
+          <Tooltip title={tab === 'settings' ? '設定を閉じる' : '設定'}>
+            <IconButton
+              aria-label={tab === 'settings' ? '設定を閉じる' : '設定を開く'}
+              color="inherit"
+              onClick={() => tab === 'settings' ? setTab(settingsReturnTab) : openSettings()}
+              sx={{ ml: 0.5 }}
+            >
+              {tab === 'settings' ? <ArrowBackRoundedIcon /> : <SettingsRoundedIcon />}
+            </IconButton>
+          </Tooltip>
         </Toolbar>
       </AppBar>
 
@@ -118,7 +137,7 @@ export default function App() {
           />
         )}
         {tab === 'payments' && <PaymentsScreen />}
-        {tab === 'split' && <SplitScreen onOpenSettings={() => setTab('settings')} />}
+        {tab === 'split' && <SplitScreen />}
         {tab === 'settings' && <SettingsScreen />}
       </Container>
 
@@ -140,8 +159,8 @@ export default function App() {
         <Box sx={{ position: 'relative', maxWidth: 720, mx: 'auto' }}>
           <BottomNavigation
             showLabels
-            value={tab === 'add' ? false : tab}
-            onChange={(_, value: Exclude<Tab, 'add'>) => setTab(value)}
+            value={tab === 'add' || tab === 'settings' ? false : tab}
+            onChange={(_, value: MainTab) => setTab(value)}
             sx={{ height: 68 }}
           >
             {TABS.map((item) => (
@@ -154,7 +173,7 @@ export default function App() {
               />
             ))}
           </BottomNavigation>
-          <Fab
+          {tab !== 'settings' && <Fab
             color="primary"
             size="medium"
             aria-label="収入・支出を追加"
@@ -165,7 +184,7 @@ export default function App() {
             sx={{ position: 'absolute', right: 16, top: -56 }}
           >
             <AddRoundedIcon />
-          </Fab>
+          </Fab>}
         </Box>
       </Paper>
 

@@ -5,6 +5,7 @@ import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import DarkModeRoundedIcon from '@mui/icons-material/DarkModeRounded'
 import DragIndicatorRoundedIcon from '@mui/icons-material/DragIndicatorRounded'
 import EditRoundedIcon from '@mui/icons-material/EditRounded'
+import EmailRoundedIcon from '@mui/icons-material/EmailRounded'
 import LightModeRoundedIcon from '@mui/icons-material/LightModeRounded'
 import PersonRoundedIcon from '@mui/icons-material/PersonRounded'
 import PhotoCameraRoundedIcon from '@mui/icons-material/PhotoCameraRounded'
@@ -19,7 +20,6 @@ import { useAppTheme, type AppThemeMode } from '../theme'
 export function SettingsScreen() {
   const s = useStore()
   const appTheme = useAppTheme()
-  const [newMember, setNewMember] = useState('')
   const [newCategory, setNewCategory] = useState('')
   const [renameTarget, setRenameTarget] = useState<Category | null>(null)
   const [renameText, setRenameText] = useState('')
@@ -27,6 +27,14 @@ export function SettingsScreen() {
   const fileRef = useRef<HTMLInputElement>(null)
   const avatarRef = useRef<HTMLInputElement>(null)
   const [avatarBusy, setAvatarBusy] = useState(false)
+  const [nameDialogOpen, setNameDialogOpen] = useState(false)
+  const [nicknameDraft, setNicknameDraft] = useState('')
+  const [emailDialogOpen, setEmailDialogOpen] = useState(false)
+  const [emailStep, setEmailStep] = useState<'request' | 'confirm'>('request')
+  const [emailDraft, setEmailDraft] = useState('')
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [emailCode, setEmailCode] = useState('')
+  const [profileBusy, setProfileBusy] = useState(false)
   const replaceRef = useRef(false)
   const [storage, setStorage] = useState<{ persisted: boolean; usageMb: number | null } | null>(null)
 
@@ -105,16 +113,14 @@ export function SettingsScreen() {
               try { await s.updateAvatar(file) } finally { setAvatarBusy(false) }
             }}
           />
-          <Box>{s.account.email && <Typography variant="body2" color="text.secondary">{s.account.email}</Typography>}{s.account.phone && <Typography variant="body2" color="text.secondary">電話: {s.account.phone}</Typography>}<Typography variant="body2" color="text.secondary">最終同期: {formatDateTime(s.lastSync)}</Typography>{s.hasPendingChanges && <Chip size="small" color={s.syncError ? 'error' : 'warning'} label={s.syncError ? '未同期の変更があります（接続を確認してください）' : '未同期の変更があります'} sx={{ mt: 1 }} />}</Box>
-          <Button disabled={s.syncing} onClick={() => s.syncNow()}>{s.syncing ? '同期中…' : '今すぐ同期'}</Button>
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+            <MuiButton variant="outlined" startIcon={<EditRoundedIcon />} onClick={() => { setNicknameDraft(s.account?.nickname ?? ''); setNameDialogOpen(true) }}>名前を変更</MuiButton>
+            <MuiButton variant="outlined" startIcon={<EmailRoundedIcon />} onClick={() => { setEmailDraft(s.account?.email ?? ''); setCurrentPassword(''); setEmailCode(''); setEmailStep('request'); setEmailDialogOpen(true) }}>メールを変更</MuiButton>
+          </Stack>
+          <Box>{s.account.email && <Typography variant="body2" color="text.secondary">{s.account.email}</Typography>}{s.account.phone && <Typography variant="body2" color="text.secondary">電話: {s.account.phone}</Typography>}<Typography variant="body2" color="text.secondary">最終同期: {formatDateTime(s.lastSync)}</Typography>{s.hasPendingChanges && <Chip size="small" color={s.syncError ? 'error' : 'warning'} label={s.syncError ? '未同期の変更があります（接続を確認してください）' : '未同期の変更があります'} sx={{ mt: 1 }} />}<Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>記録の変更はオンライン時に自動で同期されます。</Typography></Box>
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}><Button variant="text" onClick={() => void s.logout()} sx={{ color: 'error.main' }}>ログアウト</Button><Button variant="text" onClick={() => void s.logoutAll()} sx={{ color: 'error.main' }}>すべての端末からログアウト</Button></Stack>
         </Stack> : <Stack spacing={2}><Typography variant="body2" color="text.secondary">この端末のみでオフライン利用中です。</Typography><Button onClick={s.backToAuth}>ログイン / 新規登録</Button><Typography variant="caption" color="text.secondary">登録すると、今のデータもサーバーに同期され、他の端末からも使えます。</Typography></Stack>}
       </CardContent></Card>
-
-      <SectionHeader>割り勘メンバー</SectionHeader>
-      <Card>{s.members.length === 0 ? <EmptyText>メンバーがいません。下から追加してください。</EmptyText> : s.members.map((member, index) => <Box key={member.id}>{index > 0 && <Divider />}<Stack direction="row" alignItems="center" sx={{ pl: 2, pr: 1, py: 1.25 }}><Box sx={{ flex: 1 }}><Typography>{member.name}</Typography>{member.linkedUid && <Chip size="small" color="primary" variant="outlined" label="アカウント連携済み" sx={{ mt: 0.5 }} />}</Box><IconButton aria-label="削除" onClick={() => s.deleteMember(member)}><DeleteOutlineRoundedIcon /></IconButton></Stack></Box>)}</Card>
-      <Card sx={{ mt: 1.5 }}><CardContent><Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems={{ sm: 'center' }}><Field label="名前を追加" value={newMember} onChange={(event) => setNewMember(event.target.value)} placeholder="相手のニックネームで連携" /><Button onClick={async () => { await s.addMember(newMember); setNewMember('') }} sx={{ width: { sm: 'auto' }, flexShrink: 0 }}>追加</Button></Stack></CardContent></Card>
-      <HelpText>名前がアカウントのニックネームと一致すると自動で連携され、相手のアプリにも「払う分」が表示されます。</HelpText>
 
       <SectionHeader>品目（ドラッグで並び替え）</SectionHeader>
       <Card>{s.categories.map((category, index) => <Box key={category.id} draggable onDragStart={() => setDragIndex(index)} onDragOver={(event) => event.preventDefault()} onDrop={() => { if (dragIndex !== null) move(dragIndex, index); setDragIndex(null) }} sx={{ opacity: dragIndex === index ? 0.5 : 1 }}>{index > 0 && <Divider />}<Stack direction="row" alignItems="center" spacing={0.25} sx={{ px: 0.75, py: 0.75 }}><DragIndicatorRoundedIcon color="disabled" sx={{ cursor: 'grab' }} /><Typography sx={{ flex: 1, ml: 0.5 }}>{category.name}</Typography><IconButton size="small" color="primary" disabled={index === 0} onClick={() => move(index, index - 1)} aria-label="上へ"><ArrowUpwardRoundedIcon /></IconButton><IconButton size="small" color="primary" disabled={index === s.categories.length - 1} onClick={() => move(index, index + 1)} aria-label="下へ"><ArrowDownwardRoundedIcon /></IconButton><IconButton size="small" color="primary" onClick={() => { setRenameTarget(category); setRenameText(category.name) }} aria-label="編集"><EditRoundedIcon /></IconButton><IconButton size="small" onClick={() => s.deleteCategory(category)} aria-label="削除"><DeleteOutlineRoundedIcon /></IconButton></Stack></Box>)}</Card>
@@ -132,9 +138,8 @@ export function SettingsScreen() {
       <input ref={fileRef} type="file" accept="application/json" hidden onChange={async (event) => { const file = event.target.files?.[0]; if (file) await s.importJson(file, replaceRef.current); event.target.value = '' }} />
 
       {renameTarget && <Modal title="品目の名前を変更" onClose={() => setRenameTarget(null)}><Field label="名前" autoFocus value={renameText} onChange={(event) => setRenameText(event.target.value)} /><Stack direction="row" spacing={1.5} sx={{ mt: 3 }}><Button variant="outline" onClick={() => setRenameTarget(null)}>キャンセル</Button><Button onClick={async () => { await s.renameCategory(renameTarget, renameText); setRenameTarget(null) }}>保存</Button></Stack></Modal>}
+      {nameDialogOpen && <Modal title="プロフィール名を変更" onClose={() => setNameDialogOpen(false)}><Stack spacing={2}><Field label="ニックネーム" autoFocus value={nicknameDraft} onChange={(event) => setNicknameDraft(event.target.value)} /><Typography variant="caption" color="text.secondary">割り勘で相手が検索するときにも使われる名前です。</Typography><Stack direction="row" spacing={1.5}><Button variant="outline" onClick={() => setNameDialogOpen(false)}>キャンセル</Button><Button disabled={profileBusy} onClick={async () => { setProfileBusy(true); try { if (await s.updateNickname(nicknameDraft)) setNameDialogOpen(false) } finally { setProfileBusy(false) } }}>変更</Button></Stack></Stack></Modal>}
+      {emailDialogOpen && <Modal title="メールアドレスを変更" onClose={() => setEmailDialogOpen(false)}><Stack spacing={2}>{emailStep === 'request' ? <><Typography variant="body2" color="text.secondary">本人確認のため現在のパスワードを確認し、新しいメールアドレスへ6桁コードを送ります。</Typography><Field label="新しいメールアドレス" type="email" value={emailDraft} onChange={(event) => setEmailDraft(event.target.value)} /><Field label="現在のパスワード" type="password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} /><Stack direction="row" spacing={1.5}><Button variant="outline" onClick={() => setEmailDialogOpen(false)}>キャンセル</Button><Button disabled={profileBusy} onClick={async () => { setProfileBusy(true); try { if (await s.requestEmailChange(emailDraft, currentPassword)) setEmailStep('confirm') } finally { setProfileBusy(false) } }}>コードを送る</Button></Stack></> : <><Typography variant="body2" color="text.secondary">{emailDraft} に送った6桁コードを入力してください。確認が完了するまで現在のメールアドレスは変わりません。</Typography><Field label="確認コード" inputMode="numeric" autoFocus value={emailCode} onChange={(event) => setEmailCode(event.target.value.replace(/[^0-9]/g, '').slice(0, 6))} /><Stack direction="row" spacing={1.5}><Button variant="outline" onClick={() => setEmailStep('request')}>戻る</Button><Button disabled={profileBusy || emailCode.length !== 6} onClick={async () => { setProfileBusy(true); try { if (await s.confirmEmailChange(emailCode)) setEmailDialogOpen(false) } finally { setProfileBusy(false) } }}>変更を確定</Button></Stack></>}</Stack></Modal>}
     </Screen>
   )
 }
-
-function EmptyText({ children }: { children: React.ReactNode }) { return <Typography color="text.secondary" sx={{ p: 2 }}>{children}</Typography> }
-function HelpText({ children }: { children: React.ReactNode }) { return <Typography variant="caption" color="text.secondary" sx={{ display: 'block', px: 0.5, py: 1 }}>{children}</Typography> }

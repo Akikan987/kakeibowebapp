@@ -11,15 +11,18 @@ import {
 import {
   ApiError,
   apiLogin,
+  apiConfirmEmailChange,
   apiLogout,
   apiLogoutAll,
   apiRegister,
+  apiRequestEmailChange,
   apiRequestReset,
   apiResetPassword,
   apiSearchUser,
   apiReadReceipt,
   apiSync,
   apiUpdateAvatar,
+  apiUpdateNickname,
   type OcrResult,
   type SyncTables,
 } from './api'
@@ -180,12 +183,16 @@ interface Store {
   logoutAll: () => Promise<void>
   syncNow: (showMessage?: boolean) => Promise<boolean>
   updateAvatar: (file: File | null) => Promise<boolean>
+  updateNickname: (nickname: string) => Promise<boolean>
+  requestEmailChange: (newEmail: string, currentPassword: string) => Promise<boolean>
+  confirmEmailChange: (code: string) => Promise<boolean>
   // 明細
   saveExpense: (draft: ExpenseDraft) => Promise<boolean>
   deleteExpense: (e: Expense) => Promise<void>
   splitsOfExpense: (expenseId: string) => ExpenseSplit[]
   // メンバー
-  addMember: (name: string) => Promise<void>
+  addMember: (name: string) => Promise<boolean>
+  renameMember: (member: Member, name: string) => Promise<boolean>
   deleteMember: (m: Member) => Promise<void>
   memberName: (id: string) => string
   paymentMethodName: (id: string) => string
@@ -515,6 +522,82 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [account, notify],
   )
 
+  const updateNickname = useCallback(
+    async (nickname: string) => {
+      const trimmed = nickname.trim()
+      if (!account?.token || !trimmed) return false
+      try {
+        const profile = await apiUpdateNickname(account.token, trimmed)
+        const updatedAccount = { ...account, ...profile }
+        localStorage.setItem(LS_ACCOUNT, JSON.stringify(updatedAccount))
+        setAccount(updatedAccount)
+        notify('名前を変更しました')
+        return true
+      } catch (err) {
+        notify(
+          err instanceof ApiError && err.detail.includes('nickname already used')
+            ? 'このニックネームは既に使われています'
+            : err instanceof ApiError
+              ? err.detail || '名前を変更できませんでした'
+              : 'サーバーに接続できませんでした',
+          'error',
+        )
+        return false
+      }
+    },
+    [account, notify],
+  )
+
+  const requestEmailChange = useCallback(
+    async (newEmail: string, currentPassword: string) => {
+      if (!account?.token) return false
+      try {
+        await apiRequestEmailChange(account.token, newEmail.trim(), currentPassword)
+        notify('新しいメールアドレスに確認コードを送りました')
+        return true
+      } catch (err) {
+        const text =
+          err instanceof ApiError && err.status === 401
+            ? '現在のパスワードが違います'
+            : err instanceof ApiError && err.detail.includes('email already used')
+              ? 'このメールアドレスは既に使われています'
+              : err instanceof ApiError && err.detail.includes('email unchanged')
+                ? '現在と同じメールアドレスです'
+                : err instanceof ApiError && err.detail.includes('invalid email')
+                  ? 'メールアドレスの形式を確認してください'
+                  : err instanceof ApiError && err.detail.includes('email send failed')
+                    ? '確認メールを送信できませんでした'
+                    : 'メールアドレスの変更を開始できませんでした'
+        notify(text, 'error')
+        return false
+      }
+    },
+    [account, notify],
+  )
+
+  const confirmEmailChange = useCallback(
+    async (code: string) => {
+      if (!account?.token) return false
+      try {
+        const profile = await apiConfirmEmailChange(account.token, code.trim())
+        const updatedAccount = { ...account, ...profile }
+        localStorage.setItem(LS_ACCOUNT, JSON.stringify(updatedAccount))
+        setAccount(updatedAccount)
+        notify('メールアドレスを変更しました')
+        return true
+      } catch (err) {
+        notify(
+          err instanceof ApiError && err.detail.includes('email already used')
+            ? 'このメールアドレスは既に使われています'
+            : '確認コードが違うか、期限が切れています',
+          'error',
+        )
+        return false
+      }
+    },
+    [account, notify],
+  )
+
   const requestReset = useCallback(
     async (email: string) => {
       try {
@@ -699,7 +782,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const addMember = useCallback(
     async (name: string) => {
       const trimmed = name.trim()
-      if (!trimmed) return
+      if (!trimmed) return false
+      if (members.some((member) => member.name === trimmed)) {
+        notify(`「${trimmed}」は既に追加されています`, 'error')
+        return false
+      }
       let linkedUid = ''
       let finalName = trimmed
       if (account?.token) {
@@ -727,8 +814,52 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           : 'メンバーを追加しました',
       )
       autoSync()
+      return true
     },
-    [account, autoSync, notify, reload],
+    [account, autoSync, members, notify, reload],
+  )
+
+  const renameMember = useCallback(
+    async (member: Member, name: string) => {
+      const trimmed = name.trim()
+      if (!trimmed) return false
+      let linkedUid = ''
+      let finalName = trimmed
+      if (account?.token) {
+        try {
+          const res = await apiSearchUser(account.token, trimmed)
+          if (res.found) {
+            linkedUid = res.uid
+            finalName = res.nickname
+          }
+        } catch {
+          /* 検索できない場合は通常メンバーとして保存 */
+        }
+      }
+      if (
+        members.some(
+          (existing) => existing.id !== member.id && existing.name === finalName,
+        )
+      ) {
+        notify(`「${finalName}」は既に追加されています`, 'error')
+        return false
+      }
+      await db.members.put({
+        ...member,
+        name: finalName,
+        linkedUid,
+        updatedAt: now(),
+      })
+      await reload()
+      notify(
+        linkedUid
+          ? `「${finalName}」さんのアカウントと連携しました`
+          : 'メンバーの名前を変更しました',
+      )
+      autoSync()
+      return true
+    },
+    [account, autoSync, members, notify, reload],
   )
 
   const deleteMember = useCallback(
@@ -1370,10 +1501,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     logoutAll,
     syncNow,
     updateAvatar,
+    updateNickname,
+    requestEmailChange,
+    confirmEmailChange,
     saveExpense,
     deleteExpense,
     splitsOfExpense,
     addMember,
+    renameMember,
     deleteMember,
     memberName,
     paymentMethodName,

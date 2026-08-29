@@ -127,6 +127,43 @@ export const apiUpdateAvatar = async (token: string, avatarDataUrl: string) => {
   return profile.avatar_data_url ?? ''
 }
 
+export const apiUpdateNickname = async (token: string, nickname: string) => {
+  const profile = await request<AuthRaw>('/auth/profile', {
+    method: 'PATCH',
+    token,
+    body: { nickname },
+  })
+  return {
+    nickname: profile.nickname,
+    email: profile.email,
+    avatarDataUrl: profile.avatar_data_url ?? '',
+  }
+}
+
+export const apiRequestEmailChange = (
+  token: string,
+  newEmail: string,
+  currentPassword: string,
+) =>
+  request<{ ok: boolean }>('/auth/profile/email/request', {
+    method: 'POST',
+    token,
+    body: { new_email: newEmail, current_password: currentPassword },
+  })
+
+export const apiConfirmEmailChange = async (token: string, code: string) => {
+  const profile = await request<AuthRaw>('/auth/profile/email/confirm', {
+    method: 'POST',
+    token,
+    body: { code },
+  })
+  return {
+    nickname: profile.nickname,
+    email: profile.email,
+    avatarDataUrl: profile.avatar_data_url ?? '',
+  }
+}
+
 export const apiSearchUser = (token: string, nickname: string) =>
   request<{ found: boolean; uid: string; nickname: string }>(
     `/users/search?nickname=${encodeURIComponent(nickname)}`,
