@@ -4,6 +4,8 @@ import {
   type Expense,
   type ExpenseSplit,
   type Member,
+  type PaymentMethod,
+  type PrepaidCharge,
   type Settlement,
   newId,
   now,
@@ -19,6 +21,8 @@ class KakeiboDB extends Dexie {
   categories!: Table<Category, string>
   expenseSplits!: Table<ExpenseSplit, string>
   settlements!: Table<Settlement, string>
+  paymentMethods!: Table<PaymentMethod, string>
+  prepaidCharges!: Table<PrepaidCharge, string>
 
   constructor() {
     super('kakeibo')
@@ -29,12 +33,25 @@ class KakeiboDB extends Dexie {
       expenseSplits: 'id, expenseId, memberId, deleted, updatedAt',
       settlements: 'id, memberId, deleted, updatedAt',
     })
+    this.version(2).stores({
+      expenses:
+        'id, purchasedAtMillis, type, paymentMethodId, deleted, updatedAt',
+      members: 'id, deleted, updatedAt',
+      categories: 'id, position, deleted, updatedAt',
+      expenseSplits: 'id, expenseId, memberId, deleted, updatedAt',
+      settlements: 'id, memberId, deleted, updatedAt',
+      paymentMethods: 'id, type, deleted, updatedAt',
+      prepaidCharges:
+        'id, prepaidMethodId, fundingMethodId, chargedAtMillis, deleted, updatedAt',
+    })
   }
 }
 
 export const db = new KakeiboDB()
 
 const DEFAULT_CATEGORIES = ['食費', '日用品', '交通', '娯楽', 'その他']
+export const DEFAULT_CASH_METHOD_ID = 'e7147cce-f204-4d15-8880-000000000001'
+export const DEFAULT_OTHER_METHOD_ID = 'e7147cce-f204-4d15-8880-000000000002'
 
 /** 名前から決まる固定ID（端末をまたいでも既定品目が重複しない） */
 async function stableCategoryId(name: string): Promise<string> {
@@ -68,6 +85,33 @@ export async function seedCategoriesIfEmpty() {
   await db.categories.bulkPut(rows)
 }
 
+/** 汎用の現金・その他だけを初期投入。カード類は名前と締め日を利用者が登録する。 */
+export async function seedPaymentMethodsIfEmpty() {
+  const count = await db.paymentMethods.filter((method) => !method.deleted).count()
+  if (count > 0) return
+  const ts = now()
+  await db.paymentMethods.bulkPut([
+    {
+      id: DEFAULT_CASH_METHOD_ID,
+      name: '現金',
+      type: 'cash',
+      closingDay: 0,
+      paymentDay: 0,
+      updatedAt: ts,
+      deleted: false,
+    },
+    {
+      id: DEFAULT_OTHER_METHOD_ID,
+      name: 'その他',
+      type: 'other',
+      closingDay: 0,
+      paymentDay: 0,
+      updatedAt: ts,
+      deleted: false,
+    },
+  ])
+}
+
 /**
  * 同じ名前の品目が複数あるときに1つだけ残し、残りを論理削除する。
  * 端末ごとに既定品目のIDが違っても重複が増えないようにするための後始末。
@@ -99,11 +143,15 @@ export async function dedupeCategories(): Promise<boolean> {
 export async function clearLocalData() {
   await db.transaction(
     'rw',
-    db.expenses,
-    db.members,
-    db.categories,
-    db.expenseSplits,
-    db.settlements,
+    [
+      db.expenses,
+      db.members,
+      db.categories,
+      db.expenseSplits,
+      db.settlements,
+      db.paymentMethods,
+      db.prepaidCharges,
+    ],
     async () => {
       await Promise.all([
         db.expenses.clear(),
@@ -111,10 +159,13 @@ export async function clearLocalData() {
         db.categories.clear(),
         db.expenseSplits.clear(),
         db.settlements.clear(),
+        db.paymentMethods.clear(),
+        db.prepaidCharges.clear(),
       ])
     },
   )
   await seedCategoriesIfEmpty()
+  await seedPaymentMethodsIfEmpty()
 }
 
 // ---- 読み出しヘルパー（deleted は除外） ----
@@ -130,4 +181,12 @@ export const activeSplits = () =>
 export const activeSettlements = async () =>
   (await db.settlements.filter((s) => !s.deleted).toArray()).sort(
     (a, b) => b.dateMillis - a.dateMillis,
+  )
+export const activePaymentMethods = async () =>
+  (await db.paymentMethods.filter((m) => !m.deleted).toArray()).sort(
+    (a, b) => a.type.localeCompare(b.type) || a.name.localeCompare(b.name),
+  )
+export const activePrepaidCharges = async () =>
+  (await db.prepaidCharges.filter((c) => !c.deleted).toArray()).sort(
+    (a, b) => b.chargedAtMillis - a.chargedAtMillis,
   )

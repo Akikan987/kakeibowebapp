@@ -26,27 +26,39 @@ import {
   activeCategories,
   activeExpenses,
   activeMembers,
+  activePaymentMethods,
+  activePrepaidCharges,
   activeSettlements,
   activeSplits,
   clearLocalData,
+  DEFAULT_CASH_METHOD_ID,
+  DEFAULT_OTHER_METHOD_ID,
   db,
   dedupeCategories,
   seedCategoriesIfEmpty,
+  seedPaymentMethodsIfEmpty,
 } from './db'
+import { computeCardWithdrawals, computePrepaidBalances } from './payments'
 import {
   DEFAULT_TITLE,
+  PAYMENT_TYPES,
   TYPE_EXPENSE,
   TYPE_INCOME,
   newId,
   now,
   type Account,
   type Category,
+  type CardWithdrawal,
   type Debt,
   type Expense,
   type ExpenseSplit,
   type Member,
   type MemberBalance,
   type MonthlySummary,
+  type PaymentMethod,
+  type PaymentType,
+  type PrepaidBalance,
+  type PrepaidCharge,
   type Settlement,
 } from './types'
 
@@ -78,6 +90,7 @@ export interface ExpenseDraft {
   category: string
   purchasedAtMillis: number
   source: string
+  paymentMethodId: string
   splits: DraftSplit[]
 }
 
@@ -89,8 +102,25 @@ export const emptyDraft = (): ExpenseDraft => ({
   category: DEFAULT_TITLE,
   purchasedAtMillis: now(),
   source: 'manual',
+  paymentMethodId: DEFAULT_CASH_METHOD_ID,
   splits: [],
 })
+
+export interface PaymentMethodDraft {
+  editingId: string | null
+  name: string
+  type: PaymentType
+  closingDay: number
+  paymentDay: number
+}
+
+export interface PrepaidChargeDraft {
+  prepaidMethodId: string
+  fundingMethodId: string
+  amountYen: string
+  chargedAtMillis: number
+  note: string
+}
 
 interface Store {
   // データ
@@ -99,10 +129,14 @@ interface Store {
   categories: Category[]
   splits: ExpenseSplit[]
   settlements: Settlement[]
+  paymentMethods: PaymentMethod[]
+  prepaidCharges: PrepaidCharge[]
   debts: Debt[]
   // 派生
   summary: MonthlySummary
   balances: MemberBalance[]
+  prepaidBalances: PrepaidBalance[]
+  cardWithdrawals: CardWithdrawal[]
   splitSumOf: (expenseId: string) => number
   netAmount: (e: Expense) => number
   // 月
@@ -149,6 +183,7 @@ interface Store {
   addMember: (name: string) => Promise<void>
   deleteMember: (m: Member) => Promise<void>
   memberName: (id: string) => string
+  paymentMethodName: (id: string) => string
   // 清算
   recordSettlement: (memberId: string, amount: number) => Promise<boolean>
   deleteSettlement: (s: Settlement) => Promise<void>
@@ -157,6 +192,11 @@ interface Store {
   renameCategory: (c: Category, name: string) => Promise<void>
   deleteCategory: (c: Category) => Promise<void>
   reorderCategories: (ordered: Category[]) => Promise<void>
+  // 決済方法・プリペイド
+  savePaymentMethod: (draft: PaymentMethodDraft) => Promise<boolean>
+  deletePaymentMethod: (method: PaymentMethod) => Promise<void>
+  recordPrepaidCharge: (draft: PrepaidChargeDraft) => Promise<boolean>
+  deletePrepaidCharge: (charge: PrepaidCharge) => Promise<void>
   // レシートOCR
   readReceipt: (file: File) => Promise<OcrResult | null>
   // バックアップ
@@ -178,6 +218,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [categories, setCategories] = useState<Category[]>([])
   const [splits, setSplits] = useState<ExpenseSplit[]>([])
   const [settlements, setSettlements] = useState<Settlement[]>([])
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([])
+  const [prepaidCharges, setPrepaidCharges] = useState<PrepaidCharge[]>([])
   const [debts, setDebts] = useState<Debt[]>([])
 
   const today = new Date()
@@ -212,12 +254,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   /** ローカルDBから全部読み直す */
   const reload = useCallback(async () => {
-    const [e, m, c, s, st] = await Promise.all([
+    const [e, m, c, s, st, pm, pc] = await Promise.all([
       activeExpenses(),
       activeMembers(),
       activeCategories(),
       activeSplits(),
       activeSettlements(),
+      activePaymentMethods(),
+      activePrepaidCharges(),
     ])
     e.sort((a, b) => b.purchasedAtMillis - a.purchasedAtMillis)
     m.sort((a, b) => a.name.localeCompare(b.name))
@@ -226,6 +270,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setCategories(c)
     setSplits(s)
     setSettlements(st)
+    setPaymentMethods(pm)
+    setPrepaidCharges(pc)
   }, [])
 
   // ---------------- 同期 ----------------
@@ -251,6 +297,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           categories: await db.categories.toArray(),
           expenseSplits: await db.expenseSplits.toArray(),
           settlements: await db.settlements.toArray(),
+          paymentMethods: await db.paymentMethods.toArray(),
+          prepaidCharges: await db.prepaidCharges.toArray(),
         }
         // 差分ではなく毎回すべてを取り直す。件数が少ないアプリなので、
         // 取りこぼし（sinceのズレで古いレコードが届かない）を確実に防ぐ方を優先する。
@@ -274,6 +322,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         await apply(db.categories, res.changes.categories)
         await apply(db.expenseSplits, res.changes.expenseSplits)
         await apply(db.settlements, res.changes.settlements)
+        await apply(db.paymentMethods, res.changes.paymentMethods)
+        await apply(db.prepaidCharges, res.changes.prepaidCharges)
 
         // 端末ごとに既定品目のIDが違うと重複するので、取り込み後にまとめる。
         // 消えた分は次回の同期で他の端末にも反映される。
@@ -329,6 +379,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     void (async () => {
       await seedCategoriesIfEmpty()
+      await seedPaymentMethodsIfEmpty()
       await reload()
       if (readAccount()?.token) void syncNow(false)
     })()
@@ -513,6 +564,38 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         notify(`割り勘の合計（¥${splitSum}）が金額を超えています`, 'error')
         return false
       }
+      const paymentMethodId =
+        draft.type === TYPE_EXPENSE
+          ? draft.paymentMethodId || DEFAULT_CASH_METHOD_ID
+          : ''
+      const paymentMethod = paymentMethods.find(
+        (method) => method.id === paymentMethodId,
+      )
+      if (draft.type === TYPE_EXPENSE && !paymentMethod) {
+        notify('決済方法を選んでください', 'error')
+        return false
+      }
+      if (paymentMethod?.type === 'prepaid') {
+        const charged = prepaidCharges
+          .filter((charge) => charge.prepaidMethodId === paymentMethod.id)
+          .reduce((sum, charge) => sum + charge.amountYen, 0)
+        const spentExceptEditing = expenses
+          .filter(
+            (expense) =>
+              expense.id !== draft.editingId &&
+              expense.type === TYPE_EXPENSE &&
+              expense.paymentMethodId === paymentMethod.id,
+          )
+          .reduce((sum, expense) => sum + expense.amountYen, 0)
+        const available = charged - spentExceptEditing
+        if (amount > available) {
+          notify(
+            `「${paymentMethod.name}」の残高（¥${available.toLocaleString()}）が不足しています`,
+            'error',
+          )
+          return false
+        }
+      }
       const ts = now()
       const id = draft.editingId ?? newId()
       await db.expenses.put({
@@ -523,6 +606,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         category: draft.category.trim() || DEFAULT_TITLE,
         source: draft.source,
         type: draft.type,
+        paymentMethodId,
         updatedAt: ts,
         deleted: false,
       })
@@ -549,7 +633,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       autoSync()
       return true
     },
-    [autoSync, notify, reload],
+    [autoSync, expenses, notify, paymentMethods, prepaidCharges, reload],
   )
 
   const deleteExpense = useCallback(
@@ -625,6 +709,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const memberName = useCallback(
     (id: string) => members.find((m) => m.id === id)?.name ?? '(削除済み)',
     [members],
+  )
+
+  const paymentMethodName = useCallback(
+    (id: string) =>
+      paymentMethods.find((method) => method.id === id)?.name ?? '未設定',
+    [paymentMethods],
   )
 
   // ---------------- 清算 ----------------
@@ -718,6 +808,142 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [autoSync, reload],
   )
 
+  // ---------------- 決済方法・プリペイド ----------------
+
+  const savePaymentMethod = useCallback(
+    async (draft: PaymentMethodDraft) => {
+      const name = draft.name.trim()
+      if (!name) {
+        notify('決済方法の名前を入力してください', 'error')
+        return false
+      }
+      if (
+        paymentMethods.some(
+          (method) => method.id !== draft.editingId && method.name === name,
+        )
+      ) {
+        notify(`「${name}」は既に登録されています`, 'error')
+        return false
+      }
+      if (
+        draft.type === 'credit' &&
+        (draft.closingDay < 1 ||
+          draft.closingDay > 31 ||
+          draft.paymentDay < 1 ||
+          draft.paymentDay > 31)
+      ) {
+        notify('クレジットは締め日と引き落とし日を選んでください', 'error')
+        return false
+      }
+      const existing = draft.editingId
+        ? paymentMethods.find((method) => method.id === draft.editingId)
+        : undefined
+      const isUsed = existing
+        ? expenses.some((expense) => expense.paymentMethodId === existing.id) ||
+          prepaidCharges.some(
+            (charge) =>
+              charge.prepaidMethodId === existing.id ||
+              charge.fundingMethodId === existing.id,
+          )
+        : false
+      if (existing && isUsed && existing.type !== draft.type) {
+        notify('使用済みの決済方法は種類を変更できません', 'error')
+        return false
+      }
+      await db.paymentMethods.put({
+        id: draft.editingId ?? newId(),
+        name,
+        type: draft.type,
+        closingDay: draft.type === 'credit' ? draft.closingDay : 0,
+        paymentDay: draft.type === 'credit' ? draft.paymentDay : 0,
+        updatedAt: now(),
+        deleted: false,
+      })
+      await reload()
+      notify(draft.editingId ? '決済方法を更新しました' : '決済方法を追加しました')
+      autoSync()
+      return true
+    },
+    [autoSync, expenses, notify, paymentMethods, prepaidCharges, reload],
+  )
+
+  const deletePaymentMethod = useCallback(
+    async (method: PaymentMethod) => {
+      if (
+        method.id === DEFAULT_CASH_METHOD_ID ||
+        method.id === DEFAULT_OTHER_METHOD_ID ||
+        expenses.some((expense) => expense.paymentMethodId === method.id) ||
+        prepaidCharges.some(
+          (charge) =>
+            charge.prepaidMethodId === method.id ||
+            charge.fundingMethodId === method.id,
+        )
+      ) {
+        notify('使用中の決済方法は削除できません', 'error')
+        return
+      }
+      await db.paymentMethods.put({ ...method, deleted: true, updatedAt: now() })
+      await reload()
+      notify('決済方法を削除しました')
+      autoSync()
+    },
+    [autoSync, expenses, notify, prepaidCharges, reload],
+  )
+
+  const recordPrepaidCharge = useCallback(
+    async (draft: PrepaidChargeDraft) => {
+      const amount = parseInt(draft.amountYen, 10)
+      const prepaid = paymentMethods.find(
+        (method) =>
+          method.id === draft.prepaidMethodId && method.type === 'prepaid',
+      )
+      if (!prepaid) {
+        notify('チャージ先のプリペイドを選んでください', 'error')
+        return false
+      }
+      if (!Number.isFinite(amount) || amount <= 0) {
+        notify('チャージ額を入力してください', 'error')
+        return false
+      }
+      if (draft.fundingMethodId === draft.prepaidMethodId) {
+        notify('チャージ元には別の決済方法を選んでください', 'error')
+        return false
+      }
+      if (
+        draft.fundingMethodId &&
+        !paymentMethods.some((method) => method.id === draft.fundingMethodId)
+      ) {
+        notify('チャージに使った決済方法を選んでください', 'error')
+        return false
+      }
+      await db.prepaidCharges.put({
+        id: newId(),
+        prepaidMethodId: prepaid.id,
+        fundingMethodId: draft.fundingMethodId,
+        amountYen: amount,
+        chargedAtMillis: draft.chargedAtMillis,
+        note: draft.note.trim(),
+        updatedAt: now(),
+        deleted: false,
+      })
+      await reload()
+      notify(`${prepaid.name}にチャージしました`)
+      autoSync()
+      return true
+    },
+    [autoSync, notify, paymentMethods, reload],
+  )
+
+  const deletePrepaidCharge = useCallback(
+    async (charge: PrepaidCharge) => {
+      await db.prepaidCharges.put({ ...charge, deleted: true, updatedAt: now() })
+      await reload()
+      notify('チャージ記録を取り消しました')
+      autoSync()
+    },
+    [autoSync, notify, reload],
+  )
+
   // ---------------- レシートOCR ----------------
 
   const readReceipt = useCallback(
@@ -749,7 +975,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const exportJson = useCallback(() => {
     const payload = {
       app: 'kakeibo',
-      version: 3,
+      version: 4,
       expenses: expenses.map((e) => ({
         id: e.id,
         title: e.title,
@@ -758,7 +984,48 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         category: e.category,
         source: e.source,
         type: e.type,
+        paymentMethodId: e.paymentMethodId,
       })),
+      members: members.map(({ id, name, linkedUid }) => ({ id, name, linkedUid })),
+      categories: categories.map(({ id, name, position }) => ({ id, name, position })),
+      expenseSplits: splits.map(({ id, expenseId, memberId, amountYen }) => ({
+        id,
+        expenseId,
+        memberId,
+        amountYen,
+      })),
+      settlements: settlements.map(({ id, memberId, amountYen, dateMillis }) => ({
+        id,
+        memberId,
+        amountYen,
+        dateMillis,
+      })),
+      paymentMethods: paymentMethods.map(
+        ({ id, name, type, closingDay, paymentDay }) => ({
+          id,
+          name,
+          type,
+          closingDay,
+          paymentDay,
+        }),
+      ),
+      prepaidCharges: prepaidCharges.map(
+        ({
+          id,
+          prepaidMethodId,
+          fundingMethodId,
+          amountYen,
+          chargedAtMillis,
+          note,
+        }) => ({
+          id,
+          prepaidMethodId,
+          fundingMethodId,
+          amountYen,
+          chargedAtMillis,
+          note,
+        }),
+      ),
     }
     const blob = new Blob([JSON.stringify(payload, null, 2)], {
       type: 'application/json',
@@ -771,16 +1038,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     a.click()
     URL.revokeObjectURL(a.href)
     notify('エクスポートしました')
-  }, [expenses, notify])
+  }, [categories, expenses, members, notify, paymentMethods, prepaidCharges, settlements, splits])
 
   const importJson = useCallback(
     async (file: File, replace: boolean) => {
       try {
         const text = await file.text()
         const json = JSON.parse(text)
+        const isFullBackup =
+          !Array.isArray(json) && Number(json.version ?? 0) >= 4
         const items = Array.isArray(json) ? json : (json.expenses ?? [])
         const ts = now()
-        const rows: Expense[] = items.map((o: Record<string, unknown>) => ({
+        const expenseRows: Expense[] = items.map((o: Record<string, unknown>) => ({
           id: String(o.id ?? newId()),
           title: String(o.title ?? DEFAULT_TITLE),
           amountYen: Number(o.amountYen ?? 0),
@@ -788,32 +1057,142 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           category: String(o.category ?? DEFAULT_TITLE),
           source: String(o.source ?? 'manual'),
           type: String(o.type ?? TYPE_EXPENSE),
+          paymentMethodId: String(o.paymentMethodId ?? ''),
           updatedAt: ts,
           deleted: false,
         }))
-        if (replace) {
-          await db.transaction('rw', db.expenses, db.expenseSplits, async () => {
-            const [allExpenses, allSplits] = await Promise.all([
-              db.expenses.toArray(),
-              db.expenseSplits.toArray(),
-            ])
-            if (allExpenses.length) {
-              await db.expenses.bulkPut(
-                allExpenses.map((e) => ({ ...e, deleted: true, updatedAt: ts })),
-              )
+        const objects = (key: string): Record<string, unknown>[] =>
+          isFullBackup && Array.isArray(json[key]) ? json[key] : []
+        const memberRows: Member[] = objects('members').map((o) => ({
+          id: String(o.id ?? newId()),
+          name: String(o.name ?? ''),
+          linkedUid: String(o.linkedUid ?? ''),
+          updatedAt: ts,
+          deleted: false,
+        }))
+        const categoryRows: Category[] = objects('categories').map((o) => ({
+          id: String(o.id ?? newId()),
+          name: String(o.name ?? DEFAULT_TITLE),
+          position: Number(o.position ?? 0),
+          updatedAt: ts,
+          deleted: false,
+        }))
+        const splitRows: ExpenseSplit[] = objects('expenseSplits').map((o) => ({
+          id: String(o.id ?? newId()),
+          expenseId: String(o.expenseId ?? ''),
+          memberId: String(o.memberId ?? ''),
+          amountYen: Number(o.amountYen ?? 0),
+          updatedAt: ts,
+          deleted: false,
+        }))
+        const settlementRows: Settlement[] = objects('settlements').map((o) => ({
+          id: String(o.id ?? newId()),
+          memberId: String(o.memberId ?? ''),
+          amountYen: Number(o.amountYen ?? 0),
+          dateMillis: Number(o.dateMillis ?? ts),
+          updatedAt: ts,
+          deleted: false,
+        }))
+        const paymentMethodRows: PaymentMethod[] = objects('paymentMethods').map(
+          (o) => {
+            const rawType = String(o.type ?? 'other')
+            const type = PAYMENT_TYPES.includes(rawType as PaymentType)
+              ? (rawType as PaymentType)
+              : 'other'
+            return {
+              id: String(o.id ?? newId()),
+              name: String(o.name ?? ''),
+              type,
+              closingDay: Number(o.closingDay ?? 0),
+              paymentDay: Number(o.paymentDay ?? 0),
+              updatedAt: ts,
+              deleted: false,
             }
-            if (allSplits.length) {
-              await db.expenseSplits.bulkPut(
-                allSplits.map((s) => ({ ...s, deleted: true, updatedAt: ts })),
-              )
+          },
+        )
+        const prepaidChargeRows: PrepaidCharge[] = objects('prepaidCharges').map(
+          (o) => ({
+            id: String(o.id ?? newId()),
+            prepaidMethodId: String(o.prepaidMethodId ?? ''),
+            fundingMethodId: String(o.fundingMethodId ?? ''),
+            amountYen: Number(o.amountYen ?? 0),
+            chargedAtMillis: Number(o.chargedAtMillis ?? ts),
+            note: String(o.note ?? ''),
+            updatedAt: ts,
+            deleted: false,
+          }),
+        )
+
+        await db.transaction(
+          'rw',
+          [
+            db.expenses,
+            db.members,
+            db.categories,
+            db.expenseSplits,
+            db.settlements,
+            db.paymentMethods,
+            db.prepaidCharges,
+          ],
+          async () => {
+            if (replace) {
+              const [allExpenses, allSplits] = await Promise.all([
+                db.expenses.toArray(),
+                db.expenseSplits.toArray(),
+              ])
+              if (allExpenses.length)
+                await db.expenses.bulkPut(
+                  allExpenses.map((row) => ({ ...row, deleted: true, updatedAt: ts })),
+                )
+              if (allSplits.length)
+                await db.expenseSplits.bulkPut(
+                  allSplits.map((row) => ({ ...row, deleted: true, updatedAt: ts })),
+                )
+              if (isFullBackup) {
+                const [allMembers, allCategories, allSettlements, allMethods, allCharges] =
+                  await Promise.all([
+                    db.members.toArray(),
+                    db.categories.toArray(),
+                    db.settlements.toArray(),
+                    db.paymentMethods.toArray(),
+                    db.prepaidCharges.toArray(),
+                  ])
+                if (allMembers.length)
+                  await db.members.bulkPut(
+                    allMembers.map((row) => ({ ...row, deleted: true, updatedAt: ts })),
+                  )
+                if (allCategories.length)
+                  await db.categories.bulkPut(
+                    allCategories.map((row) => ({ ...row, deleted: true, updatedAt: ts })),
+                  )
+                if (allSettlements.length)
+                  await db.settlements.bulkPut(
+                    allSettlements.map((row) => ({ ...row, deleted: true, updatedAt: ts })),
+                  )
+                if (allMethods.length)
+                  await db.paymentMethods.bulkPut(
+                    allMethods.map((row) => ({ ...row, deleted: true, updatedAt: ts })),
+                  )
+                if (allCharges.length)
+                  await db.prepaidCharges.bulkPut(
+                    allCharges.map((row) => ({ ...row, deleted: true, updatedAt: ts })),
+                  )
+              }
             }
-            await db.expenses.bulkPut(rows)
-          })
-        } else {
-          await db.expenses.bulkPut(rows)
-        }
+            if (expenseRows.length) await db.expenses.bulkPut(expenseRows)
+            if (memberRows.length) await db.members.bulkPut(memberRows)
+            if (categoryRows.length) await db.categories.bulkPut(categoryRows)
+            if (splitRows.length) await db.expenseSplits.bulkPut(splitRows)
+            if (settlementRows.length) await db.settlements.bulkPut(settlementRows)
+            if (paymentMethodRows.length)
+              await db.paymentMethods.bulkPut(paymentMethodRows)
+            if (prepaidChargeRows.length)
+              await db.prepaidCharges.bulkPut(prepaidChargeRows)
+          },
+        )
+        await seedPaymentMethodsIfEmpty()
         await reload()
-        notify(`${rows.length}件インポートしました`)
+        notify(`${expenseRows.length}件インポートしました`)
         autoSync()
       } catch {
         notify('インポートに失敗しました', 'error')
@@ -899,15 +1278,28 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     })
   }, [members, settlements, splits])
 
+  const prepaidBalances = useMemo(
+    () => computePrepaidBalances(paymentMethods, prepaidCharges, expenses),
+    [expenses, paymentMethods, prepaidCharges],
+  )
+  const cardWithdrawals = useMemo(
+    () => computeCardWithdrawals(paymentMethods, prepaidCharges, expenses),
+    [expenses, paymentMethods, prepaidCharges],
+  )
+
   const value: Store = {
     expenses,
     members,
     categories,
     splits,
     settlements,
+    paymentMethods,
+    prepaidCharges,
     debts,
     summary,
     balances,
+    prepaidBalances,
+    cardWithdrawals,
     splitSumOf,
     netAmount,
     month,
@@ -949,12 +1341,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     addMember,
     deleteMember,
     memberName,
+    paymentMethodName,
     recordSettlement,
     deleteSettlement,
     addCategory,
     renameCategory,
     deleteCategory,
     reorderCategories,
+    savePaymentMethod,
+    deletePaymentMethod,
+    recordPrepaidCharge,
+    deletePrepaidCharge,
     readReceipt,
     exportJson,
     importJson,

@@ -10,7 +10,14 @@ import {
   yen,
 } from '../components/ui'
 import { emptyDraft, useStore, type ExpenseDraft } from '../store'
-import { TYPE_EXPENSE, TYPE_INCOME, now } from '../types'
+import { expectedWithdrawalDate } from '../payments'
+import {
+  PAYMENT_TYPES,
+  PAYMENT_TYPE_LABELS,
+  TYPE_EXPENSE,
+  TYPE_INCOME,
+  now,
+} from '../types'
 
 export function AddScreen({
   initial,
@@ -63,6 +70,12 @@ export function AddScreen({
   const splitTotal = draft.splits.reduce(
     (a, b) => a + (parseInt(b.amount, 10) || 0),
     0,
+  )
+  const selectedPayment = s.paymentMethods.find(
+    (method) => method.id === draft.paymentMethodId,
+  )
+  const selectedPrepaidBalance = s.prepaidBalances.find(
+    (balance) => balance.methodId === draft.paymentMethodId,
   )
 
   return (
@@ -122,6 +135,60 @@ export function AddScreen({
             patch({ purchasedAtMillis: fromLocalInput(e.target.value) })
           }
         />
+        {!isIncome && (
+          <label className="block">
+            <span className="mb-1 block text-[13px] text-ios-label2">
+              決済方法
+            </span>
+            <select
+              value={draft.paymentMethodId}
+              onChange={(e) => patch({ paymentMethodId: e.target.value })}
+              className="w-full rounded-xl border border-ios-sep bg-white px-3 py-2.5 outline-none focus:border-ios-blue"
+            >
+              {!draft.paymentMethodId && <option value="">選択してください</option>}
+              {PAYMENT_TYPES.map((type) => {
+                const methods = s.paymentMethods.filter(
+                  (method) => method.type === type,
+                )
+                if (methods.length === 0) return null
+                return (
+                  <optgroup key={type} label={PAYMENT_TYPE_LABELS[type]}>
+                    {methods.map((method) => (
+                      <option key={method.id} value={method.id}>
+                        {method.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                )
+              })}
+            </select>
+            {selectedPrepaidBalance && (
+              <span className="mt-1 block text-xs text-ios-label2">
+                現在残高 {yen(selectedPrepaidBalance.balance)}
+              </span>
+            )}
+            {selectedPayment?.type === 'credit' && (
+              <span className="mt-1 block text-xs text-ios-label2">
+                {selectedPayment.closingDay === 31
+                  ? '月末'
+                  : `${selectedPayment.closingDay}日`}
+                締め・
+                {selectedPayment.paymentDay === 31
+                  ? '月末'
+                  : `${selectedPayment.paymentDay}日`}
+                引き落とし予定（今回分:{' '}
+                {new Date(
+                  expectedWithdrawalDate(
+                    draft.purchasedAtMillis,
+                    selectedPayment.closingDay,
+                    selectedPayment.paymentDay,
+                  ),
+                ).toLocaleDateString('ja-JP')}
+                ）
+              </span>
+            )}
+          </label>
+        )}
       </Card>
 
       {!isIncome && (

@@ -4,15 +4,17 @@ import { AddScreen } from './screens/AddScreen'
 import { AuthScreen } from './screens/AuthScreen'
 import { HomeScreen } from './screens/HomeScreen'
 import { ListScreen } from './screens/ListScreen'
+import { PaymentsScreen } from './screens/PaymentsScreen'
 import { SettingsScreen } from './screens/SettingsScreen'
 import { SplitScreen } from './screens/SplitScreen'
 import { useStore, type ExpenseDraft } from './store'
 
-type Tab = 'home' | 'list' | 'add' | 'split' | 'settings'
+type Tab = 'home' | 'list' | 'add' | 'payments' | 'split' | 'settings'
 
 const TABS: { key: Tab; label: string; icon: string }[] = [
   { key: 'home', label: 'ホーム', icon: '🏠' },
   { key: 'list', label: '履歴', icon: '🧾' },
+  { key: 'payments', label: '決済', icon: '💳' },
   { key: 'split', label: '割り勘', icon: '👥' },
   { key: 'settings', label: '設定', icon: '⚙️' },
 ]
@@ -85,6 +87,7 @@ export default function App() {
             }}
           />
         )}
+        {tab === 'payments' && <PaymentsScreen />}
         {tab === 'split' && (
           <SplitScreen onOpenSettings={() => setTab('settings')} />
         )}

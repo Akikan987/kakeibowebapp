@@ -5,8 +5,12 @@ import type {
   Expense,
   ExpenseSplit,
   Member,
+  PaymentMethod,
+  PaymentType,
+  PrepaidCharge,
   Settlement,
 } from './types'
+import { PAYMENT_TYPES } from './types'
 
 /** 同一オリジンのサーバー（FastAPI）を使う */
 const BASE = ''
@@ -142,6 +146,7 @@ const expenseOut = (e: Expense): Raw => ({
   category: e.category,
   source: e.source,
   type: e.type,
+  payment_method_id: e.paymentMethodId,
 })
 const expenseIn = (r: Raw): Expense => ({
   ...baseIn(r),
@@ -151,6 +156,7 @@ const expenseIn = (r: Raw): Expense => ({
   category: String(r.category ?? 'その他'),
   source: String(r.source ?? 'manual'),
   type: String(r.type ?? 'expense'),
+  paymentMethodId: String(r.payment_method_id ?? ''),
 })
 
 const memberOut = (m: Member): Raw => ({
@@ -201,12 +207,53 @@ const settlementIn = (r: Raw): Settlement => ({
   dateMillis: Number(r.date_millis ?? 0),
 })
 
+const paymentTypeIn = (value: unknown): PaymentType => {
+  const type = String(value ?? 'other')
+  return PAYMENT_TYPES.includes(type as PaymentType)
+    ? (type as PaymentType)
+    : 'other'
+}
+
+const paymentMethodOut = (m: PaymentMethod): Raw => ({
+  ...baseOut(m),
+  name: m.name,
+  type: m.type,
+  closing_day: m.closingDay,
+  payment_day: m.paymentDay,
+})
+const paymentMethodIn = (r: Raw): PaymentMethod => ({
+  ...baseIn(r),
+  name: String(r.name ?? ''),
+  type: paymentTypeIn(r.type),
+  closingDay: Number(r.closing_day ?? 0),
+  paymentDay: Number(r.payment_day ?? 0),
+})
+
+const prepaidChargeOut = (c: PrepaidCharge): Raw => ({
+  ...baseOut(c),
+  prepaid_method_id: c.prepaidMethodId,
+  funding_method_id: c.fundingMethodId,
+  amount_yen: c.amountYen,
+  charged_at_millis: c.chargedAtMillis,
+  note: c.note,
+})
+const prepaidChargeIn = (r: Raw): PrepaidCharge => ({
+  ...baseIn(r),
+  prepaidMethodId: String(r.prepaid_method_id ?? ''),
+  fundingMethodId: String(r.funding_method_id ?? ''),
+  amountYen: Number(r.amount_yen ?? 0),
+  chargedAtMillis: Number(r.charged_at_millis ?? 0),
+  note: String(r.note ?? ''),
+})
+
 export interface SyncTables {
   expenses: Expense[]
   members: Member[]
   categories: Category[]
   expenseSplits: ExpenseSplit[]
   settlements: Settlement[]
+  paymentMethods: PaymentMethod[]
+  prepaidCharges: PrepaidCharge[]
 }
 
 export interface SyncResult {
@@ -228,6 +275,8 @@ export async function apiSync(
       categories: local.categories.map(categoryOut),
       expense_splits: local.expenseSplits.map(splitOut),
       settlements: local.settlements.map(settlementOut),
+      payment_methods: local.paymentMethods.map(paymentMethodOut),
+      prepaid_charges: local.prepaidCharges.map(prepaidChargeOut),
     },
   }
   const res = await request<Raw>('/sync', { method: 'POST', body, token })
@@ -247,6 +296,8 @@ export async function apiSync(
       categories: (ch.categories ?? []).map(categoryIn),
       expenseSplits: (ch.expense_splits ?? []).map(splitIn),
       settlements: (ch.settlements ?? []).map(settlementIn),
+      paymentMethods: (ch.payment_methods ?? []).map(paymentMethodIn),
+      prepaidCharges: (ch.prepaid_charges ?? []).map(prepaidChargeIn),
     },
     debts,
   }

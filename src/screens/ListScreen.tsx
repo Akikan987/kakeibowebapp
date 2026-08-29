@@ -29,6 +29,7 @@ export function ListScreen({
       category: e.category,
       purchasedAtMillis: e.purchasedAtMillis,
       source: e.source,
+      paymentMethodId: e.paymentMethodId,
       splits: s
         .splitsOfExpense(e.id)
         .map((sp) => ({ memberId: sp.memberId, amount: String(sp.amountYen) })),
@@ -63,6 +64,11 @@ export function ListScreen({
                         {isIncome ? '収入' : '支出'} ・ {e.category} ・{' '}
                         {formatDate(e.purchasedAtMillis)}
                       </div>
+                      {!isIncome && (
+                        <div className="text-xs text-ios-label2">
+                          決済: {s.paymentMethodName(e.paymentMethodId)}
+                        </div>
+                      )}
                       {split > 0 && (
                         <div className="text-xs text-ios-blue">
                           自分の負担 {yen(s.netAmount(e))}（割り勘{' '}
