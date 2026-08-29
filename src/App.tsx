@@ -1,4 +1,21 @@
 import { useEffect, useState } from 'react'
+import AddRoundedIcon from '@mui/icons-material/AddRounded'
+import CreditCardRoundedIcon from '@mui/icons-material/CreditCardRounded'
+import GroupsRoundedIcon from '@mui/icons-material/GroupsRounded'
+import HomeRoundedIcon from '@mui/icons-material/HomeRounded'
+import ReceiptLongRoundedIcon from '@mui/icons-material/ReceiptLongRounded'
+import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded'
+import {
+  AppBar,
+  BottomNavigation,
+  BottomNavigationAction,
+  Box,
+  Container,
+  Fab,
+  Paper,
+  Toolbar,
+  Typography,
+} from '@mui/material'
 import { Toast } from './components/ui'
 import { AddScreen } from './screens/AddScreen'
 import { AuthScreen } from './screens/AuthScreen'
@@ -11,24 +28,23 @@ import { useStore, type ExpenseDraft } from './store'
 
 type Tab = 'home' | 'list' | 'add' | 'payments' | 'split' | 'settings'
 
-const TABS: { key: Tab; label: string; icon: string }[] = [
-  { key: 'home', label: 'ホーム', icon: '🏠' },
-  { key: 'list', label: '履歴', icon: '🧾' },
-  { key: 'payments', label: '決済', icon: '💳' },
-  { key: 'split', label: '割り勘', icon: '👥' },
-  { key: 'settings', label: '設定', icon: '⚙️' },
-]
+const TABS = [
+  { key: 'home', label: 'ホーム', icon: <HomeRoundedIcon /> },
+  { key: 'list', label: '履歴', icon: <ReceiptLongRoundedIcon /> },
+  { key: 'payments', label: '決済', icon: <CreditCardRoundedIcon /> },
+  { key: 'split', label: '割り勘', icon: <GroupsRoundedIcon /> },
+  { key: 'settings', label: '設定', icon: <SettingsRoundedIcon /> },
+] satisfies { key: Exclude<Tab, 'add'>; label: string; icon: React.ReactNode }[]
 
 export default function App() {
   const s = useStore()
   const [tab, setTab] = useState<Tab>('home')
   const [editDraft, setEditDraft] = useState<ExpenseDraft | null>(null)
 
-  // メッセージは数秒で自動的に消す
   useEffect(() => {
     if (!s.message) return
-    const t = setTimeout(s.clearMessage, 2800)
-    return () => clearTimeout(t)
+    const timer = setTimeout(s.clearMessage, 2800)
+    return () => clearTimeout(timer)
   }, [s.message, s.clearMessage])
 
   if (!s.hasEntered) {
@@ -47,33 +63,47 @@ export default function App() {
   }
 
   return (
-    <div className="mx-auto flex min-h-full max-w-2xl flex-col">
-      <header className="sticky top-0 z-10 flex items-center justify-between bg-ios-bg/90 px-4 py-3 backdrop-blur">
-        <span className="font-semibold">家計簿</span>
-        <span
-          className="text-xs"
-          style={{
-            color: s.syncError
-              ? 'var(--color-ios-red)'
-              : 'var(--color-ios-label2)',
-          }}
-        >
-          {s.syncing
-            ? '同期中…'
-            : s.syncError && s.hasPendingChanges
-              ? '未同期（接続待ち）'
-              : s.hasPendingChanges
-                ? '未同期'
-                : ''}
-        </span>
-      </header>
+    <Box sx={{ minHeight: '100%', pb: 'calc(82px + env(safe-area-inset-bottom))' }}>
+      <AppBar
+        position="sticky"
+        color="transparent"
+        elevation={0}
+        sx={{
+          bgcolor: (theme) =>
+            theme.palette.mode === 'dark'
+              ? 'rgba(16,20,24,0.88)'
+              : 'rgba(247,249,252,0.9)',
+          backdropFilter: 'blur(18px)',
+          borderBottom: '1px solid',
+          borderColor: 'divider',
+        }}
+      >
+        <Toolbar sx={{ minHeight: '56px !important', maxWidth: 720, width: '100%', mx: 'auto' }}>
+          <Typography variant="h6" color="text.primary" sx={{ flex: 1 }}>
+            家計簿
+          </Typography>
+          <Typography
+            variant="caption"
+            color={s.syncError ? 'error.main' : 'text.secondary'}
+            aria-live="polite"
+          >
+            {s.syncing
+              ? '同期中…'
+              : s.syncError && s.hasPendingChanges
+                ? '未同期（接続待ち）'
+                : s.hasPendingChanges
+                  ? '未同期'
+                  : ''}
+          </Typography>
+        </Toolbar>
+      </AppBar>
 
-      <main className="flex-1 pb-24">
+      <Container component="main" maxWidth="sm" disableGutters>
         {tab === 'home' && <HomeScreen />}
         {tab === 'list' && (
           <ListScreen
-            onEdit={(d) => {
-              setEditDraft(d)
+            onEdit={(draft) => {
+              setEditDraft(draft)
               setTab('add')
             }}
           />
@@ -88,80 +118,60 @@ export default function App() {
           />
         )}
         {tab === 'payments' && <PaymentsScreen />}
-        {tab === 'split' && (
-          <SplitScreen onOpenSettings={() => setTab('settings')} />
-        )}
+        {tab === 'split' && <SplitScreen onOpenSettings={() => setTab('settings')} />}
         {tab === 'settings' && <SettingsScreen />}
-      </main>
+      </Container>
 
-      {/* ボトムタブ（中央に追加ボタン） */}
-      <nav className="fixed right-0 bottom-0 left-0 z-20 border-t border-ios-sep bg-ios-card pb-[env(safe-area-inset-bottom)]">
-        <div className="mx-auto flex h-[58px] max-w-2xl items-center">
-          {TABS.slice(0, 2).map((t) => (
-            <TabButton
-              key={t.key}
-              label={t.label}
-              icon={t.icon}
-              active={tab === t.key}
-              onClick={() => setTab(t.key)}
-            />
-          ))}
-          <div className="flex flex-1 justify-center">
-            <button
-              onClick={() => {
-                setEditDraft(null)
-                setTab('add')
-              }}
-              className="flex size-12 items-center justify-center rounded-full bg-ios-blue text-2xl text-white shadow-lg"
-              aria-label="追加"
-            >
-              ＋
-            </button>
-          </div>
-          {TABS.slice(2).map((t) => (
-            <TabButton
-              key={t.key}
-              label={t.label}
-              icon={t.icon}
-              active={tab === t.key}
-              onClick={() => setTab(t.key)}
-            />
-          ))}
-        </div>
-      </nav>
+      <Paper
+        component="nav"
+        square
+        elevation={10}
+        sx={{
+          position: 'fixed',
+          right: 0,
+          bottom: 0,
+          left: 0,
+          zIndex: (theme) => theme.zIndex.appBar,
+          pb: 'env(safe-area-inset-bottom)',
+          borderTop: '1px solid',
+          borderColor: 'divider',
+        }}
+      >
+        <Box sx={{ position: 'relative', maxWidth: 720, mx: 'auto' }}>
+          <BottomNavigation
+            showLabels
+            value={tab === 'add' ? false : tab}
+            onChange={(_, value: Exclude<Tab, 'add'>) => setTab(value)}
+            sx={{ height: 68 }}
+          >
+            {TABS.map((item) => (
+              <BottomNavigationAction
+                key={item.key}
+                value={item.key}
+                label={item.label}
+                icon={item.icon}
+                sx={{ minWidth: 0, px: 0.5 }}
+              />
+            ))}
+          </BottomNavigation>
+          <Fab
+            color="primary"
+            size="medium"
+            aria-label="収入・支出を追加"
+            onClick={() => {
+              setEditDraft(null)
+              setTab('add')
+            }}
+            sx={{ position: 'absolute', right: 16, top: -56 }}
+          >
+            <AddRoundedIcon />
+          </Fab>
+        </Box>
+      </Paper>
 
       {s.message && (
-        <Toast
-          text={s.message.text}
-          kind={s.message.kind}
-          onDone={s.clearMessage}
-        />
+        <Toast text={s.message.text} kind={s.message.kind} onDone={s.clearMessage} />
       )}
-    </div>
-  )
-}
-
-function TabButton({
-  label,
-  icon,
-  active,
-  onClick,
-}: {
-  label: string
-  icon: string
-  active: boolean
-  onClick: () => void
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className="flex flex-1 flex-col items-center gap-0.5 py-1"
-      style={{
-        color: active ? 'var(--color-ios-blue)' : 'var(--color-ios-label2)',
-      }}
-    >
-      <span className="text-xl leading-none">{icon}</span>
-      <span className="text-[10px]">{label}</span>
-    </button>
+    </Box>
   )
 }

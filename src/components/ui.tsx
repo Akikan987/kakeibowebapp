@@ -1,4 +1,21 @@
-import type { ReactNode } from 'react'
+import type { InputHTMLAttributes, ReactNode } from 'react'
+import {
+  Alert,
+  Box,
+  Button as MuiButton,
+  Card as MuiCard,
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  Divider as MuiDivider,
+  Snackbar,
+  TextField,
+  Typography,
+  type ButtonProps as MuiButtonProps,
+  type CardProps,
+  type SxProps,
+  type Theme,
+} from '@mui/material'
 
 export const yen = (v: number) => `¥${v.toLocaleString('ja-JP')}`
 
@@ -14,7 +31,6 @@ export const formatDateTime = (ms: number) => {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
 }
 
-/** <input type="datetime-local"> 用の文字列 */
 export const toLocalInput = (ms: number) => {
   const d = new Date(ms)
   const p = (n: number) => String(n).padStart(2, '0')
@@ -22,48 +38,64 @@ export const toLocalInput = (ms: number) => {
 }
 export const fromLocalInput = (s: string) => new Date(s).getTime()
 
+export function Screen({ children }: { children: ReactNode }) {
+  return <Box sx={{ px: { xs: 2, sm: 3 }, pb: 4 }}>{children}</Box>
+}
+
 export function LargeTitle({ children }: { children: ReactNode }) {
   return (
-    <h1 className="px-4 pt-2 pb-1 text-[32px] font-bold tracking-tight">
+    <Typography variant="h4" component="h1" sx={{ pt: 1.5, pb: 1 }}>
       {children}
-    </h1>
+    </Typography>
   )
 }
 
 export function SectionHeader({ children }: { children: ReactNode }) {
   return (
-    <h2 className="px-5 pt-5 pb-1.5 text-[13px] text-ios-label2">{children}</h2>
+    <Typography
+      variant="subtitle2"
+      component="h2"
+      color="text.secondary"
+      sx={{ mt: 3, mb: 1, px: 0.5, letterSpacing: '0.02em' }}
+    >
+      {children}
+    </Typography>
   )
 }
 
-export function Card({
-  children,
-  className = '',
-}: {
-  children: ReactNode
-  className?: string
-}) {
+export function Card({ children, sx, ...props }: CardProps) {
   return (
-    <div className={`mx-4 rounded-2xl bg-ios-card ${className}`}>{children}</div>
+    <MuiCard sx={{ borderRadius: 3, ...sx }} {...props}>
+      {children}
+    </MuiCard>
   )
 }
 
 export function Divider() {
-  return <div className="ml-4 h-px bg-ios-sep" />
+  return <MuiDivider component="div" />
 }
 
-export function Field({
-  label,
-  ...props
-}: { label: string } & React.InputHTMLAttributes<HTMLInputElement>) {
+type FieldProps = {
+  label: string
+  sx?: SxProps<Theme>
+} & Omit<InputHTMLAttributes<HTMLInputElement>, 'size'>
+
+export function Field({ label, sx, ...props }: FieldProps) {
   return (
-    <label className="block">
-      <span className="mb-1 block text-[13px] text-ios-label2">{label}</span>
-      <input
-        {...props}
-        className="w-full rounded-xl border border-ios-sep bg-white px-3 py-2.5 outline-none focus:border-ios-blue"
-      />
-    </label>
+    <TextField
+      label={label}
+      fullWidth
+      value={props.value}
+      defaultValue={props.defaultValue}
+      onChange={props.onChange}
+      type={props.type}
+      placeholder={props.placeholder}
+      disabled={props.disabled}
+      autoFocus={props.autoFocus}
+      autoComplete={props.autoComplete}
+      slotProps={{ htmlInput: props }}
+      sx={sx}
+    />
   )
 }
 
@@ -71,33 +103,36 @@ export function Button({
   children,
   variant = 'primary',
   color,
-  className = '',
+  sx,
   ...props
 }: {
   children: ReactNode
   variant?: 'primary' | 'outline' | 'text'
   color?: string
-} & React.ButtonHTMLAttributes<HTMLButtonElement>) {
-  const base =
-    'w-full rounded-xl px-4 py-3 font-semibold transition active:scale-[0.99] disabled:opacity-50'
-  const styles =
-    variant === 'primary'
-      ? 'text-white'
-      : variant === 'outline'
-        ? 'border border-ios-blue text-ios-blue bg-white'
-        : 'text-ios-blue'
+} & Omit<MuiButtonProps, 'variant' | 'color'>) {
   return (
-    <button
+    <MuiButton
       {...props}
-      className={`${base} ${styles} ${className}`}
-      style={
+      fullWidth
+      variant={
         variant === 'primary'
-          ? { background: color ?? 'var(--color-ios-blue)' }
-          : undefined
+          ? 'contained'
+          : variant === 'outline'
+            ? 'outlined'
+            : 'text'
       }
+      sx={{
+        ...(color && variant === 'primary'
+          ? {
+              bgcolor: color,
+              '&:hover': { bgcolor: color, filter: 'brightness(0.92)' },
+            }
+          : {}),
+        ...sx,
+      }}
     >
       {children}
-    </button>
+    </MuiButton>
   )
 }
 
@@ -111,18 +146,12 @@ export function Modal({
   onClose: () => void
 }) {
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6"
-      onClick={onClose}
-    >
-      <div
-        className="max-h-[calc(100vh-3rem)] w-full max-w-sm overflow-y-auto rounded-2xl bg-white p-5"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h3 className="mb-3 text-lg font-semibold">{title}</h3>
+    <Dialog open onClose={onClose} fullWidth maxWidth="xs" scroll="paper">
+      <DialogTitle sx={{ pb: 1 }}>{title}</DialogTitle>
+      <DialogContent sx={{ pt: '8px !important', pb: 3 }}>
         {children}
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -136,15 +165,20 @@ export function Toast({
   onDone: () => void
 }) {
   return (
-    <div
-      className="fixed bottom-24 left-1/2 z-50 -translate-x-1/2 rounded-xl px-4 py-2.5 text-sm text-white shadow-lg"
-      style={{
-        background:
-          kind === 'error' ? 'var(--color-ios-red)' : 'rgba(0,0,0,0.85)',
-      }}
-      onClick={onDone}
+    <Snackbar
+      open
+      anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      onClose={onDone}
+      sx={{ bottom: { xs: 88, sm: 96 } }}
     >
-      {text}
-    </div>
+      <Alert
+        severity={kind === 'error' ? 'error' : 'success'}
+        variant="filled"
+        onClose={onDone}
+        sx={{ width: '100%', borderRadius: 2 }}
+      >
+        {text}
+      </Alert>
+    </Snackbar>
   )
 }

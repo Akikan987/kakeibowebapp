@@ -1,23 +1,16 @@
+import ChevronLeftRoundedIcon from '@mui/icons-material/ChevronLeftRounded'
+import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded'
+import { Box, CardContent, IconButton, Stack, Typography } from '@mui/material'
 import { CategoryChart, DailyChart } from '../components/Charts'
-import { Card, Divider, LargeTitle, SectionHeader, yen } from '../components/ui'
+import { Card, Divider, LargeTitle, Screen, SectionHeader, yen } from '../components/ui'
 import { useStore } from '../store'
 
-function SummaryRow({
-  label,
-  value,
-  color,
-}: {
-  label: string
-  value: number
-  color: string
-}) {
+function SummaryRow({ label, value, tone }: { label: string; value: number; tone: 'success' | 'error' }) {
   return (
-    <div className="flex items-center justify-between px-4 py-3.5">
-      <span>{label}</span>
-      <span className="text-lg font-semibold" style={{ color }}>
-        {yen(value)}
-      </span>
-    </div>
+    <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ px: 2, py: 1.75 }}>
+      <Typography>{label}</Typography>
+      <Typography variant="h6" color={`${tone}.main`}>{yen(value)}</Typography>
+    </Stack>
   )
 }
 
@@ -27,68 +20,33 @@ export function HomeScreen() {
   const daysInMonth = new Date(month.year, month.month, 0).getDate()
 
   return (
-    <div className="pb-6">
+    <Screen>
       <LargeTitle>ホーム</LargeTitle>
-      {s.account && (
-        <p className="px-4 pb-2 text-ios-label2">
-          こんにちは、{s.account.nickname}さん
-        </p>
-      )}
+      {s.account && <Typography color="text.secondary">こんにちは、{s.account.nickname}さん</Typography>}
 
-      <Card className="mt-1 flex items-center justify-between px-2 py-1">
-        <button
-          onClick={s.prevMonth}
-          className="px-3 py-2 text-xl text-ios-blue"
-          aria-label="前の月"
-        >
-          ‹
-        </button>
-        <span className="text-lg font-semibold">
-          {month.year}年{month.month}月
-        </span>
-        <button
-          onClick={s.nextMonth}
-          className="px-3 py-2 text-xl text-ios-blue"
-          aria-label="次の月"
-        >
-          ›
-        </button>
+      <Card sx={{ mt: 2 }}>
+        <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ p: 0.5 }}>
+          <IconButton onClick={s.prevMonth} color="primary" aria-label="前の月"><ChevronLeftRoundedIcon /></IconButton>
+          <Typography variant="h6">{month.year}年{month.month}月</Typography>
+          <IconButton onClick={s.nextMonth} color="primary" aria-label="次の月"><ChevronRightRoundedIcon /></IconButton>
+        </Stack>
       </Card>
 
       <SectionHeader>今月のサマリー</SectionHeader>
       <Card>
-        <SummaryRow
-          label="収入合計"
-          value={summary.incomeTotal}
-          color="var(--color-ios-green)"
-        />
+        <SummaryRow label="収入合計" value={summary.incomeTotal} tone="success" />
         <Divider />
-        <SummaryRow
-          label="支出合計"
-          value={summary.expenseTotal}
-          color="var(--color-ios-red)"
-        />
+        <SummaryRow label="支出合計" value={summary.expenseTotal} tone="error" />
         <Divider />
-        <SummaryRow
-          label="収支"
-          value={summary.balance}
-          color={
-            summary.balance >= 0
-              ? 'var(--color-ios-green)'
-              : 'var(--color-ios-red)'
-          }
-        />
+        <SummaryRow label="収支" value={summary.balance} tone={summary.balance >= 0 ? 'success' : 'error'} />
       </Card>
 
       <SectionHeader>支出：品目別</SectionHeader>
-      <Card>
-        <CategoryChart data={summary.categoryTotals} />
-      </Card>
+      <Card><CardContent><CategoryChart data={summary.categoryTotals} /></CardContent></Card>
 
       <SectionHeader>支出：日付別</SectionHeader>
-      <Card>
-        <DailyChart data={summary.dailyTotals} daysInMonth={daysInMonth} />
-      </Card>
-    </div>
+      <Card><CardContent><DailyChart data={summary.dailyTotals} daysInMonth={daysInMonth} /></CardContent></Card>
+      <Box sx={{ height: 1 }} />
+    </Screen>
   )
 }

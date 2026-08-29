@@ -1,121 +1,77 @@
 import { useState } from 'react'
-import {
-  Button,
-  Card,
-  Divider,
-  LargeTitle,
-  Modal,
-  SectionHeader,
-  formatDate,
-  yen,
-} from '../components/ui'
+import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
+import { Chip, IconButton, List, ListItem, ListItemButton, ListItemText, Stack, Typography } from '@mui/material'
+import { Button, Card, Divider, LargeTitle, Modal, Screen, SectionHeader, formatDate, yen } from '../components/ui'
 import { useStore, type ExpenseDraft } from '../store'
 import { TYPE_INCOME, type Expense } from '../types'
 
-export function ListScreen({
-  onEdit,
-}: {
-  onEdit: (draft: ExpenseDraft) => void
-}) {
+export function ListScreen({ onEdit }: { onEdit: (draft: ExpenseDraft) => void }) {
   const s = useStore()
   const [pendingDelete, setPendingDelete] = useState<Expense | null>(null)
 
-  const startEdit = (e: Expense) => {
+  const startEdit = (expense: Expense) => {
     onEdit({
-      editingId: e.id,
-      type: e.type,
-      title: e.title,
-      amountYen: String(e.amountYen),
-      category: e.category,
-      purchasedAtMillis: e.purchasedAtMillis,
-      source: e.source,
-      paymentMethodId: e.paymentMethodId,
-      splits: s
-        .splitsOfExpense(e.id)
-        .map((sp) => ({ memberId: sp.memberId, amount: String(sp.amountYen) })),
+      editingId: expense.id,
+      type: expense.type,
+      title: expense.title,
+      amountYen: String(expense.amountYen),
+      category: expense.category,
+      purchasedAtMillis: expense.purchasedAtMillis,
+      source: expense.source,
+      paymentMethodId: expense.paymentMethodId,
+      splits: s.splitsOfExpense(expense.id).map((split) => ({ memberId: split.memberId, amount: String(split.amountYen) })),
     })
   }
 
   return (
-    <div className="pb-6">
+    <Screen>
       <LargeTitle>履歴</LargeTitle>
       {s.expenses.length === 0 ? (
-        <p className="px-4 text-ios-label2">まだ明細がありません</p>
+        <Typography color="text.secondary">まだ明細がありません</Typography>
       ) : (
         <>
           <SectionHeader>タップで編集</SectionHeader>
           <Card>
-            {s.expenses.map((e, i) => {
-              const isIncome = e.type === TYPE_INCOME
-              const accent = isIncome
-                ? 'var(--color-ios-green)'
-                : 'var(--color-ios-red)'
-              const split = s.splitSumOf(e.id)
-              return (
-                <div key={e.id}>
-                  {i > 0 && <Divider />}
-                  <div className="flex items-center gap-2 py-2.5 pr-2 pl-4">
-                    <button
-                      className="min-w-0 flex-1 text-left"
-                      onClick={() => startEdit(e)}
-                    >
-                      <div className="truncate font-medium">{e.title}</div>
-                      <div className="text-[13px] text-ios-label2">
-                        {isIncome ? '収入' : '支出'} ・ {e.category} ・{' '}
-                        {formatDate(e.purchasedAtMillis)}
-                      </div>
-                      {!isIncome && (
-                        <div className="text-xs text-ios-label2">
-                          決済: {s.paymentMethodName(e.paymentMethodId)}
-                        </div>
-                      )}
-                      {split > 0 && (
-                        <div className="text-xs text-ios-blue">
-                          自分の負担 {yen(s.netAmount(e))}（割り勘{' '}
-                          {yen(split)}）
-                        </div>
-                      )}
-                    </button>
-                    <span className="font-semibold" style={{ color: accent }}>
-                      {isIncome ? '+' : '-'}
-                      {yen(e.amountYen)}
-                    </span>
-                    <button
-                      className="px-2 py-2 text-ios-label2"
-                      onClick={() => setPendingDelete(e)}
-                      aria-label="削除"
-                    >
-                      🗑
-                    </button>
-                  </div>
-                </div>
-              )
-            })}
+            <List disablePadding>
+              {s.expenses.map((expense, index) => {
+                const isIncome = expense.type === TYPE_INCOME
+                const split = s.splitSumOf(expense.id)
+                return (
+                  <Stack key={expense.id}>
+                    {index > 0 && <Divider />}
+                    <ListItem disablePadding secondaryAction={
+                      <IconButton edge="end" onClick={() => setPendingDelete(expense)} aria-label="削除"><DeleteOutlineRoundedIcon /></IconButton>
+                    }>
+                      <ListItemButton onClick={() => startEdit(expense)} sx={{ pr: 7, py: 1.5 }}>
+                        <ListItemText
+                          primary={<Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}><Typography fontWeight={700} noWrap>{expense.title}</Typography><Typography fontWeight={700} color={isIncome ? 'success.main' : 'error.main'}>{isIncome ? '+' : '-'}{yen(expense.amountYen)}</Typography></Stack>}
+                          secondary={
+                            <Stack spacing={0.4} sx={{ mt: 0.5 }}>
+                              <Typography variant="body2" color="text.secondary">{isIncome ? '収入' : '支出'} ・ {expense.category} ・ {formatDate(expense.purchasedAtMillis)}</Typography>
+                              {!isIncome && <Typography variant="caption" color="text.secondary">決済: {s.paymentMethodName(expense.paymentMethodId)}</Typography>}
+                              {split > 0 && <Chip size="small" color="primary" variant="outlined" label={`自分の負担 ${yen(s.netAmount(expense))}（割り勘 ${yen(split)}）`} sx={{ alignSelf: 'flex-start' }} />}
+                            </Stack>
+                          }
+                        />
+                      </ListItemButton>
+                    </ListItem>
+                  </Stack>
+                )
+              })}
+            </List>
           </Card>
         </>
       )}
 
       {pendingDelete && (
         <Modal title="削除しますか？" onClose={() => setPendingDelete(null)}>
-          <p className="mb-4 text-sm text-ios-label2">
-            「{pendingDelete.title}」({yen(pendingDelete.amountYen)}) を削除します。
-          </p>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => setPendingDelete(null)}>
-              キャンセル
-            </Button>
-            <Button
-              color="var(--color-ios-red)"
-              onClick={async () => {
-                await s.deleteExpense(pendingDelete)
-                setPendingDelete(null)
-              }}
-            >
-              削除
-            </Button>
-          </div>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>「{pendingDelete.title}」（{yen(pendingDelete.amountYen)}）を削除します。</Typography>
+          <Stack direction="row" spacing={1.5}>
+            <Button variant="outline" onClick={() => setPendingDelete(null)}>キャンセル</Button>
+            <Button color="#D32F2F" onClick={async () => { await s.deleteExpense(pendingDelete); setPendingDelete(null) }}>削除</Button>
+          </Stack>
         </Modal>
       )}
-    </div>
+    </Screen>
   )
 }

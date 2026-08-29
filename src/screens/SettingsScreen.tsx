@@ -1,17 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
-import {
-  Button,
-  Card,
-  Divider,
-  Field,
-  LargeTitle,
-  Modal,
-  SectionHeader,
-  formatDateTime,
-} from '../components/ui'
+import ArrowDownwardRoundedIcon from '@mui/icons-material/ArrowDownwardRounded'
+import ArrowUpwardRoundedIcon from '@mui/icons-material/ArrowUpwardRounded'
+import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
+import DragIndicatorRoundedIcon from '@mui/icons-material/DragIndicatorRounded'
+import EditRoundedIcon from '@mui/icons-material/EditRounded'
+import PersonRoundedIcon from '@mui/icons-material/PersonRounded'
+import { Avatar, Box, Button as MuiButton, CardContent, Chip, IconButton, Stack, Typography } from '@mui/material'
+import { Button, Card, Divider, Field, LargeTitle, Modal, Screen, SectionHeader, formatDateTime } from '../components/ui'
+import { storageStatus } from '../offline'
 import { useStore } from '../store'
 import type { Category } from '../types'
-import { storageStatus } from '../offline'
 
 export function SettingsScreen() {
   const s = useStore()
@@ -21,16 +19,10 @@ export function SettingsScreen() {
   const [renameText, setRenameText] = useState('')
   const [dragIndex, setDragIndex] = useState<number | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
-  const [storage, setStorage] = useState<{
-    persisted: boolean
-    usageMb: number | null
-  } | null>(null)
-
-  useEffect(() => {
-    void storageStatus().then(setStorage)
-  }, [])
   const replaceRef = useRef(false)
+  const [storage, setStorage] = useState<{ persisted: boolean; usageMb: number | null } | null>(null)
 
+  useEffect(() => { void storageStatus().then(setStorage) }, [])
   const move = (from: number, to: number) => {
     if (from === to || to < 0 || to >= s.categories.length) return
     const next = [...s.categories]
@@ -40,294 +32,43 @@ export function SettingsScreen() {
   }
 
   return (
-    <div className="pb-6">
+    <Screen>
       <LargeTitle>設定</LargeTitle>
 
       <SectionHeader>アカウント・同期</SectionHeader>
-      <Card className="space-y-3 p-3">
-        {s.loggedIn && s.account ? (
-          <>
-            <div>
-              <div className="text-lg font-semibold">{s.account.nickname}</div>
-              <div className="text-[13px] text-ios-label2">
-                UID: {s.account.uid}
-              </div>
-              {s.account.email && (
-                <div className="text-[13px] text-ios-label2">
-                  {s.account.email}
-                </div>
-              )}
-              {s.account.phone && (
-                <div className="text-[13px] text-ios-label2">
-                  電話: {s.account.phone}
-                </div>
-              )}
-              <div className="text-[13px] text-ios-label2">
-                最終同期: {formatDateTime(s.lastSync)}
-              </div>
-              {s.hasPendingChanges && (
-                <div
-                  className="text-[13px]"
-                  style={{
-                    color: s.syncError
-                      ? 'var(--color-ios-red)'
-                      : 'var(--color-ios-orange)',
-                  }}
-                >
-                  {s.syncError
-                    ? '未同期の変更があります（接続を確認してください）'
-                    : '未同期の変更があります'}
-                </div>
-              )}
-            </div>
-            <Button disabled={s.syncing} onClick={() => s.syncNow()}>
-              {s.syncing ? '同期中…' : '今すぐ同期'}
-            </Button>
-            <button
-              className="w-full py-2 text-sm"
-              style={{ color: 'var(--color-ios-red)' }}
-              onClick={() => void s.logout()}
-            >
-              ログアウト
-            </button>
-            <button
-              className="w-full py-2 text-sm"
-              style={{ color: 'var(--color-ios-red)' }}
-              onClick={() => void s.logoutAll()}
-            >
-              すべての端末からログアウト
-            </button>
-          </>
-        ) : (
-          <>
-            <p className="text-sm text-ios-label2">
-              この端末のみでオフライン利用中です。
-            </p>
-            <Button onClick={s.backToAuth}>ログイン / 新規登録</Button>
-            <p className="text-xs text-ios-label2">
-              登録すると、今のデータもサーバーに同期され、他の端末からも使えます。
-            </p>
-          </>
-        )}
-      </Card>
+      <Card><CardContent>
+        {s.loggedIn && s.account ? <Stack spacing={2}>
+          <Stack direction="row" spacing={1.5} alignItems="center"><Avatar sx={{ bgcolor: 'primary.container', color: 'primary.main' }}><PersonRoundedIcon /></Avatar><Box><Typography variant="h6">{s.account.nickname}</Typography><Typography variant="caption" color="text.secondary">UID: {s.account.uid}</Typography></Box></Stack>
+          <Box>{s.account.email && <Typography variant="body2" color="text.secondary">{s.account.email}</Typography>}{s.account.phone && <Typography variant="body2" color="text.secondary">電話: {s.account.phone}</Typography>}<Typography variant="body2" color="text.secondary">最終同期: {formatDateTime(s.lastSync)}</Typography>{s.hasPendingChanges && <Chip size="small" color={s.syncError ? 'error' : 'warning'} label={s.syncError ? '未同期の変更があります（接続を確認してください）' : '未同期の変更があります'} sx={{ mt: 1 }} />}</Box>
+          <Button disabled={s.syncing} onClick={() => s.syncNow()}>{s.syncing ? '同期中…' : '今すぐ同期'}</Button>
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}><Button variant="text" onClick={() => void s.logout()} sx={{ color: 'error.main' }}>ログアウト</Button><Button variant="text" onClick={() => void s.logoutAll()} sx={{ color: 'error.main' }}>すべての端末からログアウト</Button></Stack>
+        </Stack> : <Stack spacing={2}><Typography variant="body2" color="text.secondary">この端末のみでオフライン利用中です。</Typography><Button onClick={s.backToAuth}>ログイン / 新規登録</Button><Typography variant="caption" color="text.secondary">登録すると、今のデータもサーバーに同期され、他の端末からも使えます。</Typography></Stack>}
+      </CardContent></Card>
 
       <SectionHeader>割り勘メンバー</SectionHeader>
-      <Card>
-        {s.members.length === 0 ? (
-          <p className="p-4 text-ios-label2">
-            メンバーがいません。下から追加してください。
-          </p>
-        ) : (
-          s.members.map((m, i) => (
-            <div key={m.id}>
-              {i > 0 && <Divider />}
-              <div className="flex items-center justify-between py-2 pr-2 pl-4">
-                <div>
-                  <div>{m.name}</div>
-                  {m.linkedUid && (
-                    <div className="text-xs text-ios-blue">アカウント連携済み</div>
-                  )}
-                </div>
-                <button
-                  className="px-2 py-2 text-ios-label2"
-                  onClick={() => s.deleteMember(m)}
-                  aria-label="削除"
-                >
-                  🗑
-                </button>
-              </div>
-            </div>
-          ))
-        )}
-      </Card>
-      <Card className="mt-2 flex items-center gap-2 p-3">
-        <div className="flex-1">
-          <Field
-            label="名前を追加"
-            value={newMember}
-            onChange={(e) => setNewMember(e.target.value)}
-            placeholder="相手のニックネームで連携"
-          />
-        </div>
-        <button
-          className="mt-5 rounded-xl bg-ios-blue px-4 py-2.5 font-semibold text-white"
-          onClick={async () => {
-            await s.addMember(newMember)
-            setNewMember('')
-          }}
-        >
-          追加
-        </button>
-      </Card>
-      <p className="px-5 py-1.5 text-xs text-ios-label2">
-        名前がアカウントのニックネームと一致すると自動で連携され、相手のアプリにも「払う分」が表示されます。
-      </p>
+      <Card>{s.members.length === 0 ? <EmptyText>メンバーがいません。下から追加してください。</EmptyText> : s.members.map((member, index) => <Box key={member.id}>{index > 0 && <Divider />}<Stack direction="row" alignItems="center" sx={{ pl: 2, pr: 1, py: 1.25 }}><Box sx={{ flex: 1 }}><Typography>{member.name}</Typography>{member.linkedUid && <Chip size="small" color="primary" variant="outlined" label="アカウント連携済み" sx={{ mt: 0.5 }} />}</Box><IconButton aria-label="削除" onClick={() => s.deleteMember(member)}><DeleteOutlineRoundedIcon /></IconButton></Stack></Box>)}</Card>
+      <Card sx={{ mt: 1.5 }}><CardContent><Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems={{ sm: 'center' }}><Field label="名前を追加" value={newMember} onChange={(event) => setNewMember(event.target.value)} placeholder="相手のニックネームで連携" /><Button onClick={async () => { await s.addMember(newMember); setNewMember('') }} sx={{ width: { sm: 'auto' }, flexShrink: 0 }}>追加</Button></Stack></CardContent></Card>
+      <HelpText>名前がアカウントのニックネームと一致すると自動で連携され、相手のアプリにも「払う分」が表示されます。</HelpText>
 
       <SectionHeader>品目（ドラッグで並び替え）</SectionHeader>
-      <Card>
-        {s.categories.map((c, i) => (
-          <div
-            key={c.id}
-            draggable
-            onDragStart={() => setDragIndex(i)}
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={() => {
-              if (dragIndex !== null) move(dragIndex, i)
-              setDragIndex(null)
-            }}
-            className={dragIndex === i ? 'opacity-50' : ''}
-          >
-            {i > 0 && <Divider />}
-            <div className="flex items-center gap-1 py-2 pr-2 pl-3">
-              <span className="cursor-grab px-1 text-ios-label2 select-none">
-                ☰
-              </span>
-              <span className="flex-1">{c.name}</span>
-              <button
-                className="px-1 text-lg text-ios-blue disabled:opacity-30"
-                disabled={i === 0}
-                onClick={() => move(i, i - 1)}
-                aria-label="上へ"
-              >
-                ↑
-              </button>
-              <button
-                className="px-1 text-lg text-ios-blue disabled:opacity-30"
-                disabled={i === s.categories.length - 1}
-                onClick={() => move(i, i + 1)}
-                aria-label="下へ"
-              >
-                ↓
-              </button>
-              <button
-                className="px-2 text-sm text-ios-blue"
-                onClick={() => {
-                  setRenameTarget(c)
-                  setRenameText(c.name)
-                }}
-              >
-                編集
-              </button>
-              <button
-                className="px-2 py-2 text-ios-label2"
-                onClick={() => s.deleteCategory(c)}
-                aria-label="削除"
-              >
-                🗑
-              </button>
-            </div>
-          </div>
-        ))}
-      </Card>
-      <Card className="mt-2 flex items-center gap-2 p-3">
-        <div className="flex-1">
-          <Field
-            label="品目を追加"
-            value={newCategory}
-            onChange={(e) => setNewCategory(e.target.value)}
-          />
-        </div>
-        <button
-          className="mt-5 rounded-xl bg-ios-blue px-4 py-2.5 font-semibold text-white"
-          onClick={async () => {
-            await s.addCategory(newCategory)
-            setNewCategory('')
-          }}
-        >
-          追加
-        </button>
-      </Card>
+      <Card>{s.categories.map((category, index) => <Box key={category.id} draggable onDragStart={() => setDragIndex(index)} onDragOver={(event) => event.preventDefault()} onDrop={() => { if (dragIndex !== null) move(dragIndex, index); setDragIndex(null) }} sx={{ opacity: dragIndex === index ? 0.5 : 1 }}>{index > 0 && <Divider />}<Stack direction="row" alignItems="center" spacing={0.25} sx={{ px: 0.75, py: 0.75 }}><DragIndicatorRoundedIcon color="disabled" sx={{ cursor: 'grab' }} /><Typography sx={{ flex: 1, ml: 0.5 }}>{category.name}</Typography><IconButton size="small" color="primary" disabled={index === 0} onClick={() => move(index, index - 1)} aria-label="上へ"><ArrowUpwardRoundedIcon /></IconButton><IconButton size="small" color="primary" disabled={index === s.categories.length - 1} onClick={() => move(index, index + 1)} aria-label="下へ"><ArrowDownwardRoundedIcon /></IconButton><IconButton size="small" color="primary" onClick={() => { setRenameTarget(category); setRenameText(category.name) }} aria-label="編集"><EditRoundedIcon /></IconButton><IconButton size="small" onClick={() => s.deleteCategory(category)} aria-label="削除"><DeleteOutlineRoundedIcon /></IconButton></Stack></Box>)}</Card>
+      <Card sx={{ mt: 1.5 }}><CardContent><Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems={{ sm: 'center' }}><Field label="品目を追加" value={newCategory} onChange={(event) => setNewCategory(event.target.value)} /><Button onClick={async () => { await s.addCategory(newCategory); setNewCategory('') }} sx={{ width: { sm: 'auto' }, flexShrink: 0 }}>追加</Button></Stack></CardContent></Card>
 
       <SectionHeader>この端末の保存状態</SectionHeader>
-      <Card className="p-4 text-sm">
-        <p className="text-ios-label2">
-          記録はこの端末の中にも保存されるので、サーバーが止まっていても使えます。
-        </p>
-        {storage && (
-          <>
-            <div className="mt-3 flex justify-between">
-              <span className="text-ios-label2">自動削除</span>
-              <span>
-                {storage.persisted ? 'されません（永続）' : '空き容量が減るとあり得ます'}
-              </span>
-            </div>
-            {storage.usageMb != null && (
-              <div className="mt-1 flex justify-between">
-                <span className="text-ios-label2">使用容量</span>
-                <span>{storage.usageMb} MB</span>
-              </div>
-            )}
-          </>
-        )}
-        <p className="mt-3 text-xs text-ios-label2">
-          ホーム画面に追加しておくと、より確実に残り、アプリのように起動できます。
-        </p>
-      </Card>
+      <Card><CardContent>
+        <Typography variant="body2" color="text.secondary">記録はこの端末の中にも保存されるので、サーバーが止まっていても使えます。</Typography>
+        {storage && <Stack spacing={1} sx={{ mt: 2 }}><Stack direction="row" justifyContent="space-between" spacing={2}><Typography variant="body2" color="text.secondary">自動削除</Typography><Typography variant="body2" textAlign="right">{storage.persisted ? 'されません（永続）' : '空き容量が減るとあり得ます'}</Typography></Stack>{storage.usageMb != null && <Stack direction="row" justifyContent="space-between"><Typography variant="body2" color="text.secondary">使用容量</Typography><Typography variant="body2">{storage.usageMb} MB</Typography></Stack>}</Stack>}
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 2 }}>ホーム画面に追加しておくと、より確実に残り、アプリのように起動できます。</Typography>
+      </CardContent></Card>
 
       <SectionHeader>データ（収入・支出のバックアップ）</SectionHeader>
-      <Card>
-        <button
-          className="w-full px-4 py-4 text-left text-ios-blue"
-          onClick={s.exportJson}
-        >
-          JSONファイルにエクスポート
-        </button>
-        <Divider />
-        <button
-          className="w-full px-4 py-4 text-left text-ios-blue"
-          onClick={() => {
-            replaceRef.current = false
-            fileRef.current?.click()
-          }}
-        >
-          インポート（追加）
-        </button>
-        <Divider />
-        <button
-          className="w-full px-4 py-4 text-left text-ios-blue"
-          onClick={() => {
-            replaceRef.current = true
-            fileRef.current?.click()
-          }}
-        >
-          インポート（全置換）
-        </button>
-      </Card>
-      <input
-        ref={fileRef}
-        type="file"
-        accept="application/json"
-        hidden
-        onChange={async (e) => {
-          const f = e.target.files?.[0]
-          if (f) await s.importJson(f, replaceRef.current)
-          e.target.value = ''
-        }}
-      />
+      <Card><MuiButton fullWidth sx={{ justifyContent: 'flex-start', px: 2, py: 1.75 }} onClick={s.exportJson}>JSONファイルにエクスポート</MuiButton><Divider /><MuiButton fullWidth sx={{ justifyContent: 'flex-start', px: 2, py: 1.75 }} onClick={() => { replaceRef.current = false; fileRef.current?.click() }}>インポート（追加）</MuiButton><Divider /><MuiButton fullWidth sx={{ justifyContent: 'flex-start', px: 2, py: 1.75 }} onClick={() => { replaceRef.current = true; fileRef.current?.click() }}>インポート（全置換）</MuiButton></Card>
+      <input ref={fileRef} type="file" accept="application/json" hidden onChange={async (event) => { const file = event.target.files?.[0]; if (file) await s.importJson(file, replaceRef.current); event.target.value = '' }} />
 
-      {renameTarget && (
-        <Modal title="品目の名前を変更" onClose={() => setRenameTarget(null)}>
-          <Field
-            label="名前"
-            autoFocus
-            value={renameText}
-            onChange={(e) => setRenameText(e.target.value)}
-          />
-          <div className="mt-4 flex gap-2">
-            <Button variant="outline" onClick={() => setRenameTarget(null)}>
-              キャンセル
-            </Button>
-            <Button
-              onClick={async () => {
-                await s.renameCategory(renameTarget, renameText)
-                setRenameTarget(null)
-              }}
-            >
-              保存
-            </Button>
-          </div>
-        </Modal>
-      )}
-    </div>
+      {renameTarget && <Modal title="品目の名前を変更" onClose={() => setRenameTarget(null)}><Field label="名前" autoFocus value={renameText} onChange={(event) => setRenameText(event.target.value)} /><Stack direction="row" spacing={1.5} sx={{ mt: 3 }}><Button variant="outline" onClick={() => setRenameTarget(null)}>キャンセル</Button><Button onClick={async () => { await s.renameCategory(renameTarget, renameText); setRenameTarget(null) }}>保存</Button></Stack></Modal>}
+    </Screen>
   )
 }
+
+function EmptyText({ children }: { children: React.ReactNode }) { return <Typography color="text.secondary" sx={{ p: 2 }}>{children}</Typography> }
+function HelpText({ children }: { children: React.ReactNode }) { return <Typography variant="caption" color="text.secondary" sx={{ display: 'block', px: 0.5, py: 1 }}>{children}</Typography> }

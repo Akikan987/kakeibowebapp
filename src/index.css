@@ -1,20 +1,5 @@
 @import "tailwindcss";
 
-@theme {
-  /* iOS 風パレット */
-  --color-ios-blue: #007aff;
-  --color-ios-green: #34c759;
-  --color-ios-red: #ff3b30;
-  --color-ios-orange: #ff9500;
-  --color-ios-purple: #af52de;
-  --color-ios-teal: #5ac8fa;
-  --color-ios-bg: #f2f2f7;
-  --color-ios-card: #ffffff;
-  --color-ios-label: #1c1c1e;
-  --color-ios-label2: #8e8e93;
-  --color-ios-sep: #e5e5ea;
-}
-
 html,
 body,
 #root {
@@ -23,11 +8,6 @@ body,
 
 body {
   margin: 0;
-  background: var(--color-ios-bg);
-  color: var(--color-ios-label);
-  font-family:
-    -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP",
-    "Segoe UI", Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
   overscroll-behavior-y: none;
 }

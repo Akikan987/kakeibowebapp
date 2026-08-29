@@ -1,63 +1,64 @@
 import { useState } from 'react'
+import { Box, Stack, Typography, useTheme } from '@mui/material'
 import { yen } from './ui'
 
-const COLORS = [
-  '#007aff',
-  '#34c759',
-  '#ff9500',
-  '#ff2d55',
-  '#af52de',
-  '#5ac8fa',
-]
+const COLORS = ['#1565C0', '#2E7D32', '#ED6C02', '#D32F2F', '#7B1FA2', '#00838F']
 
-/** 支出のカテゴリ別（品目別）棒グラフ */
 export function CategoryChart({
   data,
 }: {
   data: { name: string; total: number }[]
 }) {
   if (data.length === 0)
-    return <p className="p-4 text-ios-label2">支出データなし</p>
-  const max = Math.max(...data.map((d) => d.total))
+    return <Typography color="text.secondary">支出データなし</Typography>
+  const max = Math.max(...data.map((item) => item.total))
 
   return (
-    <div className="p-4">
-      {/* 棒は高さを%で指定するため、高さの決まった親の直接の子にする */}
-      <div className="flex h-52 items-end gap-2 pt-5">
-        {data.map((d, i) => (
-          <div
-            key={d.name}
-            className="relative min-h-[3px] flex-1 rounded-t-md"
-            style={{
-              height: `${Math.max(2, (d.total / max) * 100)}%`,
-              background: COLORS[i % COLORS.length],
+    <Box>
+      <Stack direction="row" alignItems="flex-end" spacing={1} sx={{ height: 220, pt: 3 }}>
+        {data.map((item, index) => (
+          <Box
+            key={item.name}
+            sx={{
+              position: 'relative',
+              flex: 1,
+              minWidth: 0,
+              minHeight: 4,
+              height: `${Math.max(2, (item.total / max) * 100)}%`,
+              bgcolor: COLORS[index % COLORS.length],
+              borderRadius: '8px 8px 2px 2px',
             }}
           >
-            <span className="absolute -top-5 right-0 left-0 text-center text-[10px] text-ios-label2">
-              {d.total.toLocaleString()}
-            </span>
-          </div>
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{
+                position: 'absolute',
+                top: -23,
+                left: '50%',
+                transform: 'translateX(-50%)',
+                whiteSpace: 'nowrap',
+                fontSize: 10,
+              }}
+            >
+              {item.total.toLocaleString()}
+            </Typography>
+          </Box>
         ))}
-      </div>
-      <ul className="mt-3 space-y-1.5">
-        {data.map((d, i) => (
-          <li key={d.name} className="flex items-center justify-between">
-            <span className="flex items-center gap-2">
-              <span
-                className="inline-block size-2.5 rounded-full"
-                style={{ background: COLORS[i % COLORS.length] }}
-              />
-              {d.name}
-            </span>
-            <span className="font-medium">{yen(d.total)}</span>
-          </li>
+      </Stack>
+      <Stack spacing={1.25} sx={{ mt: 2 }}>
+        {data.map((item, index) => (
+          <Stack key={item.name} direction="row" alignItems="center" spacing={1}>
+            <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: COLORS[index % COLORS.length] }} />
+            <Typography sx={{ flex: 1 }}>{item.name}</Typography>
+            <Typography fontWeight={700}>{yen(item.total)}</Typography>
+          </Stack>
         ))}
-      </ul>
-    </div>
+      </Stack>
+    </Box>
   )
 }
 
-/** 支出の日付別棒グラフ。日をタップするとその日の金額を表示する */
 export function DailyChart({
   data,
   daysInMonth,
@@ -65,69 +66,78 @@ export function DailyChart({
   data: Map<number, number>
   daysInMonth: number
 }) {
+  const theme = useTheme()
   const [selected, setSelected] = useState<number | null>(null)
 
   if (data.size === 0)
-    return <p className="p-4 text-ios-label2">支出データなし</p>
+    return <Typography color="text.secondary">支出データなし</Typography>
 
   const max = Math.max(...data.values())
   const top = [...data.entries()].sort((a, b) => b[1] - a[1])[0]
-  const days = Array.from({ length: daysInMonth }, (_, i) => i + 1)
+  const days = Array.from({ length: daysInMonth }, (_, index) => index + 1)
 
   return (
-    <div className="p-4">
-      <div className="flex h-44 items-end gap-px">
+    <Box>
+      <Stack direction="row" alignItems="flex-end" spacing="2px" sx={{ height: 180 }}>
         {days.map((day) => {
-          const v = data.get(day) ?? 0
+          const value = data.get(day) ?? 0
           const isSelected = selected === day
           return (
-            <button
+            <Box
+              component="button"
               key={day}
               type="button"
               onClick={() => setSelected(isSelected ? null : day)}
-              className="flex h-full flex-1 items-end"
-              aria-label={`${day}日 ${yen(v)}`}
+              aria-label={`${day}日 ${yen(value)}`}
+              sx={{
+                appearance: 'none',
+                border: 0,
+                p: 0,
+                bgcolor: 'transparent',
+                height: '100%',
+                flex: 1,
+                display: 'flex',
+                alignItems: 'flex-end',
+                cursor: 'pointer',
+              }}
             >
-              <div
-                className="w-full rounded-t-sm transition-colors"
-                style={{
-                  height: v > 0 ? `${Math.max(2, (v / max) * 100)}%` : '2px',
-                  background: isSelected
-                    ? 'var(--color-ios-orange)'
-                    : v > 0
-                      ? 'var(--color-ios-blue)'
-                      : 'var(--color-ios-sep)',
+              <Box
+                sx={{
+                  width: '100%',
+                  minHeight: 2,
+                  height: value > 0 ? `${Math.max(2, (value / max) * 100)}%` : 2,
+                  bgcolor: isSelected
+                    ? 'warning.main'
+                    : value > 0
+                      ? 'primary.main'
+                      : 'divider',
+                  borderRadius: '4px 4px 0 0',
+                  transition: theme.transitions.create(['height', 'background-color']),
                 }}
               />
-            </button>
+            </Box>
           )
         })}
-      </div>
-      <div className="mt-1 flex justify-between text-xs text-ios-label2">
-        <span>1日</span>
-        <span>{daysInMonth}日</span>
-      </div>
-
+      </Stack>
+      <Stack direction="row" justifyContent="space-between" sx={{ mt: 0.5 }}>
+        <Typography variant="caption" color="text.secondary">1日</Typography>
+        <Typography variant="caption" color="text.secondary">{daysInMonth}日</Typography>
+      </Stack>
       {top && (
-        <p className="mt-2 text-[13px] text-ios-label2">
-          最も使った日: {top[0]}日 ({yen(top[1])})
-        </p>
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5 }}>
+          最も使った日: {top[0]}日（{yen(top[1])}）
+        </Typography>
       )}
-      {selected !== null && (
-        <p className="mt-1 text-[13px] font-medium">
-          <span style={{ color: 'var(--color-ios-orange)' }}>
-            {selected}日: {yen(data.get(selected) ?? 0)}
-          </span>
-          {(data.get(selected) ?? 0) === 0 && (
-            <span className="ml-1 text-ios-label2">（支出なし）</span>
-          )}
-        </p>
-      )}
-      {selected === null && (
-        <p className="mt-1 text-xs text-ios-label2">
+      {selected !== null ? (
+        <Typography variant="body2" color="warning.main" fontWeight={700} sx={{ mt: 0.5 }}>
+          {selected}日: {yen(data.get(selected) ?? 0)}
+          {(data.get(selected) ?? 0) === 0 && '（支出なし）'}
+        </Typography>
+      ) : (
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
           棒をタップすると、その日の金額が出ます。
-        </p>
+        </Typography>
       )}
-    </div>
+    </Box>
   )
 }
