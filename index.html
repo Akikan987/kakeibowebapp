@@ -3,14 +3,26 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1" />
-    <meta name="theme-color" content="#F2F2F7" />
+    <meta name="theme-color" content="#F7F9FC" />
     <meta name="description" content="収入と支出を記録して、割り勘もできる家計簿アプリ" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="家計簿" />
     <link rel="icon" href="/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <title>家計簿</title>
+    <script>
+      (() => {
+        const saved = localStorage.getItem('kakeibo.theme')
+        const dark =
+          saved === 'dark' ||
+          (saved !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches)
+        const background = dark ? '#101418' : '#F7F9FC'
+        document.querySelector('meta[name="theme-color"]').content = background
+        document.documentElement.style.colorScheme = dark ? 'dark' : 'light'
+        document.documentElement.style.backgroundColor = background
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -60,6 +60,7 @@ interface AuthRaw {
   nickname: string
   email: string
   phone: string
+  avatar_data_url?: string
 }
 
 const toAccount = (r: AuthRaw): Account => ({
@@ -68,6 +69,7 @@ const toAccount = (r: AuthRaw): Account => ({
   nickname: r.nickname,
   email: r.email,
   phone: r.phone,
+  avatarDataUrl: r.avatar_data_url ?? '',
 })
 
 export const apiRegister = async (
@@ -115,6 +117,15 @@ export const apiLogout = (token: string) =>
 
 export const apiLogoutAll = (token: string) =>
   request<{ ok: boolean }>('/auth/logout-all', { method: 'POST', token })
+
+export const apiUpdateAvatar = async (token: string, avatarDataUrl: string) => {
+  const profile = await request<AuthRaw>('/auth/profile/avatar', {
+    method: 'PUT',
+    token,
+    body: { avatar_data_url: avatarDataUrl },
+  })
+  return profile.avatar_data_url ?? ''
+}
 
 export const apiSearchUser = (token: string, nickname: string) =>
   request<{ found: boolean; uid: string; nickname: string }>(

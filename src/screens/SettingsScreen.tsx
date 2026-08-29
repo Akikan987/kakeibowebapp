@@ -2,23 +2,31 @@ import { useEffect, useRef, useState } from 'react'
 import ArrowDownwardRoundedIcon from '@mui/icons-material/ArrowDownwardRounded'
 import ArrowUpwardRoundedIcon from '@mui/icons-material/ArrowUpwardRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
+import DarkModeRoundedIcon from '@mui/icons-material/DarkModeRounded'
 import DragIndicatorRoundedIcon from '@mui/icons-material/DragIndicatorRounded'
 import EditRoundedIcon from '@mui/icons-material/EditRounded'
+import LightModeRoundedIcon from '@mui/icons-material/LightModeRounded'
 import PersonRoundedIcon from '@mui/icons-material/PersonRounded'
-import { Avatar, Box, Button as MuiButton, CardContent, Chip, IconButton, Stack, Typography } from '@mui/material'
+import PhotoCameraRoundedIcon from '@mui/icons-material/PhotoCameraRounded'
+import SettingsBrightnessRoundedIcon from '@mui/icons-material/SettingsBrightnessRounded'
+import { Avatar, Box, Button as MuiButton, CardContent, Chip, IconButton, Stack, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material'
 import { Button, Card, Divider, Field, LargeTitle, Modal, Screen, SectionHeader, formatDateTime } from '../components/ui'
 import { storageStatus } from '../offline'
 import { useStore } from '../store'
 import type { Category } from '../types'
+import { useAppTheme, type AppThemeMode } from '../theme'
 
 export function SettingsScreen() {
   const s = useStore()
+  const appTheme = useAppTheme()
   const [newMember, setNewMember] = useState('')
   const [newCategory, setNewCategory] = useState('')
   const [renameTarget, setRenameTarget] = useState<Category | null>(null)
   const [renameText, setRenameText] = useState('')
   const [dragIndex, setDragIndex] = useState<number | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+  const avatarRef = useRef<HTMLInputElement>(null)
+  const [avatarBusy, setAvatarBusy] = useState(false)
   const replaceRef = useRef(false)
   const [storage, setStorage] = useState<{ persisted: boolean; usageMb: number | null } | null>(null)
 
@@ -35,10 +43,68 @@ export function SettingsScreen() {
     <Screen>
       <LargeTitle>設定</LargeTitle>
 
+      <SectionHeader>表示テーマ</SectionHeader>
+      <Card><CardContent>
+        <ToggleButtonGroup
+          exclusive
+          fullWidth
+          value={appTheme.mode}
+          onChange={(_, value: AppThemeMode | null) => {
+            if (value) appTheme.setMode(value)
+          }}
+          aria-label="表示テーマ"
+        >
+          <ToggleButton value="system" aria-label="端末に合わせる">
+            <Stack alignItems="center" spacing={0.5}>
+              <SettingsBrightnessRoundedIcon />
+              <Typography variant="caption">自動</Typography>
+            </Stack>
+          </ToggleButton>
+          <ToggleButton value="light" aria-label="ライト">
+            <Stack alignItems="center" spacing={0.5}>
+              <LightModeRoundedIcon />
+              <Typography variant="caption">ライト</Typography>
+            </Stack>
+          </ToggleButton>
+          <ToggleButton value="dark" aria-label="ダーク">
+            <Stack alignItems="center" spacing={0.5}>
+              <DarkModeRoundedIcon />
+              <Typography variant="caption">ダーク</Typography>
+            </Stack>
+          </ToggleButton>
+        </ToggleButtonGroup>
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5 }}>
+          現在は{appTheme.resolvedMode === 'dark' ? 'ダーク' : 'ライト'}表示です。上部のステータスバーにも反映されます。
+        </Typography>
+      </CardContent></Card>
+
       <SectionHeader>アカウント・同期</SectionHeader>
       <Card><CardContent>
         {s.loggedIn && s.account ? <Stack spacing={2}>
-          <Stack direction="row" spacing={1.5} alignItems="center"><Avatar sx={{ bgcolor: 'primary.container', color: 'primary.main' }}><PersonRoundedIcon /></Avatar><Box><Typography variant="h6">{s.account.nickname}</Typography><Typography variant="caption" color="text.secondary">UID: {s.account.uid}</Typography></Box></Stack>
+          <Stack direction="row" spacing={2} alignItems="center">
+            <Avatar src={s.account.avatarDataUrl || undefined} alt={`${s.account.nickname}のプロフィール画像`} sx={{ width: 72, height: 72, bgcolor: 'action.selected', color: 'primary.main' }}><PersonRoundedIcon sx={{ fontSize: 38 }} /></Avatar>
+            <Box sx={{ minWidth: 0, flex: 1 }}>
+              <Typography variant="h6" noWrap>{s.account.nickname}</Typography>
+              <Typography variant="caption" color="text.secondary">UID: {s.account.uid}</Typography>
+              <Stack direction="row" spacing={0.5} sx={{ mt: 0.75, flexWrap: 'wrap' }}>
+                <MuiButton size="small" variant="outlined" startIcon={<PhotoCameraRoundedIcon />} disabled={avatarBusy} onClick={() => avatarRef.current?.click()}>{avatarBusy ? '変更中…' : '画像を変更'}</MuiButton>
+                {s.account.avatarDataUrl && <MuiButton size="small" color="error" disabled={avatarBusy} onClick={async () => { setAvatarBusy(true); try { await s.updateAvatar(null) } finally { setAvatarBusy(false) } }}>画像を削除</MuiButton>}
+              </Stack>
+            </Box>
+          </Stack>
+          <input
+            ref={avatarRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+            hidden
+            onChange={async (event) => {
+              const file = event.target.files?.[0]
+              event.target.value = ''
+              if (!file) return
+              setAvatarBusy(true)
+              try { await s.updateAvatar(file) } finally { setAvatarBusy(false) }
+            }}
+          />
           <Box>{s.account.email && <Typography variant="body2" color="text.secondary">{s.account.email}</Typography>}{s.account.phone && <Typography variant="body2" color="text.secondary">電話: {s.account.phone}</Typography>}<Typography variant="body2" color="text.secondary">最終同期: {formatDateTime(s.lastSync)}</Typography>{s.hasPendingChanges && <Chip size="small" color={s.syncError ? 'error' : 'warning'} label={s.syncError ? '未同期の変更があります（接続を確認してください）' : '未同期の変更があります'} sx={{ mt: 1 }} />}</Box>
           <Button disabled={s.syncing} onClick={() => s.syncNow()}>{s.syncing ? '同期中…' : '今すぐ同期'}</Button>
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}><Button variant="text" onClick={() => void s.logout()} sx={{ color: 'error.main' }}>ログアウト</Button><Button variant="text" onClick={() => void s.logoutAll()} sx={{ color: 'error.main' }}>すべての端末からログアウト</Button></Stack>

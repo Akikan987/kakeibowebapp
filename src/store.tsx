@@ -19,9 +19,11 @@ import {
   apiSearchUser,
   apiReadReceipt,
   apiSync,
+  apiUpdateAvatar,
   type OcrResult,
   type SyncTables,
 } from './api'
+import { prepareAvatar } from './avatar'
 import {
   activeCategories,
   activeExpenses,
@@ -71,7 +73,9 @@ const LS_DIRTY = 'kakeibo.syncPending'
 const readAccount = (): Account | null => {
   try {
     const raw = localStorage.getItem(LS_ACCOUNT)
-    return raw ? (JSON.parse(raw) as Account) : null
+    if (!raw) return null
+    const account = JSON.parse(raw) as Account
+    return { ...account, avatarDataUrl: account.avatarDataUrl ?? '' }
   } catch {
     return null
   }
@@ -175,6 +179,7 @@ interface Store {
   logout: () => Promise<void>
   logoutAll: () => Promise<void>
   syncNow: (showMessage?: boolean) => Promise<boolean>
+  updateAvatar: (file: File | null) => Promise<boolean>
   // 明細
   saveExpense: (draft: ExpenseDraft) => Promise<boolean>
   deleteExpense: (e: Expense) => Promise<void>
@@ -479,6 +484,35 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }
     },
     [applyLogin, notify],
+  )
+
+  const updateAvatar = useCallback(
+    async (file: File | null) => {
+      if (!account?.token) {
+        notify('プロフィール画像の変更にはログインが必要です', 'error')
+        return false
+      }
+      try {
+        const avatarDataUrl = file ? await prepareAvatar(file) : ''
+        const savedAvatar = await apiUpdateAvatar(account.token, avatarDataUrl)
+        const updatedAccount = { ...account, avatarDataUrl: savedAvatar }
+        localStorage.setItem(LS_ACCOUNT, JSON.stringify(updatedAccount))
+        setAccount(updatedAccount)
+        notify(file ? 'プロフィール画像を変更しました' : 'プロフィール画像を削除しました')
+        return true
+      } catch (err) {
+        notify(
+          err instanceof ApiError
+            ? err.detail || 'プロフィール画像を変更できませんでした'
+            : err instanceof Error
+              ? err.message
+              : 'プロフィール画像を変更できませんでした',
+          'error',
+        )
+        return false
+      }
+    },
+    [account, notify],
   )
 
   const requestReset = useCallback(
@@ -1335,6 +1369,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     logout,
     logoutAll,
     syncNow,
+    updateAvatar,
     saveExpense,
     deleteExpense,
     splitsOfExpense,

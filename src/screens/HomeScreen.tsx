@@ -1,6 +1,7 @@
 import ChevronLeftRoundedIcon from '@mui/icons-material/ChevronLeftRounded'
 import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded'
-import { Box, CardContent, IconButton, Stack, Typography } from '@mui/material'
+import PersonRoundedIcon from '@mui/icons-material/PersonRounded'
+import { Avatar, Box, CardContent, IconButton, Stack, Typography } from '@mui/material'
 import { CategoryChart, DailyChart } from '../components/Charts'
 import { Card, Divider, LargeTitle, Screen, SectionHeader, yen } from '../components/ui'
 import { useStore } from '../store'
@@ -22,7 +23,18 @@ export function HomeScreen() {
   return (
     <Screen>
       <LargeTitle>ホーム</LargeTitle>
-      {s.account && <Typography color="text.secondary">こんにちは、{s.account.nickname}さん</Typography>}
+      {s.account && (
+        <Stack direction="row" alignItems="center" spacing={1}>
+          <Avatar
+            src={s.account.avatarDataUrl || undefined}
+            alt=""
+            sx={{ width: 32, height: 32, bgcolor: 'action.selected', color: 'primary.main' }}
+          >
+            <PersonRoundedIcon fontSize="small" />
+          </Avatar>
+          <Typography color="text.secondary">こんにちは、{s.account.nickname}さん</Typography>
+        </Stack>
+      )}
 
       <Card sx={{ mt: 2 }}>
         <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ p: 0.5 }}>

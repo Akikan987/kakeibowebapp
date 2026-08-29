@@ -95,6 +95,7 @@ export interface Account {
   nickname: string
   email: string
   phone: string
+  avatarDataUrl: string
 }
 
 /** 他の人があなたに割り当てた「あなたが払う分」（サーバー計算） */
