@@ -34,9 +34,14 @@ export default defineConfig({
       workbox: {
         // アプリ本体（HTML/JS/CSS/アイコン）を端末に保存し、サーバーが止まっていても起動できるようにする
         globPatterns: ['**/*.{js,css,html,svg,png,webmanifest}'],
+        // 独立したPRページとSNS画像は容量が大きく、アプリ本体のオフライン起動には不要
+        globIgnores: ['pr/**/*', 'og.png'],
         // 未知のURLは index.html を返す（SPA）。ただしAPIは除く。
         navigateFallback: '/index.html',
-        navigateFallbackDenylist: [/^\/(auth|sync|users|ocr|health|docs|openapi\.json)/],
+        navigateFallbackDenylist: [
+          /^\/(auth|sync|users|ocr|health|docs|openapi\.json)/,
+          /^\/pr(?:\/|$)/,
+        ],
         // APIはキャッシュせず必ずサーバーへ（データの正はサーバーとIndexedDB）
         runtimeCaching: [
           {
