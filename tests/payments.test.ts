@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
+  cardWithdrawalsByDay,
   computeCardWithdrawals,
   computePrepaidBalances,
   expectedWithdrawalDate,
@@ -99,4 +100,24 @@ test('プリペイド残高はチャージ額から実際の利用額だけを�
     spent: 2_500,
     balance: 7_500,
   })
+})
+
+test('カード引き落としをカレンダーの日付ごとにまとめる', () => {
+  const card = method({ id: 'card', name: 'カード', type: 'credit', closingDay: 31, paymentDay: 27 })
+  const another = method({ id: 'another', name: '別カード', type: 'credit', closingDay: 31, paymentDay: 27 })
+  const withdrawals = computeCardWithdrawals(
+    [card, another],
+    [],
+    [
+      expense({ id: 'one', paymentMethodId: card.id, amountYen: 1_200 }),
+      expense({ id: 'two', paymentMethodId: another.id, amountYen: 3_400 }),
+    ],
+  )
+  const date = new Date(withdrawals[0].withdrawalAtMillis)
+  const grouped = cardWithdrawalsByDay(withdrawals, date.getFullYear(), date.getMonth())
+  assert.equal(grouped.get(date.getDate())?.length, 2)
+  assert.equal(
+    grouped.get(date.getDate())?.reduce((sum, item) => sum + item.amountYen, 0),
+    4_600,
+  )
 })

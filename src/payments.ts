@@ -136,3 +136,18 @@ export function computeCardWithdrawals(
       a.methodName.localeCompare(b.methodName),
   )
 }
+
+export function cardWithdrawalsByDay(
+  withdrawals: CardWithdrawal[],
+  year: number,
+  monthIndex: number,
+): Map<number, CardWithdrawal[]> {
+  const grouped = new Map<number, CardWithdrawal[]>()
+  for (const withdrawal of withdrawals) {
+    const date = new Date(withdrawal.withdrawalAtMillis)
+    if (date.getFullYear() !== year || date.getMonth() !== monthIndex) continue
+    const day = date.getDate()
+    grouped.set(day, [...(grouped.get(day) ?? []), withdrawal])
+  }
+  return grouped
+}

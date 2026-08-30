@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
+import ChevronLeftRoundedIcon from '@mui/icons-material/ChevronLeftRounded'
+import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import EditRoundedIcon from '@mui/icons-material/EditRounded'
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded'
@@ -21,8 +23,9 @@ import {
 import { CARD_PRESETS, findCardPresets, type CardPreset } from '../cardPresets'
 import { Button, Card, Divider, Field, LargeTitle, Modal, Screen, SectionHeader, fromLocalInput, toLocalInput, yen } from '../components/ui'
 import { DEFAULT_CASH_METHOD_ID, DEFAULT_OTHER_METHOD_ID } from '../db'
+import { cardWithdrawalsByDay } from '../payments'
 import { type PaymentMethodDraft, type PrepaidChargeDraft, useStore } from '../store'
-import { PAYMENT_TYPES, PAYMENT_TYPE_LABELS, now, type PaymentMethod, type PrepaidCharge } from '../types'
+import { PAYMENT_TYPES, PAYMENT_TYPE_LABELS, now, type CardWithdrawal, type PaymentMethod, type PrepaidCharge } from '../types'
 
 const emptyMethod = (): PaymentMethodDraft => ({ editingId: null, name: '', type: 'credit', closingDay: 31, paymentDay: 27 })
 const emptyCharge = (prepaidMethodId: string): PrepaidChargeDraft => ({ prepaidMethodId, fundingMethodId: '', amountYen: '', chargedAtMillis: now(), note: '' })
@@ -35,6 +38,9 @@ export function PaymentsScreen() {
   const [chargeDraft, setChargeDraft] = useState<PrepaidChargeDraft | null>(null)
   const [pendingMethodDelete, setPendingMethodDelete] = useState<PaymentMethod | null>(null)
   const [pendingChargeDelete, setPendingChargeDelete] = useState<PrepaidCharge | null>(null)
+  const today = new Date()
+  const [calendarMonth, setCalendarMonth] = useState(() => ({ year: today.getFullYear(), month: today.getMonth() }))
+  const [selectedCalendarDay, setSelectedCalendarDay] = useState<number | null>(null)
 
   const upcomingWithdrawals = useMemo(() => {
     const start = new Date()
@@ -43,11 +49,48 @@ export function PaymentsScreen() {
     return s.cardWithdrawals.filter((item) => item.withdrawalAtMillis >= start.getTime()).slice(0, 12)
   }, [s.cardWithdrawals])
   const prepaidMethods = s.paymentMethods.filter((method) => method.type === 'prepaid')
+  const calendarWithdrawals = useMemo(
+    () => cardWithdrawalsByDay(s.cardWithdrawals, calendarMonth.year, calendarMonth.month),
+    [calendarMonth, s.cardWithdrawals],
+  )
+  const selectedWithdrawals = selectedCalendarDay === null ? [] : calendarWithdrawals.get(selectedCalendarDay) ?? []
+  const moveCalendarMonth = (offset: number) => {
+    const moved = new Date(calendarMonth.year, calendarMonth.month + offset, 1)
+    setCalendarMonth({ year: moved.getFullYear(), month: moved.getMonth() })
+    setSelectedCalendarDay(null)
+  }
   const editMethod = (method: PaymentMethod) => setMethodDraft({ editingId: method.id, name: method.name, type: method.type, closingDay: method.closingDay || 31, paymentDay: method.paymentDay || 27 })
 
   return (
     <Screen>
       <LargeTitle>決済</LargeTitle>
+
+      <SectionHeader>引き落としカレンダー</SectionHeader>
+      <WithdrawalCalendar
+        year={calendarMonth.year}
+        month={calendarMonth.month}
+        withdrawals={calendarWithdrawals}
+        selectedDay={selectedCalendarDay}
+        onSelectDay={setSelectedCalendarDay}
+        onMoveMonth={moveCalendarMonth}
+      />
+      {selectedCalendarDay !== null && <Card sx={{ mt: 1.5 }}>
+        <Box sx={{ px: 2, py: 1.5 }}>
+          <Typography fontWeight={700}>{calendarMonth.month + 1}月{selectedCalendarDay}日の引き落とし</Typography>
+          {selectedWithdrawals.length === 0 ? (
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>この日の引き落とし予定はありません</Typography>
+          ) : selectedWithdrawals.map((item, index) => (
+            <Box key={item.methodId}>
+              {index > 0 && <Divider />}
+              <Stack direction="row" justifyContent="space-between" spacing={2} sx={{ py: 1 }}>
+                <Typography>{item.methodName}</Typography>
+                <Typography fontWeight={700} color="error.main">{yen(item.amountYen)}</Typography>
+              </Stack>
+            </Box>
+          ))}
+          {selectedWithdrawals.length > 0 && <Stack direction="row" justifyContent="space-between" sx={{ pt: 0.75 }}><Typography fontWeight={700}>合計</Typography><Typography fontWeight={700} color="error.main">{yen(selectedWithdrawals.reduce((sum, item) => sum + item.amountYen, 0))}</Typography></Stack>}
+        </Box>
+      </Card>}
 
       <SectionHeader>カードの引き落とし予定</SectionHeader>
       <Card>
@@ -113,6 +156,47 @@ export function PaymentsScreen() {
       {pendingChargeDelete && <ConfirmModal title="チャージ記録を取り消しますか？" description={`${yen(pendingChargeDelete.amountYen)}のチャージを取り消すと、残高とカード引落予定から除かれます。`} action="取り消す" onClose={() => setPendingChargeDelete(null)} onConfirm={async () => { await s.deletePrepaidCharge(pendingChargeDelete); setPendingChargeDelete(null) }} />}
     </Screen>
   )
+}
+
+function WithdrawalCalendar({ year, month, withdrawals, selectedDay, onSelectDay, onMoveMonth }: {
+  year: number
+  month: number
+  withdrawals: Map<number, CardWithdrawal[]>
+  selectedDay: number | null
+  onSelectDay: (day: number) => void
+  onMoveMonth: (offset: number) => void
+}) {
+  const daysInMonth = new Date(year, month + 1, 0).getDate()
+  const mondayOffset = (new Date(year, month, 1).getDay() + 6) % 7
+  const cells = [
+    ...Array.from({ length: mondayOffset }, () => null),
+    ...Array.from({ length: daysInMonth }, (_, index) => index + 1),
+  ]
+  return <Card>
+    <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ p: 0.75 }}>
+      <IconButton aria-label="カレンダーの前の月" onClick={() => onMoveMonth(-1)}><ChevronLeftRoundedIcon /></IconButton>
+      <Typography variant="h6">{year}年{month + 1}月</Typography>
+      <IconButton aria-label="カレンダーの次の月" onClick={() => onMoveMonth(1)}><ChevronRightRoundedIcon /></IconButton>
+    </Stack>
+    <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', px: 1, pb: 1.25 }}>
+      {['月', '火', '水', '木', '金', '土', '日'].map((label) => <Typography key={label} variant="caption" color="text.secondary" align="center" sx={{ py: 0.75 }}>{label}</Typography>)}
+      {cells.map((day, index) => {
+        if (day === null) return <Box key={`empty-${index}`} />
+        const items = withdrawals.get(day) ?? []
+        const total = items.reduce((sum, item) => sum + item.amountYen, 0)
+        return <MuiButton
+          key={day}
+          aria-label={`${month + 1}月${day}日${total > 0 ? ` 引き落とし${yen(total)}` : ''}`}
+          onClick={() => onSelectDay(day)}
+          variant={selectedDay === day ? 'contained' : 'text'}
+          sx={{ minWidth: 0, height: 58, px: 0.25, py: 0.5, borderRadius: 2, flexDirection: 'column', lineHeight: 1.1 }}
+        >
+          <Typography variant="body2" component="span">{day}</Typography>
+          {total > 0 && <Typography variant="caption" component="span" color={selectedDay === day ? 'inherit' : 'error.main'} sx={{ fontSize: '0.63rem', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis' }}>{yen(total)}</Typography>}
+        </MuiButton>
+      })}
+    </Box>
+  </Card>
 }
 
 function EmptyText({ children }: { children: React.ReactNode }) { return <Typography variant="body2" color="text.secondary" sx={{ p: 2 }}>{children}</Typography> }

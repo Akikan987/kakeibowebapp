@@ -125,6 +125,10 @@ export default function App() {
               setEditDraft(draft)
               setTab('add')
             }}
+            onDuplicate={(draft) => {
+              setEditDraft(draft)
+              setTab('add')
+            }}
           />
         )}
         {tab === 'add' && (
