@@ -94,6 +94,99 @@ export const CARD_PRESETS: CardPreset[] = [
     verifiedAt: '2026-08-29',
     note: 'クレジットモードは月末締め・翌月26日払い',
   },
+  {
+    id: 'rakuten-card',
+    name: '楽天カード',
+    issuer: '楽天カード',
+    aliases: [
+      '楽天',
+      'RAKUTEN CARD',
+      '楽天PINKカード',
+      '楽天ゴールドカード',
+      '楽天プレミアムカード',
+    ],
+    closingDay: 31,
+    paymentDay: 27,
+    officialUrl: 'https://www.rakuten-card.co.jp/support/start_guide/',
+    verifiedAt: '2026-08-30',
+    note: '月末締め・翌月27日払い',
+  },
+  {
+    id: 'paypay-card',
+    name: 'PayPayカード',
+    issuer: 'PayPayカード',
+    aliases: ['PayPay', 'PAYPAY CARD', 'PayPayカード ゴールド', 'PAYPAY GOLD'],
+    closingDay: 31,
+    paymentDay: 27,
+    officialUrl: 'https://www.paypay-card.co.jp/service/000173.html',
+    verifiedAt: '2026-08-30',
+    note: '月末締め・翌月27日払い',
+  },
+  {
+    id: 'd-card',
+    name: 'dカード',
+    issuer: 'NTTドコモ・フィナンシャルグループ',
+    aliases: [
+      'DOCOMO d CARD',
+      'dカード GOLD',
+      'dカード GOLD U',
+      'dカード PLATINUM',
+    ],
+    closingDay: 15,
+    paymentDay: 10,
+    officialUrl: 'https://dcard.docomo.ne.jp/st/attention/shiharai/index.html',
+    verifiedAt: '2026-08-30',
+    note: '毎月15日締め・翌月10日払い',
+  },
+  {
+    id: 'aeon-card',
+    name: 'イオンカード',
+    issuer: 'イオンフィナンシャルサービス',
+    aliases: [
+      'AEON CARD',
+      'イオンカード WAON一体型',
+      'イオンカードセレクト',
+    ],
+    closingDay: 10,
+    paymentDay: 2,
+    officialUrl: 'https://www.aeon.co.jp/inquiry/seikyu_kakunin/',
+    verifiedAt: '2026-08-30',
+    note: '毎月10日締め・翌月2日払い',
+  },
+  {
+    id: 'orico-card',
+    name: 'オリコカード',
+    issuer: 'オリエントコーポレーション',
+    aliases: [
+      'ORICO CARD',
+      'オリコ',
+      'オリコカード ザ ポイント',
+      'Orico Card THE POINT',
+    ],
+    closingDay: 31,
+    paymentDay: 27,
+    officialUrl: 'https://www.orico.co.jp/creditcard/service/shopping/',
+    verifiedAt: '2026-08-30',
+    note: '月末締め・翌月27日払い',
+  },
+  {
+    id: 'mufg-card',
+    name: '三菱UFJカード',
+    issuer: '三菱UFJニコス',
+    aliases: [
+      'MUFG CARD',
+      'MUFGカード',
+      '三菱UFJ',
+      '三菱UFJカード VIASO',
+      'VIASOカード',
+    ],
+    closingDay: 15,
+    paymentDay: 10,
+    officialUrl:
+      'https://faq.cr.mufg.jp/mufgcard/detail?category=142&id=331&site=NIX1EXYK',
+    verifiedAt: '2026-08-30',
+    note: '通常のショッピングは毎月15日締め・翌月10日払い（ETCは別日程）',
+  },
 ]
 
 export const normalizeCardName = (value: string) =>
@@ -108,7 +201,7 @@ const searchableNames = (preset: CardPreset) => [
   ...preset.aliases,
 ]
 
-export function findCardPresets(query: string, limit = 4): CardPreset[] {
+export function findCardPresets(query: string, limit = 10): CardPreset[] {
   const normalizedQuery = normalizeCardName(query)
   if (normalizedQuery.length < 2) return []
 

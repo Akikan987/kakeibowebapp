@@ -144,7 +144,7 @@ function PaymentMethodModal({ draft, onChange, onClose, onSave }: { draft: Payme
         <AccordionSummary expandIcon={<ExpandMoreRoundedIcon />}>
           <Box sx={{ minWidth: 0 }}>
             <Typography variant="body2" fontWeight={700}>
-              補助入力できるカード（{presetCandidates.length}件）
+              既存のカード（{presetCandidates.length}件）
             </Typography>
             <Typography variant="caption" color="text.secondary">
               {trimmedCardName.length < 2
