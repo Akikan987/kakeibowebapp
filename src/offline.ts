@@ -1,9 +1,8 @@
-import { registerSW } from 'virtual:pwa-register'
-
 type OfflineListener = () => void
 
 let updateAvailable = false
-let updateServiceWorker: ((reloadPage?: boolean) => Promise<void>) | null = null
+let waitingWorker: ServiceWorker | null = null
+let reloadingForUpdate = false
 const listeners = new Set<OfflineListener>()
 
 const notifyListeners = () => listeners.forEach((listener) => listener())
@@ -17,8 +16,16 @@ export const getAppUpdateAvailable = () => updateAvailable
 
 /** ダウンロード済みの新版へ切り替える。localStorageやIndexedDBには触れない。 */
 export async function applyAppUpdate() {
-  if (!updateServiceWorker) return
-  await updateServiceWorker(true)
+  waitingWorker?.postMessage({ type: 'SKIP_WAITING' })
+}
+
+const watchInstallingWorker = (worker: ServiceWorker) => {
+  worker.addEventListener('statechange', () => {
+    if (worker.state !== 'installed' || !navigator.serviceWorker.controller) return
+    waitingWorker = worker
+    updateAvailable = true
+    notifyListeners()
+  })
 }
 
 /**
@@ -50,26 +57,43 @@ export async function refreshAppShell() {
  * - 保存領域を「永続」に昇格させ、ブラウザの自動削除を受けにくくする
  */
 export function setupOffline() {
-  updateServiceWorker = registerSW({
-    immediate: true,
-    onRegisteredSW(_swUrl, registration) {
-      if (!registration) return
-      const check = () => {
-        if (navigator.onLine) void registration.update()
-      }
-      // 1時間ごと、およびアプリに戻ってきたタイミングで確認する
-      setInterval(check, 60 * 60 * 1000)
-      document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'visible') check()
+  if ('serviceWorker' in navigator && import.meta.env.PROD) {
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (reloadingForUpdate) return
+      reloadingForUpdate = true
+      window.location.reload()
+    })
+
+    void navigator.serviceWorker
+      .register(`/sw.js?v=${encodeURIComponent(__APP_BUILD_ID__)}`, {
+        scope: '/',
+        updateViaCache: 'none',
       })
-      window.addEventListener('online', check)
-    },
-    onNeedRefresh() {
-      // 入力中のデータを失わないよう、画面上で案内してから切り替える
-      updateAvailable = true
-      notifyListeners()
-    },
-  })
+      .then((registration) => {
+        if (registration.waiting && navigator.serviceWorker.controller) {
+          waitingWorker = registration.waiting
+          updateAvailable = true
+          notifyListeners()
+        }
+
+        registration.addEventListener('updatefound', () => {
+          if (registration.installing) watchInstallingWorker(registration.installing)
+        })
+
+        const check = () => {
+          if (navigator.onLine) void registration.update()
+        }
+        // 1時間ごと、およびアプリに戻ってきたタイミングで確認する
+        setInterval(check, 60 * 60 * 1000)
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState === 'visible') check()
+        })
+        window.addEventListener('online', check)
+      })
+      .catch(() => {
+        // オフライン起動時など、登録できない場合は次回起動時に再試行する
+      })
+  }
 
   // デプロイの境目で古い画面が削除済みの分割JSを要求した場合も、
   // ユーザーデータは残したままアプリ本体だけを取り直す。

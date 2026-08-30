@@ -3,13 +3,20 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
+const buildId = Date.now().toString(36)
+
 export default defineConfig({
+  define: {
+    __APP_BUILD_ID__: JSON.stringify(buildId),
+  },
   plugins: [
     react(),
     tailwindcss(),
     VitePWA({
       // 入力中に突然再読込しないよう、新版は画面上で案内してから切り替える
       registerType: 'prompt',
+      // Cloudflareに古いsw.jsが残っても、ビルド固有URLで必ず新版を確認する
+      injectRegister: false,
       includeAssets: ['icon.svg', 'apple-touch-icon.png'],
       manifest: {
         name: '家計簿',
