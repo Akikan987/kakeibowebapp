@@ -12,7 +12,7 @@ import PhotoCameraRoundedIcon from '@mui/icons-material/PhotoCameraRounded'
 import SettingsBrightnessRoundedIcon from '@mui/icons-material/SettingsBrightnessRounded'
 import { Avatar, Box, Button as MuiButton, CardContent, Chip, IconButton, Stack, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material'
 import { Button, Card, Divider, Field, LargeTitle, Modal, Screen, SectionHeader, formatDateTime } from '../components/ui'
-import { storageStatus } from '../offline'
+import { refreshAppShell, storageStatus } from '../offline'
 import { useStore } from '../store'
 import type { Category } from '../types'
 import { useAppTheme, type AppThemeMode } from '../theme'
@@ -41,6 +41,8 @@ export function SettingsScreen() {
   const [deleteBusy, setDeleteBusy] = useState(false)
   const replaceRef = useRef(false)
   const [storage, setStorage] = useState<{ persisted: boolean; usageMb: number | null } | null>(null)
+  const [appUpdateBusy, setAppUpdateBusy] = useState(false)
+  const [appUpdateError, setAppUpdateError] = useState('')
 
   useEffect(() => { void storageStatus().then(setStorage) }, [])
   const move = (from: number, to: number) => {
@@ -135,6 +137,27 @@ export function SettingsScreen() {
         <Typography variant="body2" color="text.secondary">記録はこの端末の中にも保存されるので、サーバーが止まっていても使えます。</Typography>
         {storage && <Stack spacing={1} sx={{ mt: 2 }}><Stack direction="row" justifyContent="space-between" spacing={2}><Typography variant="body2" color="text.secondary">自動削除</Typography><Typography variant="body2" textAlign="right">{storage.persisted ? 'されません（永続）' : '空き容量が減るとあり得ます'}</Typography></Stack>{storage.usageMb != null && <Stack direction="row" justifyContent="space-between"><Typography variant="body2" color="text.secondary">使用容量</Typography><Typography variant="body2">{storage.usageMb} MB</Typography></Stack>}</Stack>}
         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 2 }}>ホーム画面に追加しておくと、より確実に残り、アプリのように起動できます。</Typography>
+        <MuiButton
+          variant="outlined"
+          disabled={appUpdateBusy}
+          sx={{ mt: 2 }}
+          onClick={async () => {
+            setAppUpdateBusy(true)
+            setAppUpdateError('')
+            try {
+              await refreshAppShell()
+            } catch (error) {
+              setAppUpdateError(error instanceof Error ? error.message : '更新できませんでした')
+              setAppUpdateBusy(false)
+            }
+          }}
+        >
+          {appUpdateBusy ? '更新中…' : 'アプリを最新版に更新'}
+        </MuiButton>
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+          画面が古い・表示がおかしいときに、アプリ本体だけを再取得します。ログイン情報と家計簿データは削除しません。
+        </Typography>
+        {appUpdateError && <Typography variant="caption" color="error.main" sx={{ display: 'block', mt: 1 }}>{appUpdateError}</Typography>}
       </CardContent></Card>
 
       <SectionHeader>データ（収入・支出のバックアップ）</SectionHeader>

@@ -1,5 +1,48 @@
 import { registerSW } from 'virtual:pwa-register'
 
+type OfflineListener = () => void
+
+let updateAvailable = false
+let updateServiceWorker: ((reloadPage?: boolean) => Promise<void>) | null = null
+const listeners = new Set<OfflineListener>()
+
+const notifyListeners = () => listeners.forEach((listener) => listener())
+
+export const subscribeToAppUpdate = (listener: OfflineListener) => {
+  listeners.add(listener)
+  return () => listeners.delete(listener)
+}
+
+export const getAppUpdateAvailable = () => updateAvailable
+
+/** ダウンロード済みの新版へ切り替える。localStorageやIndexedDBには触れない。 */
+export async function applyAppUpdate() {
+  if (!updateServiceWorker) return
+  await updateServiceWorker(true)
+}
+
+/**
+ * 壊れたアプリ本体のキャッシュだけを捨てて再取得する。
+ * ログイン情報（localStorage）と家計簿データ（IndexedDB）は保持する。
+ */
+export async function refreshAppShell() {
+  if (!navigator.onLine) throw new Error('オフライン中は更新できません')
+
+  const registration = await navigator.serviceWorker?.getRegistration?.('/')
+  await registration?.unregister()
+
+  if ('caches' in window) {
+    const cacheNames = await caches.keys()
+    await Promise.all(
+      cacheNames
+        .filter((name) => name.startsWith('workbox-precache'))
+        .map((name) => caches.delete(name)),
+    )
+  }
+
+  window.location.reload()
+}
+
 /**
  * オフライン対応の初期化。
  * - Service Worker を登録し、アプリ本体を端末に保存する（サーバーが止まっていても起動できる）
@@ -7,7 +50,7 @@ import { registerSW } from 'virtual:pwa-register'
  * - 保存領域を「永続」に昇格させ、ブラウザの自動削除を受けにくくする
  */
 export function setupOffline() {
-  const updateSW = registerSW({
+  updateServiceWorker = registerSW({
     immediate: true,
     onRegisteredSW(_swUrl, registration) {
       if (!registration) return
@@ -22,9 +65,18 @@ export function setupOffline() {
       window.addEventListener('online', check)
     },
     onNeedRefresh() {
-      // 新しい版があればすぐ取り込む
-      void updateSW(true)
+      // 入力中のデータを失わないよう、画面上で案内してから切り替える
+      updateAvailable = true
+      notifyListeners()
     },
+  })
+
+  // デプロイの境目で古い画面が削除済みの分割JSを要求した場合も、
+  // ユーザーデータは残したままアプリ本体だけを取り直す。
+  window.addEventListener('vite:preloadError', (event) => {
+    if (!navigator.onLine) return
+    event.preventDefault()
+    void refreshAppShell()
   })
 
   // ブラウザによる自動削除を防ぐ（許可されるかは環境次第）
