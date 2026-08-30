@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import FilterListRoundedIcon from '@mui/icons-material/FilterListRounded'
@@ -52,6 +52,8 @@ const initialFilters: Filters = {
   splitOnly: false,
 }
 
+const PAGE_SIZE = 50
+
 export function ListScreen({ onEdit, onDuplicate }: {
   onEdit: (draft: ExpenseDraft) => void
   onDuplicate: (draft: ExpenseDraft) => void
@@ -59,6 +61,7 @@ export function ListScreen({ onEdit, onDuplicate }: {
   const s = useStore()
   const [pendingDelete, setPendingDelete] = useState<Expense | null>(null)
   const [filters, setFilters] = useState<Filters>(initialFilters)
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
 
   const categories = useMemo(
     () => [...new Set(s.expenses.map(({ category }) => category).filter(Boolean))]
@@ -84,6 +87,13 @@ export function ListScreen({ onEdit, onDuplicate }: {
       return true
     })
   }, [filters, s])
+  const visibleExpenses = filteredExpenses.slice(0, visibleCount)
+  const remainingCount = filteredExpenses.length - visibleExpenses.length
+
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE)
+  }, [filters])
+
   const activeFilterCount = Object.entries(filters)
     .filter(([, value]) => value !== '' && value !== false).length
 
@@ -169,13 +179,17 @@ export function ListScreen({ onEdit, onDuplicate }: {
         <Typography color="text.secondary" sx={{ mt: 2 }}>まだ明細がありません</Typography>
       ) : (
         <>
-          <SectionHeader>{filteredExpenses.length}件表示</SectionHeader>
+          <SectionHeader>
+            {remainingCount > 0
+              ? `${filteredExpenses.length}件中 ${visibleExpenses.length}件表示`
+              : `${filteredExpenses.length}件表示`}
+          </SectionHeader>
           <Card>
             {filteredExpenses.length === 0 ? (
               <Typography color="text.secondary" sx={{ p: 2 }}>条件に一致する明細はありません</Typography>
             ) : (
               <List disablePadding>
-                {filteredExpenses.map((expense, index) => {
+                {visibleExpenses.map((expense, index) => {
                   const isIncome = expense.type === TYPE_INCOME
                   const split = s.splitSumOf(expense.id)
                   return (
@@ -209,6 +223,15 @@ export function ListScreen({ onEdit, onDuplicate }: {
               </List>
             )}
           </Card>
+          {remainingCount > 0 && (
+            <Button
+              variant="outline"
+              sx={{ mt: 1.5 }}
+              onClick={() => setVisibleCount((count) => count + PAGE_SIZE)}
+            >
+              さらに表示（残り{remainingCount}件）
+            </Button>
+          )}
         </>
       )}
 

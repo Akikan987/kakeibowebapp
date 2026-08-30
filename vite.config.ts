@@ -9,6 +9,29 @@ export default defineConfig({
   define: {
     __APP_BUILD_ID__: JSON.stringify(buildId),
   },
+  build: {
+    rollupOptions: {
+      output: {
+        // アプリ更新のたびに巨大な共通ライブラリを取り直さないよう分離する
+        manualChunks(id) {
+          const path = id.replaceAll('\\', '/')
+          if (!path.includes('/node_modules/')) return undefined
+          if (
+            path.includes('/node_modules/react/') ||
+            path.includes('/node_modules/react-dom/') ||
+            path.includes('/node_modules/react-is/') ||
+            path.includes('/node_modules/scheduler/')
+          ) return 'react-vendor'
+          if (
+            path.includes('/node_modules/@mui/') ||
+            path.includes('/node_modules/@emotion/')
+          ) return 'mui-vendor'
+          if (path.includes('/node_modules/dexie/')) return 'storage-vendor'
+          return 'vendor'
+        },
+      },
+    },
+  },
   plugins: [
     react(),
     tailwindcss(),
