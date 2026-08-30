@@ -51,10 +51,38 @@ test('追加した主要カードの表記ゆれから公式プリセットを�
   )
 })
 
-test('既存カードは10件あり、IDと公式URLが重複しない', () => {
-  assert.equal(CARD_PRESETS.length, 10)
-  assert.equal(new Set(CARD_PRESETS.map(({ id }) => id)).size, 10)
-  assert.equal(new Set(CARD_PRESETS.map(({ officialUrl }) => officialUrl)).size, 10)
+test('追加10カードの表記ゆれから公式プリセットを見つける', () => {
+  assert.deepEqual(
+    [
+      first('Amazonプライムマスターカード'),
+      first('DINERS CLUB'),
+      first('ユーシーカード'),
+      first('JACCS CARD'),
+      first('セディナカード Jiyu!da!'),
+      first('ユーシーエスカード'),
+      first('7カードプラス'),
+      first('セゾンカードデジタル'),
+      findCardPresets('エポスカード').find(({ id }) => id === 'epos-card-27'),
+      findCardPresets('エポスカード').find(({ id }) => id === 'epos-card-4'),
+    ].map((preset) => [preset?.id, preset?.closingDay, preset?.paymentDay]),
+    [
+      ['amazon-mastercard', 31, 26],
+      ['diners-club-card', 15, 10],
+      ['uc-card', 10, 5],
+      ['jaccs-card', 31, 27],
+      ['cedyna-card', 31, 27],
+      ['ucs-card', 15, 10],
+      ['seven-card-plus', 15, 10],
+      ['saison-card-digital', 10, 4],
+      ['epos-card-27', 27, 27],
+      ['epos-card-4', 4, 4],
+    ],
+  )
+})
+
+test('既存カードは20件あり、IDが重複しない', () => {
+  assert.equal(CARD_PRESETS.length, 20)
+  assert.equal(new Set(CARD_PRESETS.map(({ id }) => id)).size, 20)
   assert.ok(CARD_PRESETS.every(({ officialUrl }) => officialUrl.startsWith('https://')))
 })
 
