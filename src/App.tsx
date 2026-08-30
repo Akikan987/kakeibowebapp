@@ -3,8 +3,9 @@ import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
 import CreditCardRoundedIcon from '@mui/icons-material/CreditCardRounded'
 import GroupsRoundedIcon from '@mui/icons-material/GroupsRounded'
-import HomeRoundedIcon from '@mui/icons-material/HomeRounded'
+import InsightsRoundedIcon from '@mui/icons-material/InsightsRounded'
 import ReceiptLongRoundedIcon from '@mui/icons-material/ReceiptLongRounded'
+import SavingsRoundedIcon from '@mui/icons-material/SavingsRounded'
 import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded'
 import {
   AppBar,
@@ -25,15 +26,25 @@ import { AuthScreen } from './screens/AuthScreen'
 import { HomeScreen } from './screens/HomeScreen'
 import { ListScreen } from './screens/ListScreen'
 import { PaymentsScreen } from './screens/PaymentsScreen'
+import { PlanningScreen } from './screens/PlanningScreen'
 import { SettingsScreen } from './screens/SettingsScreen'
 import { SplitScreen } from './screens/SplitScreen'
 import { useStore, type ExpenseDraft } from './store'
 
-type Tab = 'home' | 'list' | 'add' | 'payments' | 'split' | 'settings'
+type Tab = 'home' | 'planning' | 'list' | 'add' | 'payments' | 'split' | 'settings'
 type MainTab = Exclude<Tab, 'add' | 'settings'>
 
+const LAST_TAB_KEY = 'kakeibo:last-main-tab'
+const MAIN_TABS: MainTab[] = ['home', 'planning', 'list', 'payments', 'split']
+
+const readLastTab = (): MainTab => {
+  const saved = localStorage.getItem(LAST_TAB_KEY)
+  return MAIN_TABS.includes(saved as MainTab) ? (saved as MainTab) : 'home'
+}
+
 const TABS = [
-  { key: 'home', label: 'ホーム', icon: <HomeRoundedIcon /> },
+  { key: 'home', label: '収支', icon: <InsightsRoundedIcon /> },
+  { key: 'planning', label: '予算', icon: <SavingsRoundedIcon /> },
   { key: 'list', label: '履歴', icon: <ReceiptLongRoundedIcon /> },
   { key: 'payments', label: '決済', icon: <CreditCardRoundedIcon /> },
   { key: 'split', label: '割り勘', icon: <GroupsRoundedIcon /> },
@@ -41,8 +52,10 @@ const TABS = [
 
 export default function App() {
   const s = useStore()
-  const [tab, setTab] = useState<Tab>('home')
-  const [settingsReturnTab, setSettingsReturnTab] = useState<Exclude<Tab, 'settings'>>('home')
+  const initialTab = readLastTab()
+  const [tab, setTab] = useState<Tab>(initialTab)
+  const [settingsReturnTab, setSettingsReturnTab] = useState<Exclude<Tab, 'settings'>>(initialTab)
+  const [addReturnTab, setAddReturnTab] = useState<MainTab>(initialTab)
   const [editDraft, setEditDraft] = useState<ExpenseDraft | null>(null)
 
   const openSettings = () => {
@@ -55,6 +68,10 @@ export default function App() {
     const timer = setTimeout(s.clearMessage, 2800)
     return () => clearTimeout(timer)
   }, [s.message, s.clearMessage])
+
+  useEffect(() => {
+    if (MAIN_TABS.includes(tab as MainTab)) localStorage.setItem(LAST_TAB_KEY, tab)
+  }, [tab])
 
   if (!s.hasEntered) {
     return (
@@ -119,14 +136,17 @@ export default function App() {
 
       <Container component="main" maxWidth="sm" disableGutters>
         {tab === 'home' && <HomeScreen />}
+        {tab === 'planning' && <PlanningScreen />}
         {tab === 'list' && (
           <ListScreen
             onEdit={(draft) => {
               setEditDraft(draft)
+              setAddReturnTab('list')
               setTab('add')
             }}
             onDuplicate={(draft) => {
               setEditDraft(draft)
+              setAddReturnTab('list')
               setTab('add')
             }}
           />
@@ -136,7 +156,7 @@ export default function App() {
             initial={editDraft}
             onDone={() => {
               setEditDraft(null)
-              setTab('home')
+              setTab(addReturnTab)
             }}
           />
         )}
@@ -177,12 +197,13 @@ export default function App() {
               />
             ))}
           </BottomNavigation>
-          {tab !== 'settings' && <Fab
+          {MAIN_TABS.includes(tab as MainTab) && <Fab
             color="primary"
             size="medium"
             aria-label="収入・支出を追加"
             onClick={() => {
               setEditDraft(null)
+              setAddReturnTab(tab as MainTab)
               setTab('add')
             }}
             sx={{ position: 'absolute', right: 16, top: -56 }}

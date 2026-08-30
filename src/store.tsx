@@ -258,6 +258,7 @@ interface Store {
   readReceipt: (file: File) => Promise<OcrResult | null>
   // バックアップ
   exportJson: () => void
+  exportCsv: () => void
   importJson: (file: File, replace: boolean) => Promise<void>
 }
 
@@ -1350,6 +1351,37 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   // ---------------- バックアップ ----------------
 
+  const exportCsv = useCallback(() => {
+    const escape = (value: string | number) => {
+      const text = String(value)
+      return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
+    }
+    const methodNames = new Map(paymentMethods.map((method) => [method.id, method.name]))
+    const rows = [
+      ['日時', '種類', 'タイトル', '金額（円）', '品目', '決済方法'],
+      ...[...expenses]
+        .sort((a, b) => b.purchasedAtMillis - a.purchasedAtMillis)
+        .map((expense) => [
+          new Date(expense.purchasedAtMillis).toLocaleString('ja-JP'),
+          expense.type === TYPE_INCOME ? '収入' : '支出',
+          expense.title,
+          expense.amountYen,
+          expense.category,
+          methodNames.get(expense.paymentMethodId) ?? '',
+        ]),
+    ]
+    const csv = `\uFEFF${rows.map((row) => row.map(escape).join(',')).join('\r\n')}`
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+    const d = new Date()
+    const p = (n: number) => String(n).padStart(2, '0')
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = `kakeibo-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}.csv`
+    a.click()
+    URL.revokeObjectURL(a.href)
+    notify('CSVをエクスポートしました')
+  }, [expenses, notify, paymentMethods])
+
   const exportJson = useCallback(() => {
     const payload = {
       app: 'kakeibo',
@@ -1831,6 +1863,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     deleteCardStatement,
     readReceipt,
     exportJson,
+    exportCsv,
     importJson,
   }
 
