@@ -22,7 +22,9 @@ import {
 } from '@mui/material'
 import { Toast } from './components/ui'
 import { AuthScreen } from './screens/AuthScreen'
-import { useStore, type ExpenseDraft } from './store'
+import { clearAppShortcutFromUrl, parseAppShortcut } from './shortcuts'
+import { emptyDraft, useStore, type ExpenseDraft } from './store'
+import { TYPE_EXPENSE, TYPE_INCOME, now } from './types'
 
 const AddScreen = lazy(() => import('./screens/AddScreen').then((module) => ({ default: module.AddScreen })))
 const HomeScreen = lazy(() => import('./screens/HomeScreen').then((module) => ({ default: module.HomeScreen })))
@@ -53,11 +55,20 @@ const TABS = [
 
 export default function App() {
   const s = useStore()
-  const initialTab = readLastTab()
+  const lastTab = readLastTab()
+  const shortcut = parseAppShortcut(window.location.search)
+  const shortcutDraft = shortcut === 'add-expense' || shortcut === 'add-income'
+    ? {
+        ...emptyDraft(),
+        type: shortcut === 'add-income' ? TYPE_INCOME : TYPE_EXPENSE,
+        purchasedAtMillis: now(),
+      }
+    : null
+  const initialTab: Tab = shortcutDraft ? 'add' : shortcut === 'withdrawals' ? 'payments' : lastTab
   const [tab, setTab] = useState<Tab>(initialTab)
-  const [settingsReturnTab, setSettingsReturnTab] = useState<Exclude<Tab, 'settings'>>(initialTab)
-  const [addReturnTab, setAddReturnTab] = useState<MainTab>(initialTab)
-  const [editDraft, setEditDraft] = useState<ExpenseDraft | null>(null)
+  const [settingsReturnTab, setSettingsReturnTab] = useState<Exclude<Tab, 'settings'>>(shortcutDraft ? lastTab : initialTab)
+  const [addReturnTab, setAddReturnTab] = useState<MainTab>(lastTab)
+  const [editDraft, setEditDraft] = useState<ExpenseDraft | null>(shortcutDraft)
 
   const openSettings = () => {
     if (tab !== 'settings') setSettingsReturnTab(tab)
@@ -69,6 +80,10 @@ export default function App() {
     const timer = setTimeout(s.clearMessage, 2800)
     return () => clearTimeout(timer)
   }, [s.message, s.clearMessage])
+
+  useEffect(() => {
+    clearAppShortcutFromUrl()
+  }, [])
 
   useEffect(() => {
     if (MAIN_TABS.includes(tab as MainTab)) localStorage.setItem(LAST_TAB_KEY, tab)

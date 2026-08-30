@@ -51,6 +51,26 @@ export default defineConfig({
         display: 'standalone',
         background_color: '#F2F2F7',
         theme_color: '#F2F2F7',
+        shortcuts: [
+          {
+            name: '支出を追加',
+            short_name: '支出',
+            description: '支出入力画面を直接開きます',
+            url: '/?shortcut=add-expense',
+          },
+          {
+            name: '収入を追加',
+            short_name: '収入',
+            description: '収入入力画面を直接開きます',
+            url: '/?shortcut=add-income',
+          },
+          {
+            name: '引き落とし予定',
+            short_name: '引き落とし',
+            description: 'カードの引き落とし予定を確認します',
+            url: '/?shortcut=withdrawals',
+          },
+        ],
         icons: [
           { src: '/icon-192.png', sizes: '192x192', type: 'image/png' },
           { src: '/icon-512.png', sizes: '512x512', type: 'image/png' },
