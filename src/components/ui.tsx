@@ -78,13 +78,17 @@ export function Divider() {
 type FieldProps = {
   label: string
   sx?: SxProps<Theme>
+  error?: boolean
+  helperText?: ReactNode
 } & Omit<InputHTMLAttributes<HTMLInputElement>, 'size'>
 
-export function Field({ label, sx, ...props }: FieldProps) {
+export function Field({ label, sx, error, helperText, ...props }: FieldProps) {
   return (
     <TextField
       label={label}
       fullWidth
+      error={error}
+      helperText={helperText}
       value={props.value}
       defaultValue={props.defaultValue}
       onChange={props.onChange}

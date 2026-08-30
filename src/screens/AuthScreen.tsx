@@ -14,13 +14,16 @@ export function AuthScreen() {
   const [email, setEmail] = useState('')
   const [phone, setPhone] = useState('')
   const [password, setPassword] = useState('')
+  const [passwordConfirm, setPasswordConfirm] = useState('')
   const [code, setCode] = useState('')
   const [busy, setBusy] = useState(false)
 
   const go = (next: Step) => {
     s.clearMessage()
+    setPasswordConfirm('')
     setStep(next)
   }
+  const passwordMismatch = passwordConfirm !== '' && password !== passwordConfirm
   const run = async (fn: () => Promise<void>) => {
     setBusy(true)
     try {
@@ -74,7 +77,16 @@ export function AuthScreen() {
                 <Field label="メールアドレス" type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" />
                 <Field label="電話番号" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} autoComplete="tel" />
                 <Field label="パスワード" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" />
-                <Button disabled={busy} onClick={() => run(() => s.register(phone, email, nickname, password))}>{busy ? '…' : '登録する'}</Button>
+                <Field
+                  label="パスワード（確認）"
+                  type="password"
+                  value={passwordConfirm}
+                  onChange={(e) => setPasswordConfirm(e.target.value)}
+                  autoComplete="new-password"
+                  error={passwordMismatch}
+                  helperText={passwordMismatch ? 'パスワードが一致していません' : undefined}
+                />
+                <Button disabled={busy || !password || !passwordConfirm || passwordMismatch} onClick={() => run(() => s.register(phone, email, nickname, password))}>{busy ? '…' : '登録する'}</Button>
                 <Button variant="text" onClick={() => go('entry')} sx={{ color: 'text.secondary' }}>戻る</Button>
               </>
             )}
@@ -92,8 +104,17 @@ export function AuthScreen() {
               <>
                 <Field label="メールアドレス" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
                 <Field label="メールに届いた6桁コード" inputMode="numeric" value={code} onChange={(e) => setCode(e.target.value)} />
-                <Field label="新しいパスワード" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
-                <Button disabled={busy} onClick={() => run(async () => { if (await s.resetPassword(email, code, password)) { setPassword(''); setStep('login') } })}>再設定する</Button>
+                <Field label="新しいパスワード" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" />
+                <Field
+                  label="新しいパスワード（確認）"
+                  type="password"
+                  value={passwordConfirm}
+                  onChange={(e) => setPasswordConfirm(e.target.value)}
+                  autoComplete="new-password"
+                  error={passwordMismatch}
+                  helperText={passwordMismatch ? 'パスワードが一致していません' : undefined}
+                />
+                <Button disabled={busy || !password || !passwordConfirm || passwordMismatch} onClick={() => run(async () => { if (await s.resetPassword(email, code, password)) { setPassword(''); setPasswordConfirm(''); setStep('login') } })}>再設定する</Button>
                 <Button variant="text" onClick={() => go('login')} sx={{ color: 'text.secondary' }}>ログインへ</Button>
               </>
             )}
