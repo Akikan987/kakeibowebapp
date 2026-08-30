@@ -10,6 +10,7 @@ export function CategoryChart({
   data: { name: string; total: number }[]
 }) {
   const [selectedName, setSelectedName] = useState<string | null>(null)
+  const [focusedName, setFocusedName] = useState<string | null>(null)
   const theme = useTheme()
   if (data.length === 0)
     return <Typography color="text.secondary">支出データなし</Typography>
@@ -44,28 +45,32 @@ export function CategoryChart({
               cy="100"
               r="86"
               fill={item.color}
-              stroke={selectedName === item.name ? '#fff' : 'transparent'}
+              stroke={selectedName === item.name || focusedName === item.name ? '#fff' : 'transparent'}
               strokeWidth="5"
               role="button"
               tabIndex={0}
               aria-label={`${item.name} ${yen(item.total)}`}
               onClick={() => select(item.name)}
               onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') select(item.name) }}
-              style={{ cursor: 'pointer' }}
+              onFocus={() => setFocusedName(item.name)}
+              onBlur={() => setFocusedName(null)}
+              style={{ cursor: 'pointer', outline: 'none' }}
             />
           ) : (
             <path
               key={item.name}
               d={sectorPath(item.start, item.end)}
               fill={item.color}
-              stroke={selectedName === item.name ? '#fff' : 'rgba(255,255,255,0.45)'}
-              strokeWidth={selectedName === item.name ? 5 : 2}
+              stroke={selectedName === item.name || focusedName === item.name ? '#fff' : 'rgba(255,255,255,0.45)'}
+              strokeWidth={selectedName === item.name || focusedName === item.name ? 5 : 2}
               role="button"
               tabIndex={0}
               aria-label={`${item.name} ${yen(item.total)}`}
               onClick={() => select(item.name)}
               onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') select(item.name) }}
-              style={{ cursor: 'pointer' }}
+              onFocus={() => setFocusedName(item.name)}
+              onBlur={() => setFocusedName(null)}
+              style={{ cursor: 'pointer', outline: 'none' }}
             />
           ))}
           <circle cx="100" cy="100" r="49" fill={theme.palette.background.paper} opacity="0.96" />
