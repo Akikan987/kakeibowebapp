@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
 import CreditCardRoundedIcon from '@mui/icons-material/CreditCardRounded'
@@ -21,15 +21,16 @@ import {
   Typography,
 } from '@mui/material'
 import { Toast } from './components/ui'
-import { AddScreen } from './screens/AddScreen'
 import { AuthScreen } from './screens/AuthScreen'
-import { HomeScreen } from './screens/HomeScreen'
-import { ListScreen } from './screens/ListScreen'
-import { PaymentsScreen } from './screens/PaymentsScreen'
-import { PlanningScreen } from './screens/PlanningScreen'
-import { SettingsScreen } from './screens/SettingsScreen'
-import { SplitScreen } from './screens/SplitScreen'
 import { useStore, type ExpenseDraft } from './store'
+
+const AddScreen = lazy(() => import('./screens/AddScreen').then((module) => ({ default: module.AddScreen })))
+const HomeScreen = lazy(() => import('./screens/HomeScreen').then((module) => ({ default: module.HomeScreen })))
+const ListScreen = lazy(() => import('./screens/ListScreen').then((module) => ({ default: module.ListScreen })))
+const PaymentsScreen = lazy(() => import('./screens/PaymentsScreen').then((module) => ({ default: module.PaymentsScreen })))
+const PlanningScreen = lazy(() => import('./screens/PlanningScreen').then((module) => ({ default: module.PlanningScreen })))
+const SettingsScreen = lazy(() => import('./screens/SettingsScreen').then((module) => ({ default: module.SettingsScreen })))
+const SplitScreen = lazy(() => import('./screens/SplitScreen').then((module) => ({ default: module.SplitScreen })))
 
 type Tab = 'home' | 'planning' | 'list' | 'add' | 'payments' | 'split' | 'settings'
 type MainTab = Exclude<Tab, 'add' | 'settings'>
@@ -135,34 +136,36 @@ export default function App() {
       </AppBar>
 
       <Container component="main" maxWidth="sm" disableGutters>
-        {tab === 'home' && <HomeScreen />}
-        {tab === 'planning' && <PlanningScreen />}
-        {tab === 'list' && (
-          <ListScreen
-            onEdit={(draft) => {
-              setEditDraft(draft)
-              setAddReturnTab('list')
-              setTab('add')
-            }}
-            onDuplicate={(draft) => {
-              setEditDraft(draft)
-              setAddReturnTab('list')
-              setTab('add')
-            }}
-          />
-        )}
-        {tab === 'add' && (
-          <AddScreen
-            initial={editDraft}
-            onDone={() => {
-              setEditDraft(null)
-              setTab(addReturnTab)
-            }}
-          />
-        )}
-        {tab === 'payments' && <PaymentsScreen />}
-        {tab === 'split' && <SplitScreen />}
-        {tab === 'settings' && <SettingsScreen />}
+        <Suspense fallback={<Box sx={{ p: 4, textAlign: 'center' }}><Typography color="text.secondary">画面を読み込み中…</Typography></Box>}>
+          {tab === 'home' && <HomeScreen />}
+          {tab === 'planning' && <PlanningScreen />}
+          {tab === 'list' && (
+            <ListScreen
+              onEdit={(draft) => {
+                setEditDraft(draft)
+                setAddReturnTab('list')
+                setTab('add')
+              }}
+              onDuplicate={(draft) => {
+                setEditDraft(draft)
+                setAddReturnTab('list')
+                setTab('add')
+              }}
+            />
+          )}
+          {tab === 'add' && (
+            <AddScreen
+              initial={editDraft}
+              onDone={() => {
+                setEditDraft(null)
+                setTab(addReturnTab)
+              }}
+            />
+          )}
+          {tab === 'payments' && <PaymentsScreen />}
+          {tab === 'split' && <SplitScreen />}
+          {tab === 'settings' && <SettingsScreen />}
+        </Suspense>
       </Container>
 
       <Paper

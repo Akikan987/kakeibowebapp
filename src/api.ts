@@ -122,6 +122,13 @@ export const apiLogout = (token: string) =>
 export const apiLogoutAll = (token: string) =>
   request<{ ok: boolean }>('/auth/logout-all', { method: 'POST', token })
 
+export const apiDeleteAccount = (token: string, currentPassword: string) =>
+  request<{ ok: boolean }>('/auth/account', {
+    method: 'DELETE',
+    token,
+    body: { current_password: currentPassword },
+  })
+
 export const apiUpdateAvatar = async (token: string, avatarDataUrl: string) => {
   const profile = await request<AuthRaw>('/auth/profile/avatar', {
     method: 'PUT',

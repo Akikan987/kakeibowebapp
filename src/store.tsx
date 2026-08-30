@@ -12,6 +12,7 @@ import {
   ApiError,
   apiLogin,
   apiConfirmEmailChange,
+  apiDeleteAccount,
   apiLogout,
   apiLogoutAll,
   apiRegister,
@@ -215,6 +216,7 @@ interface Store {
   backToAuth: () => void
   logout: () => Promise<void>
   logoutAll: () => Promise<void>
+  deleteAccount: (currentPassword: string) => Promise<boolean>
   syncNow: (showMessage?: boolean) => Promise<boolean>
   updateAvatar: (file: File | null) => Promise<boolean>
   updateNickname: (nickname: string) => Promise<boolean>
@@ -724,6 +726,42 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       notify('全端末ログアウトに失敗しました', 'error')
     }
   }, [account, clearSession, notify])
+
+  const deleteAccount = useCallback(
+    async (currentPassword: string) => {
+      const token = account?.token
+      if (!token || !currentPassword) return false
+      try {
+        await apiDeleteAccount(token, currentPassword)
+        await clearLocalData()
+        localStorage.removeItem(LS_ACCOUNT)
+        localStorage.removeItem(LS_OWNER)
+        localStorage.removeItem(LS_LAST_SYNC)
+        localStorage.removeItem(LS_DIRTY)
+        localStorage.setItem(LS_OFFLINE, '0')
+        setAccount(null)
+        setOfflineMode(false)
+        setLastSync(0)
+        setHasPendingChanges(false)
+        setSyncError(false)
+        setDebts([])
+        await seedCategoriesIfEmpty()
+        await seedPaymentMethodsIfEmpty()
+        await reload()
+        notify('アカウントとサーバー上のデータを削除しました')
+        return true
+      } catch (err) {
+        notify(
+          err instanceof ApiError && err.status === 401
+            ? '現在のパスワードが違います'
+            : 'アカウントを削除できませんでした',
+          'error',
+        )
+        return false
+      }
+    },
+    [account, notify, reload],
+  )
 
   // ---------------- 明細 ----------------
 
@@ -1830,6 +1868,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     backToAuth,
     logout,
     logoutAll,
+    deleteAccount,
     syncNow,
     updateAvatar,
     updateNickname,
