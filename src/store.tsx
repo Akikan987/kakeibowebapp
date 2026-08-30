@@ -29,10 +29,13 @@ import {
 import { prepareAvatar } from './avatar'
 import {
   activeCategories,
+  activeBudgets,
+  activeCardStatements,
   activeExpenses,
   activeMembers,
   activePaymentMethods,
   activePrepaidCharges,
+  activeRecurringTemplates,
   activeSettlements,
   activeSplits,
   clearLocalData,
@@ -52,6 +55,9 @@ import {
   newId,
   now,
   type Account,
+  type Budget,
+  type CardStatement,
+  type CardStatementStatus,
   type Category,
   type CardWithdrawal,
   type Debt,
@@ -64,6 +70,7 @@ import {
   type PaymentType,
   type PrepaidBalance,
   type PrepaidCharge,
+  type RecurringTemplate,
   type Settlement,
 } from './types'
 
@@ -72,6 +79,11 @@ const LS_OFFLINE = 'kakeibo.offline'
 const LS_LAST_SYNC = 'kakeibo.lastSync'
 const LS_OWNER = 'kakeibo.dataOwner'
 const LS_DIRTY = 'kakeibo.syncPending'
+
+const monthKeyOf = (year: number, month: number) =>
+  `${year}-${String(month).padStart(2, '0')}`
+const recurringSource = (templateId: string, year: number, month: number) =>
+  `recurring:${templateId}:${monthKeyOf(year, month)}`
 
 const readAccount = (): Account | null => {
   try {
@@ -129,6 +141,25 @@ export interface PrepaidChargeDraft {
   note: string
 }
 
+export interface RecurringTemplateDraft {
+  editingId: string | null
+  title: string
+  amountYen: string
+  category: string
+  type: string
+  paymentMethodId: string
+  dayOfMonth: number
+  active: boolean
+}
+
+export interface CardStatementDraft {
+  paymentMethodId: string
+  withdrawalAtMillis: number
+  actualAmountYen: string
+  status: CardStatementStatus
+  note: string
+}
+
 interface Store {
   // データ
   expenses: Expense[]
@@ -138,6 +169,9 @@ interface Store {
   settlements: Settlement[]
   paymentMethods: PaymentMethod[]
   prepaidCharges: PrepaidCharge[]
+  recurringTemplates: RecurringTemplate[]
+  budgets: Budget[]
+  cardStatements: CardStatement[]
   debts: Debt[]
   // 派生
   summary: MonthlySummary
@@ -209,6 +243,17 @@ interface Store {
   deletePaymentMethod: (method: PaymentMethod) => Promise<void>
   recordPrepaidCharge: (draft: PrepaidChargeDraft) => Promise<boolean>
   deletePrepaidCharge: (charge: PrepaidCharge) => Promise<void>
+  // 定期項目
+  saveRecurringTemplate: (draft: RecurringTemplateDraft) => Promise<boolean>
+  deleteRecurringTemplate: (template: RecurringTemplate) => Promise<void>
+  registerRecurringTemplate: (template: RecurringTemplate, year: number, month: number) => Promise<boolean>
+  recurringRegistered: (templateId: string, year: number, month: number) => boolean
+  // 予算
+  saveBudget: (monthKey: string, category: string, amountYen: number) => Promise<boolean>
+  deleteBudget: (budget: Budget) => Promise<void>
+  // カード請求
+  saveCardStatement: (draft: CardStatementDraft) => Promise<boolean>
+  deleteCardStatement: (statement: CardStatement) => Promise<void>
   // レシートOCR
   readReceipt: (file: File) => Promise<OcrResult | null>
   // バックアップ
@@ -232,6 +277,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [settlements, setSettlements] = useState<Settlement[]>([])
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([])
   const [prepaidCharges, setPrepaidCharges] = useState<PrepaidCharge[]>([])
+  const [recurringTemplates, setRecurringTemplates] = useState<RecurringTemplate[]>([])
+  const [budgets, setBudgets] = useState<Budget[]>([])
+  const [cardStatements, setCardStatements] = useState<CardStatement[]>([])
   const [debts, setDebts] = useState<Debt[]>([])
 
   const today = new Date()
@@ -266,7 +314,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   /** ローカルDBから全部読み直す */
   const reload = useCallback(async () => {
-    const [e, m, c, s, st, pm, pc] = await Promise.all([
+    const [e, m, c, s, st, pm, pc, rt, b, cs] = await Promise.all([
       activeExpenses(),
       activeMembers(),
       activeCategories(),
@@ -274,6 +322,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       activeSettlements(),
       activePaymentMethods(),
       activePrepaidCharges(),
+      activeRecurringTemplates(),
+      activeBudgets(),
+      activeCardStatements(),
     ])
     e.sort((a, b) => b.purchasedAtMillis - a.purchasedAtMillis)
     m.sort((a, b) => a.name.localeCompare(b.name))
@@ -284,6 +335,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setSettlements(st)
     setPaymentMethods(pm)
     setPrepaidCharges(pc)
+    setRecurringTemplates(rt)
+    setBudgets(b)
+    setCardStatements(cs)
   }, [])
 
   // ---------------- 同期 ----------------
@@ -311,6 +365,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           settlements: await db.settlements.toArray(),
           paymentMethods: await db.paymentMethods.toArray(),
           prepaidCharges: await db.prepaidCharges.toArray(),
+          recurringTemplates: await db.recurringTemplates.toArray(),
+          budgets: await db.budgets.toArray(),
+          cardStatements: await db.cardStatements.toArray(),
         }
         // 差分ではなく毎回すべてを取り直す。件数が少ないアプリなので、
         // 取りこぼし（sinceのズレで古いレコードが届かない）を確実に防ぐ方を優先する。
@@ -336,6 +393,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         await apply(db.settlements, res.changes.settlements)
         await apply(db.paymentMethods, res.changes.paymentMethods)
         await apply(db.prepaidCharges, res.changes.prepaidCharges)
+        await apply(db.recurringTemplates, res.changes.recurringTemplates)
+        await apply(db.budgets, res.changes.budgets)
+        await apply(db.cardStatements, res.changes.cardStatements)
 
         // 端末ごとに既定品目のIDが違うと重複するので、取り込み後にまとめる。
         // 消えた分は次回の同期で他の端末にも反映される。
@@ -1109,6 +1169,159 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [autoSync, notify, reload],
   )
 
+  // ---------------- 定期項目 ----------------
+
+  const saveRecurringTemplate = useCallback(
+    async (draft: RecurringTemplateDraft) => {
+      const amountYen = Number(draft.amountYen)
+      const title = draft.title.trim()
+      if (!title || !Number.isFinite(amountYen) || amountYen <= 0) {
+        notify('定期項目の名前と金額を入力してください', 'error')
+        return false
+      }
+      if (draft.dayOfMonth < 1 || draft.dayOfMonth > 31) {
+        notify('登録日を選んでください', 'error')
+        return false
+      }
+      if (draft.type === TYPE_EXPENSE && !paymentMethods.some((method) => method.id === draft.paymentMethodId)) {
+        notify('決済方法を選んでください', 'error')
+        return false
+      }
+      await db.recurringTemplates.put({
+        id: draft.editingId ?? newId(),
+        title,
+        amountYen,
+        category: draft.category || DEFAULT_TITLE,
+        type: draft.type === TYPE_INCOME ? TYPE_INCOME : TYPE_EXPENSE,
+        paymentMethodId: draft.type === TYPE_INCOME ? '' : draft.paymentMethodId,
+        dayOfMonth: draft.dayOfMonth,
+        active: draft.active,
+        updatedAt: now(),
+        deleted: false,
+      })
+      await reload()
+      notify(draft.editingId ? '定期項目を更新しました' : '定期項目を追加しました')
+      autoSync()
+      return true
+    },
+    [autoSync, notify, paymentMethods, reload],
+  )
+
+  const deleteRecurringTemplate = useCallback(
+    async (template: RecurringTemplate) => {
+      await db.recurringTemplates.put({ ...template, deleted: true, updatedAt: now() })
+      await reload()
+      notify('定期項目を削除しました')
+      autoSync()
+    },
+    [autoSync, notify, reload],
+  )
+
+  const recurringRegistered = useCallback(
+    (templateId: string, year: number, targetMonth: number) =>
+      expenses.some((expense) => expense.source === recurringSource(templateId, year, targetMonth) && !expense.deleted),
+    [expenses],
+  )
+
+  const registerRecurringTemplate = useCallback(
+    async (template: RecurringTemplate, year: number, targetMonth: number) => {
+      const source = recurringSource(template.id, year, targetMonth)
+      if (expenses.some((expense) => expense.source === source && !expense.deleted)) {
+        notify('この月には登録済みです', 'error')
+        return false
+      }
+      const day = Math.min(template.dayOfMonth, new Date(year, targetMonth, 0).getDate())
+      await db.expenses.put({
+        id: source,
+        title: template.title,
+        amountYen: template.amountYen,
+        purchasedAtMillis: new Date(year, targetMonth - 1, day, 12).getTime(),
+        category: template.category,
+        source,
+        type: template.type,
+        paymentMethodId: template.type === TYPE_EXPENSE ? template.paymentMethodId : '',
+        updatedAt: now(),
+        deleted: false,
+      })
+      await reload()
+      notify(`${template.title}を${targetMonth}月分として登録しました`)
+      autoSync()
+      return true
+    },
+    [autoSync, expenses, notify, reload],
+  )
+
+  // ---------------- 予算 ----------------
+
+  const saveBudget = useCallback(
+    async (monthKey: string, category: string, amountYen: number) => {
+      if (!/^\d{4}-\d{2}$/.test(monthKey) || !Number.isFinite(amountYen) || amountYen <= 0) {
+        notify('予算額を入力してください', 'error')
+        return false
+      }
+      const existing = budgets.find(
+        (budget) => budget.monthKey === monthKey && budget.category === category,
+      )
+      // サーバーではIDが全ユーザー共通の主キーなので、ユーザーUIDも含める。
+      // ログイン前に作る場合はUUIDを使い、別ユーザーとの衝突を避ける。
+      const id = existing?.id ?? `budget:${account?.uid ?? newId()}:${monthKey}:${category || 'overall'}`
+      await db.budgets.put({ id, monthKey, category, amountYen, updatedAt: now(), deleted: false })
+      await reload()
+      notify('予算を保存しました')
+      autoSync()
+      return true
+    },
+    [account?.uid, autoSync, budgets, notify, reload],
+  )
+
+  const deleteBudget = useCallback(
+    async (budget: Budget) => {
+      await db.budgets.put({ ...budget, deleted: true, updatedAt: now() })
+      await reload()
+      notify('予算を削除しました')
+      autoSync()
+    },
+    [autoSync, notify, reload],
+  )
+
+  // ---------------- カード請求 ----------------
+
+  const saveCardStatement = useCallback(
+    async (draft: CardStatementDraft) => {
+      const actualAmountYen = Number(draft.actualAmountYen)
+      if (!draft.paymentMethodId || !Number.isFinite(actualAmountYen) || actualAmountYen < 0) {
+        notify('カードの確定請求額を入力してください', 'error')
+        return false
+      }
+      const id = `statement:${draft.paymentMethodId}:${draft.withdrawalAtMillis}`
+      await db.cardStatements.put({
+        id,
+        paymentMethodId: draft.paymentMethodId,
+        withdrawalAtMillis: draft.withdrawalAtMillis,
+        actualAmountYen,
+        status: draft.status,
+        note: draft.note.trim(),
+        updatedAt: now(),
+        deleted: false,
+      })
+      await reload()
+      notify(draft.status === 'paid' ? '支払済みにしました' : '請求額を確定しました')
+      autoSync()
+      return true
+    },
+    [autoSync, notify, reload],
+  )
+
+  const deleteCardStatement = useCallback(
+    async (statement: CardStatement) => {
+      await db.cardStatements.put({ ...statement, deleted: true, updatedAt: now() })
+      await reload()
+      notify('請求額を予定表示に戻しました')
+      autoSync()
+    },
+    [autoSync, notify, reload],
+  )
+
   // ---------------- レシートOCR ----------------
 
   const readReceipt = useCallback(
@@ -1140,7 +1353,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const exportJson = useCallback(() => {
     const payload = {
       app: 'kakeibo',
-      version: 4,
+      version: 5,
       expenses: expenses.map((e) => ({
         id: e.id,
         title: e.title,
@@ -1191,6 +1404,34 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           note,
         }),
       ),
+      recurringTemplates: recurringTemplates.map(
+        ({ id, title, amountYen, category, type, paymentMethodId, dayOfMonth, active }) => ({
+          id,
+          title,
+          amountYen,
+          category,
+          type,
+          paymentMethodId,
+          dayOfMonth,
+          active,
+        }),
+      ),
+      budgets: budgets.map(({ id, monthKey, category, amountYen }) => ({
+        id,
+        monthKey,
+        category,
+        amountYen,
+      })),
+      cardStatements: cardStatements.map(
+        ({ id, paymentMethodId, withdrawalAtMillis, actualAmountYen, status, note }) => ({
+          id,
+          paymentMethodId,
+          withdrawalAtMillis,
+          actualAmountYen,
+          status,
+          note,
+        }),
+      ),
     }
     const blob = new Blob([JSON.stringify(payload, null, 2)], {
       type: 'application/json',
@@ -1203,7 +1444,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     a.click()
     URL.revokeObjectURL(a.href)
     notify('エクスポートしました')
-  }, [categories, expenses, members, notify, paymentMethods, prepaidCharges, settlements, splits])
+  }, [budgets, cardStatements, categories, expenses, members, notify, paymentMethods, prepaidCharges, recurringTemplates, settlements, splits])
 
   const importJson = useCallback(
     async (file: File, replace: boolean) => {
@@ -1287,6 +1528,38 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             deleted: false,
           }),
         )
+        const recurringTemplateRows: RecurringTemplate[] = objects('recurringTemplates').map(
+          (o) => ({
+            id: String(o.id ?? newId()),
+            title: String(o.title ?? DEFAULT_TITLE),
+            amountYen: Number(o.amountYen ?? 0),
+            category: String(o.category ?? DEFAULT_TITLE),
+            type: String(o.type ?? TYPE_EXPENSE),
+            paymentMethodId: String(o.paymentMethodId ?? ''),
+            dayOfMonth: Number(o.dayOfMonth ?? 1),
+            active: Boolean(o.active ?? true),
+            updatedAt: ts,
+            deleted: false,
+          }),
+        )
+        const budgetRows: Budget[] = objects('budgets').map((o) => ({
+          id: String(o.id ?? newId()),
+          monthKey: String(o.monthKey ?? ''),
+          category: String(o.category ?? ''),
+          amountYen: Number(o.amountYen ?? 0),
+          updatedAt: ts,
+          deleted: false,
+        }))
+        const cardStatementRows: CardStatement[] = objects('cardStatements').map((o) => ({
+          id: String(o.id ?? newId()),
+          paymentMethodId: String(o.paymentMethodId ?? ''),
+          withdrawalAtMillis: Number(o.withdrawalAtMillis ?? ts),
+          actualAmountYen: Number(o.actualAmountYen ?? 0),
+          status: String(o.status ?? 'confirmed') === 'paid' ? 'paid' : 'confirmed',
+          note: String(o.note ?? ''),
+          updatedAt: ts,
+          deleted: false,
+        }))
 
         await db.transaction(
           'rw',
@@ -1298,6 +1571,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             db.settlements,
             db.paymentMethods,
             db.prepaidCharges,
+            db.recurringTemplates,
+            db.budgets,
+            db.cardStatements,
           ],
           async () => {
             if (replace) {
@@ -1314,13 +1590,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
                   allSplits.map((row) => ({ ...row, deleted: true, updatedAt: ts })),
                 )
               if (isFullBackup) {
-                const [allMembers, allCategories, allSettlements, allMethods, allCharges] =
+                const [allMembers, allCategories, allSettlements, allMethods, allCharges, allRecurring, allBudgets, allStatements] =
                   await Promise.all([
                     db.members.toArray(),
                     db.categories.toArray(),
                     db.settlements.toArray(),
                     db.paymentMethods.toArray(),
                     db.prepaidCharges.toArray(),
+                    db.recurringTemplates.toArray(),
+                    db.budgets.toArray(),
+                    db.cardStatements.toArray(),
                   ])
                 if (allMembers.length)
                   await db.members.bulkPut(
@@ -1342,6 +1621,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
                   await db.prepaidCharges.bulkPut(
                     allCharges.map((row) => ({ ...row, deleted: true, updatedAt: ts })),
                   )
+                if (allRecurring.length)
+                  await db.recurringTemplates.bulkPut(
+                    allRecurring.map((row) => ({ ...row, deleted: true, updatedAt: ts })),
+                  )
+                if (allBudgets.length)
+                  await db.budgets.bulkPut(
+                    allBudgets.map((row) => ({ ...row, deleted: true, updatedAt: ts })),
+                  )
+                if (allStatements.length)
+                  await db.cardStatements.bulkPut(
+                    allStatements.map((row) => ({ ...row, deleted: true, updatedAt: ts })),
+                  )
               }
             }
             if (expenseRows.length) await db.expenses.bulkPut(expenseRows)
@@ -1353,6 +1644,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               await db.paymentMethods.bulkPut(paymentMethodRows)
             if (prepaidChargeRows.length)
               await db.prepaidCharges.bulkPut(prepaidChargeRows)
+            if (recurringTemplateRows.length)
+              await db.recurringTemplates.bulkPut(recurringTemplateRows)
+            if (budgetRows.length) await db.budgets.bulkPut(budgetRows)
+            if (cardStatementRows.length)
+              await db.cardStatements.bulkPut(cardStatementRows)
           },
         )
         await seedPaymentMethodsIfEmpty()
@@ -1460,6 +1756,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     settlements,
     paymentMethods,
     prepaidCharges,
+    recurringTemplates,
+    budgets,
+    cardStatements,
     debts,
     summary,
     balances,
@@ -1522,6 +1821,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     deletePaymentMethod,
     recordPrepaidCharge,
     deletePrepaidCharge,
+    saveRecurringTemplate,
+    deleteRecurringTemplate,
+    registerRecurringTemplate,
+    recurringRegistered,
+    saveBudget,
+    deleteBudget,
+    saveCardStatement,
+    deleteCardStatement,
     readReceipt,
     exportJson,
     importJson,

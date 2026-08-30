@@ -68,6 +68,34 @@ export interface PrepaidCharge extends SyncBase {
   note: string
 }
 
+export interface RecurringTemplate extends SyncBase {
+  title: string
+  amountYen: number
+  category: string
+  type: string
+  paymentMethodId: string
+  dayOfMonth: number
+  active: boolean
+}
+
+export interface Budget extends SyncBase {
+  /** YYYY-MM */
+  monthKey: string
+  /** 空文字は月全体の予算 */
+  category: string
+  amountYen: number
+}
+
+export type CardStatementStatus = 'confirmed' | 'paid'
+
+export interface CardStatement extends SyncBase {
+  paymentMethodId: string
+  withdrawalAtMillis: number
+  actualAmountYen: number
+  status: CardStatementStatus
+  note: string
+}
+
 export interface PrepaidBalance {
   methodId: string
   name: string

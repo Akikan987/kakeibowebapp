@@ -1,5 +1,8 @@
 import type {
   Account,
+  Budget,
+  CardStatement,
+  CardStatementStatus,
   Category,
   Debt,
   Expense,
@@ -8,6 +11,7 @@ import type {
   PaymentMethod,
   PaymentType,
   PrepaidCharge,
+  RecurringTemplate,
   Settlement,
 } from './types'
 import { PAYMENT_TYPES } from './types'
@@ -294,6 +298,59 @@ const prepaidChargeIn = (r: Raw): PrepaidCharge => ({
   note: String(r.note ?? ''),
 })
 
+const recurringTemplateOut = (r: RecurringTemplate): Raw => ({
+  ...baseOut(r),
+  title: r.title,
+  amount_yen: r.amountYen,
+  category: r.category,
+  type: r.type,
+  payment_method_id: r.paymentMethodId,
+  day_of_month: r.dayOfMonth,
+  active: r.active,
+})
+const recurringTemplateIn = (r: Raw): RecurringTemplate => ({
+  ...baseIn(r),
+  title: String(r.title ?? ''),
+  amountYen: Number(r.amount_yen ?? 0),
+  category: String(r.category ?? 'その他'),
+  type: String(r.type ?? 'expense'),
+  paymentMethodId: String(r.payment_method_id ?? ''),
+  dayOfMonth: Number(r.day_of_month ?? 1),
+  active: Boolean(r.active),
+})
+
+const budgetOut = (b: Budget): Raw => ({
+  ...baseOut(b),
+  month_key: b.monthKey,
+  category: b.category,
+  amount_yen: b.amountYen,
+})
+const budgetIn = (r: Raw): Budget => ({
+  ...baseIn(r),
+  monthKey: String(r.month_key ?? ''),
+  category: String(r.category ?? ''),
+  amountYen: Number(r.amount_yen ?? 0),
+})
+
+const statementStatusIn = (value: unknown): CardStatementStatus =>
+  value === 'paid' ? 'paid' : 'confirmed'
+const cardStatementOut = (s: CardStatement): Raw => ({
+  ...baseOut(s),
+  payment_method_id: s.paymentMethodId,
+  withdrawal_at_millis: s.withdrawalAtMillis,
+  actual_amount_yen: s.actualAmountYen,
+  status: s.status,
+  note: s.note,
+})
+const cardStatementIn = (r: Raw): CardStatement => ({
+  ...baseIn(r),
+  paymentMethodId: String(r.payment_method_id ?? ''),
+  withdrawalAtMillis: Number(r.withdrawal_at_millis ?? 0),
+  actualAmountYen: Number(r.actual_amount_yen ?? 0),
+  status: statementStatusIn(r.status),
+  note: String(r.note ?? ''),
+})
+
 export interface SyncTables {
   expenses: Expense[]
   members: Member[]
@@ -302,6 +359,9 @@ export interface SyncTables {
   settlements: Settlement[]
   paymentMethods: PaymentMethod[]
   prepaidCharges: PrepaidCharge[]
+  recurringTemplates: RecurringTemplate[]
+  budgets: Budget[]
+  cardStatements: CardStatement[]
 }
 
 export interface SyncResult {
@@ -325,6 +385,9 @@ export async function apiSync(
       settlements: local.settlements.map(settlementOut),
       payment_methods: local.paymentMethods.map(paymentMethodOut),
       prepaid_charges: local.prepaidCharges.map(prepaidChargeOut),
+      recurring_templates: local.recurringTemplates.map(recurringTemplateOut),
+      budgets: local.budgets.map(budgetOut),
+      card_statements: local.cardStatements.map(cardStatementOut),
     },
   }
   const res = await request<Raw>('/sync', { method: 'POST', body, token })
@@ -346,6 +409,9 @@ export async function apiSync(
       settlements: (ch.settlements ?? []).map(settlementIn),
       paymentMethods: (ch.payment_methods ?? []).map(paymentMethodIn),
       prepaidCharges: (ch.prepaid_charges ?? []).map(prepaidChargeIn),
+      recurringTemplates: (ch.recurring_templates ?? []).map(recurringTemplateIn),
+      budgets: (ch.budgets ?? []).map(budgetIn),
+      cardStatements: (ch.card_statements ?? []).map(cardStatementIn),
     },
     debts,
   }

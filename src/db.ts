@@ -1,11 +1,14 @@
 import Dexie, { type Table } from 'dexie'
 import {
   type Category,
+  type Budget,
+  type CardStatement,
   type Expense,
   type ExpenseSplit,
   type Member,
   type PaymentMethod,
   type PrepaidCharge,
+  type RecurringTemplate,
   type Settlement,
   newId,
   now,
@@ -23,6 +26,9 @@ class KakeiboDB extends Dexie {
   settlements!: Table<Settlement, string>
   paymentMethods!: Table<PaymentMethod, string>
   prepaidCharges!: Table<PrepaidCharge, string>
+  recurringTemplates!: Table<RecurringTemplate, string>
+  budgets!: Table<Budget, string>
+  cardStatements!: Table<CardStatement, string>
 
   constructor() {
     super('kakeibo')
@@ -43,6 +49,21 @@ class KakeiboDB extends Dexie {
       paymentMethods: 'id, type, deleted, updatedAt',
       prepaidCharges:
         'id, prepaidMethodId, fundingMethodId, chargedAtMillis, deleted, updatedAt',
+    })
+    this.version(3).stores({
+      expenses:
+        'id, purchasedAtMillis, type, paymentMethodId, deleted, updatedAt',
+      members: 'id, deleted, updatedAt',
+      categories: 'id, position, deleted, updatedAt',
+      expenseSplits: 'id, expenseId, memberId, deleted, updatedAt',
+      settlements: 'id, memberId, deleted, updatedAt',
+      paymentMethods: 'id, type, deleted, updatedAt',
+      prepaidCharges:
+        'id, prepaidMethodId, fundingMethodId, chargedAtMillis, deleted, updatedAt',
+      recurringTemplates: 'id, active, dayOfMonth, deleted, updatedAt',
+      budgets: 'id, monthKey, category, deleted, updatedAt',
+      cardStatements:
+        'id, paymentMethodId, withdrawalAtMillis, status, deleted, updatedAt',
     })
   }
 }
@@ -151,6 +172,9 @@ export async function clearLocalData() {
       db.settlements,
       db.paymentMethods,
       db.prepaidCharges,
+      db.recurringTemplates,
+      db.budgets,
+      db.cardStatements,
     ],
     async () => {
       await Promise.all([
@@ -161,6 +185,9 @@ export async function clearLocalData() {
         db.settlements.clear(),
         db.paymentMethods.clear(),
         db.prepaidCharges.clear(),
+        db.recurringTemplates.clear(),
+        db.budgets.clear(),
+        db.cardStatements.clear(),
       ])
     },
   )
@@ -190,3 +217,10 @@ export const activePrepaidCharges = async () =>
   (await db.prepaidCharges.filter((c) => !c.deleted).toArray()).sort(
     (a, b) => b.chargedAtMillis - a.chargedAtMillis,
   )
+export const activeRecurringTemplates = async () =>
+  (await db.recurringTemplates.filter((r) => !r.deleted).toArray()).sort(
+    (a, b) => a.dayOfMonth - b.dayOfMonth || a.title.localeCompare(b.title),
+  )
+export const activeBudgets = () => db.budgets.filter((b) => !b.deleted).toArray()
+export const activeCardStatements = () =>
+  db.cardStatements.filter((s) => !s.deleted).toArray()

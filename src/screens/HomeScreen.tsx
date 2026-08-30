@@ -3,6 +3,7 @@ import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded'
 import PersonRoundedIcon from '@mui/icons-material/PersonRounded'
 import { Avatar, Box, CardContent, IconButton, Stack, Typography } from '@mui/material'
 import { CategoryChart, DailyChart } from '../components/Charts'
+import { PlanningSections } from '../components/PlanningSections'
 import { Card, Divider, LargeTitle, Screen, SectionHeader, yen } from '../components/ui'
 import { useStore } from '../store'
 
@@ -52,6 +53,8 @@ export function HomeScreen() {
         <Divider />
         <SummaryRow label="収支" value={summary.balance} tone={summary.balance >= 0 ? 'success' : 'error'} />
       </Card>
+
+      <PlanningSections />
 
       <SectionHeader>支出：品目別</SectionHeader>
       <Card><CardContent><CategoryChart data={summary.categoryTotals} /></CardContent></Card>
