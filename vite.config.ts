@@ -46,6 +46,7 @@ export default defineConfig({
         short_name: '家計簿',
         description: '収入と支出を記録して、割り勘もできる家計簿アプリ',
         lang: 'ja',
+        id: '/',
         start_url: '/',
         scope: '/',
         display: 'standalone',
@@ -84,9 +85,9 @@ export default defineConfig({
       },
       workbox: {
         // アプリ本体（HTML/JS/CSS/アイコン）を端末に保存し、サーバーが止まっていても起動できるようにする
-        globPatterns: ['**/*.{js,css,html,svg,png,webmanifest}'],
-        // 独立したPRページとSNS画像は容量が大きく、アプリ本体のオフライン起動には不要
-        globIgnores: ['pr/**/*', 'og.png'],
+        globPatterns: ['**/*.{js,css,html,svg,png}'],
+        // manifestはプラグインが改訂番号付きで追加するため、globでの重複登録を避ける
+        globIgnores: ['pr/**/*', 'og.png', 'manifest.webmanifest'],
         // 未知のURLは index.html を返す（SPA）。ただしAPIは除く。
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [
