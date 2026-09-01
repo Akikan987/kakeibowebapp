@@ -54,6 +54,31 @@ const initialFilters: Filters = {
 
 const PAGE_SIZE = 50
 
+type ExpenseMonthGroup = {
+  key: string
+  label: string
+  expenses: Expense[]
+}
+
+const groupExpensesByMonth = (expenses: Expense[]): ExpenseMonthGroup[] => {
+  const groups = new Map<string, ExpenseMonthGroup>()
+  expenses.forEach((expense) => {
+    const date = new Date(expense.purchasedAtMillis)
+    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+    const group = groups.get(key)
+    if (group) {
+      group.expenses.push(expense)
+      return
+    }
+    groups.set(key, {
+      key,
+      label: `${date.getFullYear()}年${date.getMonth() + 1}月`,
+      expenses: [expense],
+    })
+  })
+  return [...groups.values()]
+}
+
 export function ListScreen({ onEdit, onDuplicate }: {
   onEdit: (draft: ExpenseDraft) => void
   onDuplicate: (draft: ExpenseDraft) => void
@@ -88,6 +113,10 @@ export function ListScreen({ onEdit, onDuplicate }: {
     })
   }, [filters, s])
   const visibleExpenses = filteredExpenses.slice(0, visibleCount)
+  const visibleExpenseGroups = useMemo(
+    () => groupExpensesByMonth(visibleExpenses),
+    [visibleExpenses],
+  )
   const remainingCount = filteredExpenses.length - visibleExpenses.length
 
   useEffect(() => {
@@ -179,50 +208,55 @@ export function ListScreen({ onEdit, onDuplicate }: {
         <Typography color="text.secondary" sx={{ mt: 2 }}>まだ明細がありません</Typography>
       ) : (
         <>
-          <SectionHeader>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 2.5, px: 0.5 }}>
             {remainingCount > 0
               ? `${filteredExpenses.length}件中 ${visibleExpenses.length}件表示`
               : `${filteredExpenses.length}件表示`}
-          </SectionHeader>
-          <Card>
-            {filteredExpenses.length === 0 ? (
+          </Typography>
+          {filteredExpenses.length === 0 ? (
+            <Card sx={{ mt: 1 }}>
               <Typography color="text.secondary" sx={{ p: 2 }}>条件に一致する明細はありません</Typography>
-            ) : (
-              <List disablePadding>
-                {visibleExpenses.map((expense, index) => {
-                  const isIncome = expense.type === TYPE_INCOME
-                  const split = s.splitSumOf(expense.id)
-                  return (
-                    <Stack key={expense.id}>
-                      {index > 0 && <Divider />}
-                      <ListItem
-                        disablePadding
-                        secondaryAction={
-                          <Stack direction="row">
-                            <IconButton onClick={() => onDuplicate(draftOf(expense, true))} aria-label={`${expense.title}を複製`}><ContentCopyRoundedIcon /></IconButton>
-                            <IconButton edge="end" onClick={() => setPendingDelete(expense)} aria-label="削除"><DeleteOutlineRoundedIcon /></IconButton>
-                          </Stack>
-                        }
-                      >
-                        <ListItemButton onClick={() => onEdit(draftOf(expense))} sx={{ pr: 12, py: 1.5 }}>
-                          <ListItemText
-                            primary={<Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}><Typography fontWeight={700} noWrap>{expense.title}</Typography><Typography fontWeight={700} color={isIncome ? 'success.main' : 'error.main'}>{isIncome ? '+' : '-'}{yen(expense.amountYen)}</Typography></Stack>}
-                            secondary={
-                              <Stack spacing={0.4} sx={{ mt: 0.5 }}>
-                                <Typography variant="body2" color="text.secondary">{isIncome ? '収入' : '支出'} ・ {expense.category} ・ {formatDate(expense.purchasedAtMillis)}</Typography>
-                                {!isIncome && <Typography variant="caption" color="text.secondary">決済: {s.paymentMethodName(expense.paymentMethodId)}</Typography>}
-                                {split > 0 && <Chip size="small" color="primary" variant="outlined" label={`自分の負担 ${yen(s.netAmount(expense))}（割り勘 ${yen(split)}）`} sx={{ alignSelf: 'flex-start' }} />}
-                              </Stack>
-                            }
-                          />
-                        </ListItemButton>
-                      </ListItem>
-                    </Stack>
-                  )
-                })}
-              </List>
-            )}
-          </Card>
+            </Card>
+          ) : visibleExpenseGroups.map((group) => (
+            <Stack key={group.key}>
+              <SectionHeader>{group.label}（{group.expenses.length}件）</SectionHeader>
+              <Card>
+                <List disablePadding>
+                  {group.expenses.map((expense, index) => {
+                    const isIncome = expense.type === TYPE_INCOME
+                    const split = s.splitSumOf(expense.id)
+                    return (
+                      <Stack key={expense.id}>
+                        {index > 0 && <Divider />}
+                        <ListItem
+                          disablePadding
+                          secondaryAction={
+                            <Stack direction="row">
+                              <IconButton onClick={() => onDuplicate(draftOf(expense, true))} aria-label={`${expense.title}を複製`}><ContentCopyRoundedIcon /></IconButton>
+                              <IconButton edge="end" onClick={() => setPendingDelete(expense)} aria-label="削除"><DeleteOutlineRoundedIcon /></IconButton>
+                            </Stack>
+                          }
+                        >
+                          <ListItemButton onClick={() => onEdit(draftOf(expense))} sx={{ pr: 12, py: 1.5 }}>
+                            <ListItemText
+                              primary={<Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}><Typography fontWeight={700} noWrap>{expense.title}</Typography><Typography fontWeight={700} color={isIncome ? 'success.main' : 'error.main'}>{isIncome ? '+' : '-'}{yen(expense.amountYen)}</Typography></Stack>}
+                              secondary={
+                                <Stack spacing={0.4} sx={{ mt: 0.5 }}>
+                                  <Typography variant="body2" color="text.secondary">{isIncome ? '収入' : '支出'} ・ {expense.category} ・ {formatDate(expense.purchasedAtMillis)}</Typography>
+                                  {!isIncome && <Typography variant="caption" color="text.secondary">決済: {s.paymentMethodName(expense.paymentMethodId)}</Typography>}
+                                  {split > 0 && <Chip size="small" color="primary" variant="outlined" label={`自分の負担 ${yen(s.netAmount(expense))}（割り勘 ${yen(split)}）`} sx={{ alignSelf: 'flex-start' }} />}
+                                </Stack>
+                              }
+                            />
+                          </ListItemButton>
+                        </ListItem>
+                      </Stack>
+                    )
+                  })}
+                </List>
+              </Card>
+            </Stack>
+          ))}
           {remainingCount > 0 && (
             <Button
               variant="outline"
