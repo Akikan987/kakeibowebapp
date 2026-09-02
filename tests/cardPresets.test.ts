@@ -80,9 +80,26 @@ test('追加10カードの表記ゆれから公式プリセットを見つける
   )
 })
 
-test('既存カードは20件あり、IDが重複しない', () => {
-  assert.equal(CARD_PRESETS.length, 20)
-  assert.equal(new Set(CARD_PRESETS.map(({ id }) => id)).size, 20)
+test('指定された追加4カードの表記ゆれからプリセットを見つける', () => {
+  assert.deepEqual(
+    [
+      first('JCB ORIGINAL W'),
+      first('青学カード'),
+      first('Orico Pay Balance'),
+      first('デビュープラス'),
+    ].map((preset) => [preset?.id, preset?.closingDay, preset?.paymentDay]),
+    [
+      ['jcb-original-w', 15, 10],
+      ['aoyama-gakuin-card', 15, 10],
+      ['orico-pay-balance', 31, 27],
+      ['smbc-debut-plus', 15, 10],
+    ],
+  )
+})
+
+test('既存カードは24件あり、IDが重複しない', () => {
+  assert.equal(CARD_PRESETS.length, 24)
+  assert.equal(new Set(CARD_PRESETS.map(({ id }) => id)).size, 24)
   assert.ok(CARD_PRESETS.every(({ officialUrl }) => officialUrl.startsWith('https://')))
 })
 
