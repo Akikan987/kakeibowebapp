@@ -1,3 +1,5 @@
+import { POPULAR_CARD_PRESETS } from './popularCardPresets.ts'
+
 export interface CardPreset {
   id: string
   name: string
@@ -410,6 +412,7 @@ export const CARD_PRESETS: CardPreset[] = [
     verifiedAt: '2026-09-02',
     note: '標準は毎月15日締め・翌月10日払い。26日払いへ変更済みの場合は月末締め・翌月26日払い',
   },
+  ...POPULAR_CARD_PRESETS,
 ]
 
 export const normalizeCardName = (value: string) =>
@@ -432,7 +435,9 @@ export function findCardPresets(
   if (normalizedQuery.length < 2) return []
 
   return CARD_PRESETS.map((preset, position) => {
+    const canonicalName = normalizeCardName(preset.name)
     const names = searchableNames(preset).map(normalizeCardName)
+    const canonicalExact = canonicalName === normalizedQuery
     const exact = names.some((name) => name === normalizedQuery)
     const startsWith = names.some(
       (name) =>
@@ -444,7 +449,7 @@ export function findCardPresets(
     return {
       preset,
       position,
-      score: exact ? 3 : startsWith ? 2 : contains ? 1 : 0,
+      score: canonicalExact ? 4 : exact ? 3 : startsWith ? 2 : contains ? 1 : 0,
     }
   })
     .filter((result) => result.score > 0)

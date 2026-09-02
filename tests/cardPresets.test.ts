@@ -41,10 +41,10 @@ test('追加した主要カードの表記ゆれから公式プリセットを�
       first('VIASOカード'),
     ].map((preset) => [preset?.id, preset?.closingDay, preset?.paymentDay]),
     [
-      ['rakuten-card', 31, 27],
+      ['rakuten-pink', 31, 27],
       ['paypay-card', 31, 27],
-      ['d-card', 15, 10],
-      ['aeon-card', 10, 2],
+      ['d-card-gold', 15, 10],
+      ['aeon-select', 10, 2],
       ['orico-card', 31, 27],
       ['mufg-card', 15, 10],
     ],
@@ -97,9 +97,41 @@ test('指定された追加4カードの表記ゆれからプリセットを見�
   )
 })
 
-test('既存カードは24件あり、IDが重複しない', () => {
-  assert.equal(CARD_PRESETS.length, 24)
-  assert.equal(new Set(CARD_PRESETS.map(({ id }) => id)).size, 24)
+test('追加した主要系列のカードを固有名で見つける', () => {
+  assert.deepEqual(
+    [
+      first('JCB CARD S'),
+      first('三井住友ゴールドNL'),
+      first('セゾンゴールドAMEX'),
+      first('オリコザプラチナ'),
+      first('ビックカメラスイカカード'),
+      first('MUFG GOLD PRESTIGE'),
+      first('au PAY カード（4日払い）'),
+      first('dカード PLATINUM'),
+      first('PayPayカード ゴールド'),
+      first('UCプラチナカード'),
+    ].map((preset) => [preset?.id, preset?.closingDay, preset?.paymentDay]),
+    [
+      ['jcb-card-s', 15, 10],
+      ['smbc-gold-nl', 15, 10],
+      ['saison-gold-amex', 10, 4],
+      ['orico-platinum', 31, 27],
+      ['bic-camera-suica', 5, 4],
+      ['mufg-gold-prestige', 15, 10],
+      ['au-pay-card-4', 10, 4],
+      ['d-card-platinum', 15, 10],
+      ['paypay-card-gold', 31, 27],
+      ['uc-card-platinum', 10, 5],
+    ],
+  )
+})
+
+test('既存カードは100件あり、IDが重複しない', () => {
+  assert.equal(CARD_PRESETS.length, 100)
+  assert.equal(new Set(CARD_PRESETS.map(({ id }) => id)).size, 100)
+  assert.equal(new Set(CARD_PRESETS.map(({ name }) => normalizeCardName(name))).size, 100)
+  assert.ok(CARD_PRESETS.every(({ closingDay, paymentDay }) =>
+    closingDay >= 1 && closingDay <= 31 && paymentDay >= 1 && paymentDay <= 31))
   assert.ok(CARD_PRESETS.every(({ officialUrl }) => officialUrl.startsWith('https://')))
 })
 
