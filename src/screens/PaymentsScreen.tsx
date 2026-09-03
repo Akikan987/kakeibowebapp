@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import ChevronLeftRoundedIcon from '@mui/icons-material/ChevronLeftRounded'
 import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded'
@@ -243,14 +243,24 @@ function DaySelect({ label, value, onChange }: { label: string; value: number; o
 function PaymentMethodModal({ draft, onChange, onClose, onSave }: { draft: PaymentMethodDraft; onChange: (draft: PaymentMethodDraft) => void; onClose: () => void; onSave: () => Promise<void> }) {
   const patch = (value: Partial<PaymentMethodDraft>) => onChange({ ...draft, ...value })
   const trimmedCardName = draft.name.trim()
+  const [presetListExpanded, setPresetListExpanded] = useState(trimmedCardName.length >= 2)
   const presetCandidates = draft.type !== 'credit' ? [] : trimmedCardName.length < 2 ? CARD_PRESETS : findCardPresets(draft.name)
   const selectedPreset = presetCandidates.find((preset) => preset.name === draft.name)
   const applyPreset = (preset: CardPreset) => patch({ name: preset.name, closingDay: preset.closingDay, paymentDay: preset.paymentDay })
+
+  useEffect(() => {
+    if (draft.type === 'credit' && trimmedCardName.length >= 2) {
+      setPresetListExpanded(true)
+    }
+  }, [draft.type, trimmedCardName])
+
   return <Modal title={draft.editingId ? '決済方法を編集' : '決済方法を追加'} onClose={onClose}><Stack spacing={2}>
     <FormControl fullWidth><InputLabel>種類</InputLabel><Select label="種類" value={draft.type} onChange={(event) => patch({ type: event.target.value as PaymentMethodDraft['type'] })}>{PAYMENT_TYPES.map((type) => <MenuItem key={type} value={type}>{PAYMENT_TYPE_LABELS[type]}</MenuItem>)}</Select></FormControl>
-    <Field label={draft.type === 'credit' ? 'カード名' : '名前'} value={draft.name} onChange={(event) => patch({ name: event.target.value })} placeholder={draft.type === 'credit' ? '例: 楽天カード' : '例: Suica'} />
+    <Field label={draft.type === 'credit' ? 'カード名から検索' : '名前'} value={draft.name} onChange={(event) => patch({ name: event.target.value })} placeholder={draft.type === 'credit' ? '例: 楽天カード' : '例: Suica'} />
     {draft.type === 'credit' && (
       <Accordion
+        expanded={presetListExpanded}
+        onChange={(_, expanded) => setPresetListExpanded(expanded)}
         disableGutters
         elevation={0}
         sx={{
