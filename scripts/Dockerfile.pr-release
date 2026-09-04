@@ -1,0 +1,6 @@
+# Overlay PR assets onto an explicitly selected deployed image.
+# Keeps the running app bundle, service worker and nginx configuration unchanged.
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+COPY public/pr/ /usr/share/nginx/html/pr/
+COPY public/og.png /usr/share/nginx/html/og.png
