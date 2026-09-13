@@ -55,8 +55,11 @@ export function AppThemeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const background = isDark ? DARK_BACKGROUND : LIGHT_BACKGROUND
     document
-      .querySelector('meta[name="theme-color"]')
-      ?.setAttribute('content', background)
+      .querySelector('#theme-color-light')
+      ?.setAttribute('media', isDark ? 'not all' : 'all')
+    document
+      .querySelector('#theme-color-dark')
+      ?.setAttribute('media', isDark ? 'all' : 'not all')
     document.documentElement.style.colorScheme = resolvedMode
     document.documentElement.style.backgroundColor = background
     document.body.style.backgroundColor = background
