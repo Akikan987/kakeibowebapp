@@ -50,8 +50,11 @@ export default defineConfig({
         start_url: '/',
         scope: '/',
         display: 'standalone',
-        background_color: '#F2F2F7',
-        theme_color: '#F2F2F7',
+        background_color: '#101418',
+        // 一部のAndroid WebAPKはHTML側のtheme-color更新を反映しないため、
+        // 読めない白文字にならないダーク色を安全なフォールバックにする。
+        // 対応端末ではindex.htmlのtheme-colorが選択中のテーマに上書きする。
+        theme_color: '#101418',
         shortcuts: [
           {
             name: '支出を追加',
