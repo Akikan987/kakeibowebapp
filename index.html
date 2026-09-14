@@ -3,8 +3,8 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1" />
-    <meta id="theme-color-light" name="theme-color" media="(prefers-color-scheme: light)" content="#F7F9FC" />
-    <meta id="theme-color-dark" name="theme-color" media="(prefers-color-scheme: dark)" content="#101418" />
+    <!-- 古いAndroid PWAも読み取れるよう、media属性なし・ダーク初期値の1要素にする -->
+    <meta id="theme-color" name="theme-color" content="#101418" />
     <meta name="color-scheme" content="light dark" />
     <meta name="description" content="収入と支出を記録して、割り勘もできる家計簿アプリ" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -19,13 +19,8 @@
         const dark =
           saved === 'dark' ||
           (saved !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches)
-        const lightThemeColor = document.querySelector('#theme-color-light')
-        const darkThemeColor = document.querySelector('#theme-color-dark')
-        if (saved === 'light' || saved === 'dark') {
-          lightThemeColor.media = saved === 'light' ? 'all' : 'not all'
-          darkThemeColor.media = saved === 'dark' ? 'all' : 'not all'
-        }
         const background = dark ? '#101418' : '#F7F9FC'
+        document.querySelector('#theme-color').content = background
         document.documentElement.style.colorScheme = dark ? 'dark' : 'light'
         document.documentElement.style.backgroundColor = background
       })()
