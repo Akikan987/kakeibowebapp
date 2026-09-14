@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
+import CalculateRoundedIcon from '@mui/icons-material/CalculateRounded'
 import CameraAltRoundedIcon from '@mui/icons-material/CameraAltRounded'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import {
@@ -16,6 +17,7 @@ import {
 } from '@mui/material'
 import { Button, Card, Field, LargeTitle, Screen, SectionHeader, fromLocalInput, toLocalInput, yen } from '../components/ui'
 import { expectedWithdrawalDate } from '../payments'
+import { equalSplitAmounts } from '../splits'
 import { emptyDraft, useStore, type ExpenseDraft } from '../store'
 import { PAYMENT_TYPES, PAYMENT_TYPE_LABELS, TYPE_EXPENSE, TYPE_INCOME, now } from '../types'
 
@@ -43,6 +45,23 @@ export function AddScreen({ initial, onDone }: { initial?: ExpenseDraft | null; 
   const accent = isIncome ? '#2E7D32' : '#D32F2F'
   const amount = parseInt(draft.amountYen, 10) || 0
   const splitTotal = draft.splits.reduce((total, split) => total + (parseInt(split.amount, 10) || 0), 0)
+  const fillEqualSplits = () => {
+    if (amount <= 0) {
+      s.notify('支出金額を入力してから均等割りしてください', 'error')
+      return
+    }
+    const amounts = equalSplitAmounts(amount, draft.splits.length)
+    if (amounts.length === 0) {
+      s.notify('1人あたり1円以上になる金額を入力してください', 'error')
+      return
+    }
+    patch({
+      splits: draft.splits.map((split, index) => ({
+        ...split,
+        amount: String(amounts[index]),
+      })),
+    })
+  }
   const selectedPayment = s.paymentMethods.find((method) => method.id === draft.paymentMethodId)
   const selectedPrepaidBalance = s.prepaidBalances.find((balance) => balance.methodId === draft.paymentMethodId)
 
@@ -120,7 +139,7 @@ export function AddScreen({ initial, onDone }: { initial?: ExpenseDraft | null; 
           <SectionHeader>割り勘（他の人の負担）</SectionHeader>
           <Card><CardContent>
             {s.members.length === 0 ? (
-              <Typography variant="body2" color="text.secondary">「設定」でメンバーを追加すると、この支出から他の人の負担を割り当てられます。</Typography>
+              <Typography variant="body2" color="text.secondary">「割り勘」タブでメンバーを追加すると、この支出から他の人の負担を割り当てられます。</Typography>
             ) : (
               <Stack spacing={2}>
                 {draft.splits.map((split, index) => (
@@ -135,9 +154,15 @@ export function AddScreen({ initial, onDone }: { initial?: ExpenseDraft | null; 
                     <IconButton aria-label="削除" onClick={() => patch({ splits: draft.splits.filter((_, itemIndex) => itemIndex !== index) })}><CloseRoundedIcon /></IconButton>
                   </Stack>
                 ))}
-                <Button variant="text" startIcon={<AddRoundedIcon />} onClick={() => patch({ splits: [...draft.splits, { memberId: s.members[0].id, amount: '' }] })} sx={{ width: 'fit-content' }}>人を追加</Button>
+                <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+                  <Button variant="text" startIcon={<AddRoundedIcon />} onClick={() => patch({ splits: [...draft.splits, { memberId: s.members[0].id, amount: '' }] })} sx={{ width: 'fit-content' }}>人を追加</Button>
+                  {draft.splits.length > 0 && (
+                    <Button variant="outline" startIcon={<CalculateRoundedIcon />} onClick={fillEqualSplits} sx={{ width: 'fit-content' }}>均等割りを入力</Button>
+                  )}
+                </Stack>
                 {draft.splits.length > 0 && (
                   <Box sx={{ pt: 2, borderTop: '1px solid', borderColor: 'divider' }}>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>あなたを含む{draft.splits.length + 1}人で均等割りします。割り切れない端数はあなたの負担になります。</Typography>
                     <Stack direction="row" justifyContent="space-between"><Typography variant="body2" color="text.secondary">他の人の負担 計</Typography><Typography variant="body2">{yen(splitTotal)}</Typography></Stack>
                     <Stack direction="row" justifyContent="space-between" sx={{ mt: 1 }}><Typography fontWeight={700}>あなたの負担（統計に反映）</Typography><Typography fontWeight={700} color={amount - splitTotal < 0 ? 'error.main' : 'success.main'}>{yen(amount - splitTotal)}</Typography></Stack>
                   </Box>
