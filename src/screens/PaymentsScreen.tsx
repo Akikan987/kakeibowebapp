@@ -28,7 +28,7 @@ import { cardWithdrawalsByDay } from '../payments'
 import { type CardStatementDraft, type PaymentMethodDraft, type PrepaidChargeDraft, useStore } from '../store'
 import { PAYMENT_TYPES, PAYMENT_TYPE_LABELS, now, type CardStatement, type CardWithdrawal, type PaymentMethod, type PrepaidCharge } from '../types'
 
-const emptyMethod = (): PaymentMethodDraft => ({ editingId: null, name: '', type: 'credit', closingDay: 31, paymentDay: 27 })
+const emptyMethod = (): PaymentMethodDraft => ({ editingId: null, name: '', type: 'credit', closingDay: 31, paymentDay: 27, cardLastFour: '' })
 const emptyCharge = (prepaidMethodId: string): PrepaidChargeDraft => ({ prepaidMethodId, fundingMethodId: '', amountYen: '', chargedAtMillis: now(), note: '' })
 const dayLabel = (day: number) => (day === 31 ? '月末' : `${day}日`)
 const fullDate = (millis: number) => new Date(millis).toLocaleDateString('ja-JP', { year: 'numeric', month: 'long', day: 'numeric' })
@@ -77,7 +77,7 @@ export function PaymentsScreen() {
       note: existing?.note ?? '',
     })
   }
-  const editMethod = (method: PaymentMethod) => setMethodDraft({ editingId: method.id, name: method.name, type: method.type, closingDay: method.closingDay || 31, paymentDay: method.paymentDay || 27 })
+  const editMethod = (method: PaymentMethod) => setMethodDraft({ editingId: method.id, name: method.name, type: method.type, closingDay: method.closingDay || 31, paymentDay: method.paymentDay || 27, cardLastFour: method.cardLastFour ?? '' })
 
   return (
     <Screen>
@@ -160,7 +160,7 @@ export function PaymentsScreen() {
         <Box key={method.id}>
           {index > 0 && <Divider />}
           <Stack direction="row" alignItems="center" spacing={1} sx={{ pl: 2, pr: 1, py: 1.25 }}>
-            <Box sx={{ minWidth: 0, flex: 1 }}><Typography fontWeight={700} noWrap>{method.name}</Typography><Typography variant="caption" color="text.secondary">{PAYMENT_TYPE_LABELS[method.type]}{method.type === 'credit' && <> ・ {dayLabel(method.closingDay)}締め ・ {dayLabel(method.paymentDay)}引き落とし</>}</Typography></Box>
+            <Box sx={{ minWidth: 0, flex: 1 }}><Typography fontWeight={700} noWrap>{method.name}</Typography><Typography variant="caption" color="text.secondary">{PAYMENT_TYPE_LABELS[method.type]}{method.cardLastFour && <> ・ 末尾 {method.cardLastFour}</>}{method.type === 'credit' && <> ・ {dayLabel(method.closingDay)}締め ・ {dayLabel(method.paymentDay)}引き落とし</>}</Typography></Box>
             {method.id !== DEFAULT_CASH_METHOD_ID && method.id !== DEFAULT_OTHER_METHOD_ID && <><IconButton color="primary" aria-label="編集" onClick={() => editMethod(method)}><EditRoundedIcon /></IconButton><IconButton aria-label="決済方法を削除" onClick={() => setPendingMethodDelete(method)}><DeleteOutlineRoundedIcon /></IconButton></>}
           </Stack>
         </Box>
@@ -257,6 +257,10 @@ function PaymentMethodModal({ draft, onChange, onClose, onSave }: { draft: Payme
   return <Modal title={draft.editingId ? '決済方法を編集' : '決済方法を追加'} onClose={onClose}><Stack spacing={2}>
     <FormControl fullWidth><InputLabel>種類</InputLabel><Select label="種類" value={draft.type} onChange={(event) => patch({ type: event.target.value as PaymentMethodDraft['type'] })}>{PAYMENT_TYPES.map((type) => <MenuItem key={type} value={type}>{PAYMENT_TYPE_LABELS[type]}</MenuItem>)}</Select></FormControl>
     <Field label={draft.type === 'credit' ? 'カード名から検索' : '名前'} value={draft.name} onChange={(event) => patch({ name: event.target.value })} placeholder={draft.type === 'credit' ? '例: 楽天カード' : '例: Suica'} />
+    {draft.type !== 'cash' && <>
+      <Field label="カード末尾4桁（任意）" inputMode="numeric" value={draft.cardLastFour} onChange={(event) => patch({ cardLastFour: event.target.value.replace(/[^0-9]/g, '').slice(0, 4) })} placeholder="例: 0123" />
+      <Typography variant="caption" color="text.secondary">レシートのカード末尾と照合します。カード番号全体は入力しないでください。Apple Payなどでは、券面とレシートの末尾が異なる場合があります。</Typography>
+    </>}
     {draft.type === 'credit' && (
       <Accordion
         expanded={presetListExpanded}

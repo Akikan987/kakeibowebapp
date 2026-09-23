@@ -1,12 +1,15 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import CalculateRoundedIcon from '@mui/icons-material/CalculateRounded'
 import CameraAltRoundedIcon from '@mui/icons-material/CameraAltRounded'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import {
   Box,
+  Alert,
+  Checkbox,
   CardContent,
   FormControl,
+  FormControlLabel,
   IconButton,
   InputLabel,
   ListSubheader,
@@ -15,7 +18,9 @@ import {
   Stack,
   Typography,
 } from '@mui/material'
-import { Button, Card, Field, LargeTitle, Screen, SectionHeader, fromLocalInput, toLocalInput, yen } from '../components/ui'
+import { Button, Card, Field, LargeTitle, Modal, Screen, SectionHeader, fromLocalInput, toLocalInput, yen } from '../components/ui'
+import { apiReceiptConfig, type OcrResult } from '../api'
+import { matchReceiptPayment, receiptDateMillis } from '../receipt'
 import { expectedWithdrawalDate } from '../payments'
 import { equalSplitAmounts } from '../splits'
 import { emptyDraft, useStore, type ExpenseDraft } from '../store'
@@ -26,6 +31,26 @@ export function AddScreen({ initial, onDone }: { initial?: ExpenseDraft | null; 
   const [draft, setDraft] = useState<ExpenseDraft>(() => initial ?? emptyDraft())
   const [reading, setReading] = useState(false)
   const receiptRef = useRef<HTMLInputElement>(null)
+  const receiptMode = useRef<'ai' | 'local'>('ai')
+  const [aiAvailable, setAiAvailable] = useState(false)
+  const [configLoading, setConfigLoading] = useState(true)
+  const [aiConsent, setAiConsent] = useState(false)
+  const [receiptResult, setReceiptResult] = useState<OcrResult | null>(null)
+  const [receiptNotice, setReceiptNotice] = useState('')
+  const mounted = useRef(true)
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
+  useEffect(() => {
+    let active = true
+    setAiAvailable(false)
+    setConfigLoading(true)
+    if (!s.account?.token) { setConfigLoading(false); return }
+    void apiReceiptConfig(s.account.token).then((available) => {
+      if (active) setAiAvailable(available)
+    }).catch(() => { /* 手入力・通常OCRは設定取得に失敗しても利用できる */ }).finally(() => {
+      if (active) setConfigLoading(false)
+    })
+    return () => { active = false }
+  }, [s.account?.token])
   const patch = (value: Partial<ExpenseDraft>) => setDraft((current) => ({ ...current, ...value }))
 
   if (!draft.type) {
@@ -64,6 +89,21 @@ export function AddScreen({ initial, onDone }: { initial?: ExpenseDraft | null; 
   }
   const selectedPayment = s.paymentMethods.find((method) => method.id === draft.paymentMethodId)
   const selectedPrepaidBalance = s.prepaidBalances.find((balance) => balance.methodId === draft.paymentMethodId)
+  const paymentMatch = receiptResult ? matchReceiptPayment(receiptResult, s.paymentMethods) : null
+  const receiptCategory = receiptResult && s.categories.some((item) => item.name === receiptResult.category) ? receiptResult.category : ''
+  const applyReceipt = () => {
+    if (!receiptResult) return
+    const next: Partial<ExpenseDraft> = { source: receiptResult.engine === 'openai' ? 'receipt_ai' : 'receipt_ocr' }
+    if (receiptResult.title) next.title = receiptResult.title
+    if (receiptResult.amountYen > 0) next.amountYen = String(receiptResult.amountYen)
+    const timestamp = receiptDateMillis(receiptResult.date)
+    if (timestamp !== null) next.purchasedAtMillis = timestamp
+    if (receiptCategory) next.category = receiptCategory
+    if (paymentMatch?.id) next.paymentMethodId = paymentMatch.id
+    patch(next)
+    setReceiptNotice('読み取り候補を反映しました。題名・金額・品目・決済方法を確認して保存してください。')
+    setReceiptResult(null)
+  }
 
   return (
     <Screen>
@@ -95,7 +135,7 @@ export function AddScreen({ initial, onDone }: { initial?: ExpenseDraft | null; 
                   if (methods.length === 0) return []
                   return [
                     <ListSubheader key={`${type}-header`}>{PAYMENT_TYPE_LABELS[type]}</ListSubheader>,
-                    ...methods.map((method) => <MenuItem key={method.id} value={method.id}>{method.name}</MenuItem>),
+                    ...methods.map((method) => <MenuItem key={method.id} value={method.id}>{method.name}{method.cardLastFour ? `（末尾 ${method.cardLastFour}）` : ''}</MenuItem>),
                   ]
                 })}
               </Select>
@@ -114,26 +154,26 @@ export function AddScreen({ initial, onDone }: { initial?: ExpenseDraft | null; 
         <>
           <SectionHeader>レシートから入力</SectionHeader>
           <Card><CardContent>
-            <Button variant="outline" disabled={reading} startIcon={<CameraAltRoundedIcon />} onClick={() => receiptRef.current?.click()}>{reading ? '読み取り中…' : 'レシートを読み取る'}</Button>
+            <Stack spacing={1.5}>
+              <Typography variant="body2">AIが題名・合計金額・日付・品目・支払方法を読み取ります。候補を確認してから入力欄に反映できます。</Typography>
+              {!configLoading && !aiAvailable && <Alert severity="info">{s.account ? 'AI読み取りは準備中、または設定を確認できません。通常の読み取りと手入力は利用できます。' : 'レシート読み取りにはログインが必要です。手入力はそのまま利用できます。'}</Alert>}
+              {aiAvailable && <FormControlLabel control={<Checkbox checked={aiConsent} onChange={(event) => setAiConsent(event.target.checked)} />} label={<Typography variant="body2">レシート画像と登録済みの品目名をOpenAIへ送信することに同意します。画像内の情報も送信されます。</Typography>} />}
+              <Button disabled={reading || configLoading || !aiAvailable || !aiConsent} startIcon={<CameraAltRoundedIcon />} onClick={() => { receiptMode.current = 'ai'; receiptRef.current?.click() }}>{reading && receiptMode.current === 'ai' ? 'AIで読み取り中…' : 'AIでレシートを読み取る'}</Button>
+              <Button variant="outline" disabled={reading || !s.account} onClick={() => { receiptMode.current = 'local'; receiptRef.current?.click() }}>{reading && receiptMode.current === 'local' ? '読み取り中…' : '通常の読み取りを使う（外部AI送信なし）'}</Button>
+            </Stack>
             <input ref={receiptRef} type="file" accept="image/*" hidden onChange={async (event) => {
               const file = event.target.files?.[0]
               event.target.value = ''
               if (!file) return
+              if (receiptMode.current === 'ai' && (!aiConsent || !aiAvailable)) return
               setReading(true)
               try {
-                const result = await s.readReceipt(file)
-                if (result) {
-                  const next: Partial<ExpenseDraft> = { title: result.title || draft.title, amountYen: result.amountYen ? String(result.amountYen) : draft.amountYen, source: 'receipt_ocr' }
-                  if (result.date) {
-                    const date = new Date(`${result.date}T12:00:00`)
-                    if (!Number.isNaN(date.getTime())) next.purchasedAtMillis = date.getTime()
-                  }
-                  patch(next)
-                  s.notify('レシートを読み取りました')
-                }
-              } finally { setReading(false) }
+                const result = await s.readReceipt(file, receiptMode.current)
+                if (result && mounted.current) setReceiptResult(result)
+              } finally { if (mounted.current) setReading(false) }
             }} />
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5 }}>カメラで撮影するか写真を選ぶと、店名・合計金額・日付を読み取ります。結果は保存前に直せます。</Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5 }}>読み取りは誤ることがあります。カード末尾4桁は「決済」で登録できます。読み取れない項目は手入力してください。通常の読み取りは店名・金額・日付のみです。</Typography>
+            {receiptNotice && <Alert severity="info" sx={{ mt: 1.5 }}>{receiptNotice}</Alert>}
           </CardContent></Card>
 
           <SectionHeader>割り勘（他の人の負担）</SectionHeader>
@@ -173,7 +213,19 @@ export function AddScreen({ initial, onDone }: { initial?: ExpenseDraft | null; 
         </>
       )}
 
-      <Button color={accent} sx={{ mt: 3 }} onClick={async () => { if (await s.saveExpense(draft)) onDone() }}>{draft.editingId ? '更新' : '保存'}</Button>
+      <Button color={accent} disabled={reading} sx={{ mt: 3 }} onClick={async () => { if (await s.saveExpense(draft)) onDone() }}>{draft.editingId ? '更新' : '保存'}</Button>
+      {receiptResult && <Modal title="読み取り候補を確認" onClose={() => setReceiptResult(null)}><Stack spacing={1.5}>
+        <Typography>題名：{receiptResult.title || '読み取れませんでした'}</Typography>
+        <Typography>金額：{receiptResult.amountYen > 0 ? yen(receiptResult.amountYen) : '確認してください'}</Typography>
+        <Typography>日付：{receiptDateMillis(receiptResult.date) !== null ? receiptResult.date : '確認してください'}</Typography>
+        <Typography>品目：{receiptCategory || '自動選択なし'}</Typography>
+        <Typography>決済方法：{s.paymentMethods.find((method) => method.id === paymentMatch?.id)?.name || '自動選択なし'}</Typography>
+        {receiptResult.engine === 'openai' && <Alert severity={paymentMatch?.id ? 'info' : 'warning'}>{paymentMatch?.message}</Alert>}
+        {receiptResult.warnings.map((warning, index) => <Alert key={index} severity="warning">{warning}</Alert>)}
+        <Typography variant="body2" color="text.secondary">読み取れた項目を入力欄へ反映します。読み取れなかった項目は現在の入力を維持します。決済方法を含め、反映後に確認・修正してください。この操作だけでは保存されません。</Typography>
+        <Button onClick={applyReceipt}>候補を入力欄に反映する</Button>
+        <Button variant="text" onClick={() => setReceiptResult(null)}>反映せず閉じる</Button>
+      </Stack></Modal>}
     </Screen>
   )
 }

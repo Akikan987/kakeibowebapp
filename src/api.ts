@@ -279,6 +279,7 @@ const paymentMethodOut = (m: PaymentMethod): Raw => ({
   type: m.type,
   closing_day: m.closingDay,
   payment_day: m.paymentDay,
+  ...(m.cardLastFour !== undefined ? { card_last_four: m.cardLastFour } : {}),
 })
 const paymentMethodIn = (r: Raw): PaymentMethod => ({
   ...baseIn(r),
@@ -286,6 +287,7 @@ const paymentMethodIn = (r: Raw): PaymentMethod => ({
   type: paymentTypeIn(r.type),
   closingDay: Number(r.closing_day ?? 0),
   paymentDay: Number(r.payment_day ?? 0),
+  cardLastFour: String(r.card_last_four ?? ''),
 })
 
 const prepaidChargeOut = (c: PrepaidCharge): Raw => ({
@@ -432,12 +434,27 @@ export interface OcrResult {
   date: string
   lines: string[]
   text: string
+  engine: 'openai' | 'local'
+  category: string
+  paymentType: string
+  paymentLabel: string
+  cardLastFour: string
+  paymentConfidence: string
+  warnings: string[]
+}
+
+export async function apiReceiptConfig(token: string): Promise<boolean> {
+  const res = await fetch('/ocr/config', { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' })
+  if (!res.ok) throw new ApiError(res.status, '読み取り設定を取得できませんでした')
+  return (await res.json()).ai_available === true
 }
 
 /** レシート画像を送って、タイトル・金額・日付の候補を受け取る */
 export async function apiReadReceipt(
   token: string,
   file: File,
+  mode: 'ai' | 'local' = 'local',
+  categories: string[] = [],
 ): Promise<OcrResult> {
   const maxBytes = 8 * 1024 * 1024
   if (file.size > maxBytes) {
@@ -449,6 +466,9 @@ export async function apiReadReceipt(
   }
   const form = new FormData()
   form.append('file', file)
+  form.append('mode', mode)
+  form.append('ai_consent', mode === 'ai' ? 'true' : 'false')
+  form.append('categories', JSON.stringify(categories))
   const res = await fetch('/ocr/receipt', {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}` },
@@ -470,5 +490,12 @@ export async function apiReadReceipt(
     date: String(j.date ?? ''),
     lines: (j.lines as string[]) ?? [],
     text: String(j.text ?? ''),
+    engine: j.engine === 'openai' ? 'openai' : 'local',
+    category: String(j.category ?? ''),
+    paymentType: String(j.payment_type ?? 'unknown'),
+    paymentLabel: String(j.payment_label ?? ''),
+    cardLastFour: typeof j.card_last_four === 'string' && /^[0-9]{4}$/.test(j.card_last_four) ? j.card_last_four : '',
+    paymentConfidence: String(j.payment_confidence ?? 'unknown'),
+    warnings: Array.isArray(j.warnings) ? j.warnings.filter((w): w is string => typeof w === 'string') : [],
   }
 }

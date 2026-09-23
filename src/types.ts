@@ -53,6 +53,8 @@ export interface Settlement extends SyncBase {
 export interface PaymentMethod extends SyncBase {
   name: string
   type: PaymentType
+  /** 未登録の旧データはundefined。番号全体は保存しない */
+  cardLastFour?: string
   /** 1〜30は日付、31は月末。クレジット以外は0 */
   closingDay: number
   /** 1〜30は日付、31は月末。クレジット以外は0 */

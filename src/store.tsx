@@ -130,6 +130,7 @@ export interface PaymentMethodDraft {
   editingId: string | null
   name: string
   type: PaymentType
+  cardLastFour: string
   closingDay: number
   paymentDay: number
 }
@@ -257,7 +258,7 @@ interface Store {
   saveCardStatement: (draft: CardStatementDraft) => Promise<boolean>
   deleteCardStatement: (statement: CardStatement) => Promise<void>
   // レシートOCR
-  readReceipt: (file: File) => Promise<OcrResult | null>
+  readReceipt: (file: File, mode?: 'ai' | 'local') => Promise<OcrResult | null>
   // バックアップ
   exportJson: () => void
   exportCsv: () => void
@@ -1102,6 +1103,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const existing = draft.editingId
         ? paymentMethods.find((method) => method.id === draft.editingId)
         : undefined
+      const cardLastFour = draft.type === 'cash' ? '' : draft.cardLastFour.trim()
+      if (!/^([0-9]{4})?$/.test(cardLastFour)) {
+        notify('カード末尾は半角数字4桁で入力してください', 'error')
+        return false
+      }
       const isUsed = existing
         ? expenses.some((expense) => expense.paymentMethodId === existing.id) ||
           prepaidCharges.some(
@@ -1120,6 +1126,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         type: draft.type,
         closingDay: draft.type === 'credit' ? draft.closingDay : 0,
         paymentDay: draft.type === 'credit' ? draft.paymentDay : 0,
+        cardLastFour,
         updatedAt: now(),
         deleted: false,
       })
@@ -1364,17 +1371,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // ---------------- レシートOCR ----------------
 
   const readReceipt = useCallback(
-    async (file: File): Promise<OcrResult | null> => {
+    async (file: File, mode: 'ai' | 'local' = 'local'): Promise<OcrResult | null> => {
       const token = account?.token
       if (!token) {
         notify('レシート読み取りにはログインが必要です', 'error')
         return null
       }
       try {
-        return await apiReadReceipt(token, file)
+        return await apiReadReceipt(token, file, mode, categories.map((category) => category.name).slice(0, 100))
       } catch (err) {
         notify(
-          err instanceof ApiError && (err.status === 413 || err.status === 415)
+          err instanceof ApiError && err.status === 429
+            ? '読み取りの利用回数上限に達しました。時間をおいて再試行するか、手入力してください。'
+            : err instanceof ApiError && err.detail
             ? err.detail
             : err instanceof ApiError && err.status === 503
               ? 'OCRサービスに接続できませんでした'
@@ -1384,7 +1393,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         return null
       }
     },
-    [account, notify],
+    [account, categories, notify],
   )
 
   // ---------------- バックアップ ----------------
@@ -1449,12 +1458,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         dateMillis,
       })),
       paymentMethods: paymentMethods.map(
-        ({ id, name, type, closingDay, paymentDay }) => ({
+        ({ id, name, type, closingDay, paymentDay, cardLastFour }) => ({
           id,
           name,
           type,
           closingDay,
           paymentDay,
+          cardLastFour: cardLastFour ?? '',
         }),
       ),
       prepaidCharges: prepaidCharges.map(
@@ -1581,6 +1591,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               type,
               closingDay: Number(o.closingDay ?? 0),
               paymentDay: Number(o.paymentDay ?? 0),
+              cardLastFour: /^([0-9]{4})?$/.test(String(o.cardLastFour ?? '')) ? String(o.cardLastFour ?? '') : '',
               updatedAt: ts,
               deleted: false,
             }
