@@ -32,7 +32,6 @@ export function AddScreen({ initial, onDone }: { initial?: ExpenseDraft | null; 
   const receiptMode = useRef<'ai' | 'local'>('ai')
   const [aiAvailable, setAiAvailable] = useState(false)
   const [configLoading, setConfigLoading] = useState(true)
-  const [confirmAiUpload, setConfirmAiUpload] = useState(false)
   const [receiptResult, setReceiptResult] = useState<OcrResult | null>(null)
   const [receiptNotice, setReceiptNotice] = useState('')
   const mounted = useRef(true)
@@ -155,7 +154,7 @@ export function AddScreen({ initial, onDone }: { initial?: ExpenseDraft | null; 
             <Stack spacing={1.5}>
               <Typography variant="body2">AIが題名・合計金額・日付・品目・支払方法を読み取ります。候補を確認してから入力欄に反映できます。</Typography>
               {!configLoading && !aiAvailable && <Alert severity="info">{s.account ? 'AI読み取りは準備中、または設定を確認できません。通常の読み取りと手入力は利用できます。' : 'レシート読み取りにはログインが必要です。手入力はそのまま利用できます。'}</Alert>}
-              <Button disabled={reading || configLoading || !aiAvailable} startIcon={<CameraAltRoundedIcon />} onClick={() => setConfirmAiUpload(true)}>{reading && receiptMode.current === 'ai' ? 'AIで読み取り中…' : 'AIでレシートを読み取る'}</Button>
+              <Button disabled={reading || configLoading || !aiAvailable} startIcon={<CameraAltRoundedIcon />} onClick={() => { receiptMode.current = 'ai'; receiptRef.current?.click() }}>{reading && receiptMode.current === 'ai' ? 'AIで読み取り中…' : 'AIでレシートを読み取る'}</Button>
               <Button variant="outline" disabled={reading || !s.account} onClick={() => { receiptMode.current = 'local'; receiptRef.current?.click() }}>{reading && receiptMode.current === 'local' ? '読み取り中…' : '通常の読み取りを使う（外部AI送信なし）'}</Button>
             </Stack>
             <input ref={receiptRef} type="file" accept="image/*" hidden onChange={async (event) => {
@@ -169,7 +168,7 @@ export function AddScreen({ initial, onDone }: { initial?: ExpenseDraft | null; 
                 if (result && mounted.current) setReceiptResult(result)
               } finally { if (mounted.current) setReading(false) }
             }} />
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5 }}>読み取りは誤ることがあります。カード末尾4桁は「決済」で登録できます。読み取れない項目は手入力してください。通常の読み取りは店名・金額・日付のみです。</Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5 }}>AI読み取りでは、レシート画像と登録済みの品目名をOpenAIへ送信します。画像内の情報も送信されます。読み取りは誤ることがあります。カード末尾4桁は「決済」で登録できます。読み取れない項目は手入力してください。通常の読み取りは店名・金額・日付のみです。</Typography>
             {receiptNotice && <Alert severity="info" sx={{ mt: 1.5 }}>{receiptNotice}</Alert>}
           </CardContent></Card>
 
@@ -211,11 +210,6 @@ export function AddScreen({ initial, onDone }: { initial?: ExpenseDraft | null; 
       )}
 
       <Button color={accent} disabled={reading} sx={{ mt: 3 }} onClick={async () => { if (await s.saveExpense(draft)) onDone() }}>{draft.editingId ? '更新' : '保存'}</Button>
-      {confirmAiUpload && <Modal title="AI読み取りを使いますか？" onClose={() => setConfirmAiUpload(false)}><Stack spacing={2}>
-        <Typography variant="body2">レシート画像と登録済みの品目名をOpenAIへ送信します。画像内の情報も送信されます。</Typography>
-        <Button onClick={() => { setConfirmAiUpload(false); receiptMode.current = 'ai'; receiptRef.current?.click() }}>同意して画像を選ぶ</Button>
-        <Button variant="text" onClick={() => setConfirmAiUpload(false)}>キャンセル</Button>
-      </Stack></Modal>}
       {receiptResult && <Modal title="読み取り候補を確認" onClose={() => setReceiptResult(null)}><Stack spacing={1.5}>
         <Typography>題名：{receiptResult.title || '読み取れませんでした'}</Typography>
         <Typography>金額：{receiptResult.amountYen > 0 ? yen(receiptResult.amountYen) : '確認してください'}</Typography>
