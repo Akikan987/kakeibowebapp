@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
 import CreditCardRoundedIcon from '@mui/icons-material/CreditCardRounded'
@@ -69,6 +69,13 @@ export default function App() {
   const [settingsReturnTab, setSettingsReturnTab] = useState<Exclude<Tab, 'settings'>>(shortcutDraft ? lastTab : initialTab)
   const [addReturnTab, setAddReturnTab] = useState<MainTab>(lastTab)
   const [editDraft, setEditDraft] = useState<ExpenseDraft | null>(shortcutDraft)
+  const previousOwner = useRef(s.account?.uid)
+  useEffect(() => {
+    if (previousOwner.current === s.account?.uid) return
+    previousOwner.current = s.account?.uid
+    setEditDraft(null)
+    setTab(readLastTab())
+  }, [s.account?.uid])
 
   const openSettings = () => {
     if (tab !== 'settings') setSettingsReturnTab(tab)
@@ -77,7 +84,7 @@ export default function App() {
 
   useEffect(() => {
     if (!s.message) return
-    const timer = setTimeout(s.clearMessage, 2800)
+    const timer = setTimeout(s.clearMessage, s.message.action ? 10_000 : 2800)
     return () => clearTimeout(timer)
   }, [s.message, s.clearMessage])
 
@@ -97,6 +104,7 @@ export default function App() {
           <Toast
             text={s.message.text}
             kind={s.message.kind}
+            action={s.message.action}
             onDone={s.clearMessage}
           />
         )}
@@ -171,6 +179,7 @@ export default function App() {
           )}
           {tab === 'add' && (
             <AddScreen
+              key={`${s.account?.uid ?? 'offline'}:${editDraft?.editingId ?? 'new'}`}
               initial={editDraft}
               onDone={() => {
                 setEditDraft(null)
@@ -235,7 +244,7 @@ export default function App() {
       </Paper>
 
       {s.message && (
-        <Toast text={s.message.text} kind={s.message.kind} onDone={s.clearMessage} />
+        <Toast text={s.message.text} kind={s.message.kind} action={s.message.action} onDone={s.clearMessage} />
       )}
     </Box>
   )

@@ -11,7 +11,6 @@ import {
   AccordionSummary,
   Box,
   Button as MuiButton,
-  Chip,
   FormControl,
   IconButton,
   InputLabel,
@@ -25,6 +24,8 @@ import { CARD_PRESETS, findCardPresets, type CardPreset } from '../cardPresets'
 import { Button, Card, Divider, Field, LargeTitle, Modal, Screen, SectionHeader, fromLocalInput, toLocalInput, yen } from '../components/ui'
 import { DEFAULT_CASH_METHOD_ID, DEFAULT_OTHER_METHOD_ID } from '../db'
 import { cardWithdrawalsByDay } from '../payments'
+import { buildWithdrawalSchedule, withdrawalKey } from '../domain/paymentOverview'
+import { PaymentOverview, WithdrawalDetails, WithdrawalStatus } from '../components/PaymentOverview'
 import { type CardStatementDraft, type PaymentMethodDraft, type PrepaidChargeDraft, useStore } from '../store'
 import { PAYMENT_TYPES, PAYMENT_TYPE_LABELS, now, type CardStatement, type CardWithdrawal, type PaymentMethod, type PrepaidCharge } from '../types'
 
@@ -44,18 +45,14 @@ export function PaymentsScreen() {
   const [selectedCalendarDay, setSelectedCalendarDay] = useState<number | null>(null)
   const [statementDraft, setStatementDraft] = useState<CardStatementDraft | null>(null)
   const [pendingStatementDelete, setPendingStatementDelete] = useState<CardStatement | null>(null)
+  const [detailKey, setDetailKey] = useState<string | null>(null)
 
-  const displayWithdrawals = useMemo(() => s.cardWithdrawals.map((withdrawal) => {
-    const statement = s.cardStatements.find((item) => item.paymentMethodId === withdrawal.methodId && item.withdrawalAtMillis === withdrawal.withdrawalAtMillis)
-    return statement ? { ...withdrawal, amountYen: statement.actualAmountYen } : withdrawal
-  }), [s.cardStatements, s.cardWithdrawals])
-
-  const upcomingWithdrawals = useMemo(() => {
-    const start = new Date()
-    start.setHours(0, 0, 0, 0)
-    start.setDate(1)
-    return displayWithdrawals.filter((item) => item.withdrawalAtMillis >= start.getTime()).slice(0, 12)
-  }, [displayWithdrawals])
+  const displayWithdrawals = useMemo(
+    () => buildWithdrawalSchedule(s.cardWithdrawals, s.cardStatements, s.paymentMethods),
+    [s.cardStatements, s.cardWithdrawals, s.paymentMethods],
+  )
+  const detailRow = displayWithdrawals.find((item) => withdrawalKey(item.methodId, item.withdrawalAtMillis) === detailKey)
+  const statementRow = statementDraft && displayWithdrawals.find((item) => item.methodId === statementDraft.paymentMethodId && item.withdrawalAtMillis === statementDraft.withdrawalAtMillis)
   const prepaidMethods = s.paymentMethods.filter((method) => method.type === 'prepaid')
   const calendarWithdrawals = useMemo(
     () => cardWithdrawalsByDay(displayWithdrawals, calendarMonth.year, calendarMonth.month),
@@ -83,6 +80,8 @@ export function PaymentsScreen() {
     <Screen>
       <LargeTitle>決済</LargeTitle>
 
+      <PaymentOverview schedule={displayWithdrawals} onSelect={(row) => setDetailKey(withdrawalKey(row.methodId, row.withdrawalAtMillis))} />
+
       <SectionHeader>引き落としカレンダー</SectionHeader>
       <WithdrawalCalendar
         year={calendarMonth.year}
@@ -100,31 +99,16 @@ export function PaymentsScreen() {
           ) : selectedWithdrawals.map((item, index) => (
             <Box key={item.methodId}>
               {index > 0 && <Divider />}
-              <Stack direction="row" justifyContent="space-between" spacing={2} sx={{ py: 1 }}>
+              <MuiButton fullWidth color="inherit" onClick={() => setDetailKey(withdrawalKey(item.methodId, item.withdrawalAtMillis))} sx={{ justifyContent: 'space-between', gap: 2, py: 1 }}>
                 <Typography>{item.methodName}</Typography>
-                <Typography fontWeight={700} color="error.main">{yen(item.amountYen)}</Typography>
-              </Stack>
+                <Stack alignItems="flex-end" spacing={0.5}><Typography fontWeight={700}>{yen(item.amountYen)}</Typography><WithdrawalStatus status={displayWithdrawals.find((row) => row.methodId === item.methodId && row.withdrawalAtMillis === item.withdrawalAtMillis)?.status ?? 'estimated'} /></Stack>
+              </MuiButton>
             </Box>
           ))}
           {selectedWithdrawals.length > 0 && <Stack direction="row" justifyContent="space-between" sx={{ pt: 0.75 }}><Typography fontWeight={700}>合計</Typography><Typography fontWeight={700} color="error.main">{yen(selectedWithdrawals.reduce((sum, item) => sum + item.amountYen, 0))}</Typography></Stack>}
         </Box>
       </Card>}
 
-      <SectionHeader>カードの引き落とし予定</SectionHeader>
-      <Card>
-        {upcomingWithdrawals.length === 0 ? <EmptyText>クレジットカードを登録して支出に指定すると、締め日から引き落とし予定額を計算します。</EmptyText> : upcomingWithdrawals.map((item, index) => (
-          <Box key={`${item.methodId}:${item.withdrawalAtMillis}`}>
-            {index > 0 && <Divider />}
-            <Box sx={{ px: 2, py: 1.75 }}>
-              <Stack direction="row" justifyContent="space-between" spacing={2}>
-                <Box><Typography fontWeight={700}>{item.methodName}</Typography><Typography variant="body2" color="text.secondary">{fullDate(item.withdrawalAtMillis)}予定 ・ {dayLabel(item.closingDay)}締め</Typography></Box>
-                <Typography fontWeight={700} color="error.main">{yen(item.amountYen)}</Typography>
-              </Stack>
-              <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1} sx={{ mt: 0.5 }}><Typography variant="caption" color="text.secondary">カード利用 {yen(item.expenseAmountYen)}{item.chargeAmountYen > 0 && <> ・ プリペイドチャージ {yen(item.chargeAmountYen)}</>} ・ {item.itemCount}件</Typography><StatementStatus withdrawal={item} statements={s.cardStatements} /><MuiButton size="small" onClick={() => openStatement(item)}>請求確認</MuiButton></Stack>
-            </Box>
-          </Box>
-        ))}
-      </Card>
       <HelpText>休日による実際の引き落とし日の前後は、カード会社の明細で確認してください。</HelpText>
 
       <SectionHeader>プリペイド残高</SectionHeader>
@@ -172,7 +156,8 @@ export function PaymentsScreen() {
       {chargeDraft && <ChargeModal draft={chargeDraft} methods={s.paymentMethods} prepaidMethods={prepaidMethods} onChange={setChargeDraft} onClose={() => setChargeDraft(null)} onSave={async () => { if (await s.recordPrepaidCharge(chargeDraft)) setChargeDraft(null) }} />}
       {pendingMethodDelete && <ConfirmModal title="決済方法を削除しますか？" description={`「${pendingMethodDelete.name}」を削除します。使用済みの場合は削除できません。`} action="削除" onClose={() => setPendingMethodDelete(null)} onConfirm={async () => { await s.deletePaymentMethod(pendingMethodDelete); setPendingMethodDelete(null) }} />}
       {pendingChargeDelete && <ConfirmModal title="チャージ記録を取り消しますか？" description={`${yen(pendingChargeDelete.amountYen)}のチャージを取り消すと、残高とカード引落予定から除かれます。`} action="取り消す" onClose={() => setPendingChargeDelete(null)} onConfirm={async () => { await s.deletePrepaidCharge(pendingChargeDelete); setPendingChargeDelete(null) }} />}
-      {statementDraft && <StatementModal draft={statementDraft} withdrawal={s.cardWithdrawals.find((item) => item.methodId === statementDraft.paymentMethodId && item.withdrawalAtMillis === statementDraft.withdrawalAtMillis)} canReset={s.cardStatements.some((item) => item.paymentMethodId === statementDraft.paymentMethodId && item.withdrawalAtMillis === statementDraft.withdrawalAtMillis)} onChange={setStatementDraft} onClose={() => setStatementDraft(null)} onSave={async () => { if (await s.saveCardStatement(statementDraft)) setStatementDraft(null) }} onReset={() => { const existing = s.cardStatements.find((item) => item.paymentMethodId === statementDraft.paymentMethodId && item.withdrawalAtMillis === statementDraft.withdrawalAtMillis); if (existing) setPendingStatementDelete(existing) }} />}
+      {detailRow && <WithdrawalDetails key={detailKey} row={detailRow} expenses={s.expenses} charges={s.prepaidCharges} onClose={() => setDetailKey(null)} onConfirm={() => { openStatement(detailRow); setDetailKey(null) }} />}
+      {statementDraft && <StatementModal draft={statementDraft} withdrawal={statementRow ? { ...statementRow, amountYen: statementRow.estimatedAmountYen } : undefined} canReset={s.cardStatements.some((item) => item.paymentMethodId === statementDraft.paymentMethodId && item.withdrawalAtMillis === statementDraft.withdrawalAtMillis)} onChange={setStatementDraft} onClose={() => setStatementDraft(null)} onSave={async () => { if (await s.saveCardStatement(statementDraft)) setStatementDraft(null) }} onReset={() => { const existing = s.cardStatements.find((item) => item.paymentMethodId === statementDraft.paymentMethodId && item.withdrawalAtMillis === statementDraft.withdrawalAtMillis); if (existing) setPendingStatementDelete(existing) }} />}
       {pendingStatementDelete && <ConfirmModal title="予定額に戻しますか？" description="入力した確定請求額と支払状態を削除し、利用履歴からの予定額に戻します。" action="戻す" onClose={() => setPendingStatementDelete(null)} onConfirm={async () => { await s.deleteCardStatement(pendingStatementDelete); setPendingStatementDelete(null); setStatementDraft(null) }} />}
     </Screen>
   )
@@ -217,12 +202,6 @@ function WithdrawalCalendar({ year, month, withdrawals, selectedDay, onSelectDay
       })}
     </Box>
   </Card>
-}
-
-function StatementStatus({ withdrawal, statements }: { withdrawal: CardWithdrawal; statements: CardStatement[] }) {
-  const statement = statements.find((item) => item.paymentMethodId === withdrawal.methodId && item.withdrawalAtMillis === withdrawal.withdrawalAtMillis)
-  if (!statement) return <Chip size="small" variant="outlined" label="予定" />
-  return <Chip size="small" color={statement.status === 'paid' ? 'success' : 'primary'} label={statement.status === 'paid' ? '支払済み' : '確定'} />
 }
 
 function StatementModal({ draft, withdrawal, canReset, onChange, onClose, onSave, onReset }: { draft: CardStatementDraft; withdrawal?: CardWithdrawal; canReset: boolean; onChange: (draft: CardStatementDraft) => void; onClose: () => void; onSave: () => Promise<void>; onReset: () => void }) {

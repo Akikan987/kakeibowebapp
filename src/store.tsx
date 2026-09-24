@@ -29,6 +29,9 @@ import {
 import { applySyncChanges, readSyncSnapshot } from './sync/local'
 import { reuseUnchangedRows } from './sync/records'
 import { indexSplits, memberBalances, monthlySummary } from './domain/ledger'
+import { clearDrafts, type ExpenseDraft } from './entries/draft'
+import { undoExpenseWrite, writeExpense } from './entries/persistence'
+export type { ExpenseDraft, DraftSplit } from './entries/draft'
 import { prepareAvatar } from './avatar'
 import {
   activeCategories,
@@ -97,23 +100,6 @@ const readAccount = (): Account | null => {
   } catch {
     return null
   }
-}
-
-export interface DraftSplit {
-  memberId: string
-  amount: string
-}
-
-export interface ExpenseDraft {
-  editingId: string | null
-  type: string
-  title: string
-  amountYen: string
-  category: string
-  purchasedAtMillis: number
-  source: string
-  paymentMethodId: string
-  splits: DraftSplit[]
 }
 
 export const emptyDraft = (): ExpenseDraft => ({
@@ -198,7 +184,7 @@ interface Store {
   hasPendingChanges: boolean
   syncError: boolean
   // メッセージ
-  message: { text: string; kind: 'ok' | 'error' } | null
+  message: { text: string; kind: 'ok' | 'error'; action?: { label: string; onClick: () => void } } | null
   clearMessage: () => void
   notify: (text: string, kind?: 'ok' | 'error') => void
   // 認証
@@ -670,6 +656,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const clearSession = useCallback(() => {
     // ローカルデータは消さない（未同期の変更を守る）
+    const uid = readAccount()?.uid
+    if (uid) clearDrafts(localStorage, uid)
     localStorage.removeItem(LS_ACCOUNT)
     localStorage.setItem(LS_OFFLINE, '0')
     setAccount(null)
@@ -703,6 +691,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       try {
         await apiDeleteAccount(token, currentPassword)
         await clearLocalData()
+        if (account?.uid) clearDrafts(localStorage, account.uid)
         localStorage.removeItem(LS_ACCOUNT)
         localStorage.removeItem(LS_OWNER)
         localStorage.removeItem(LS_LAST_SYNC)
@@ -736,14 +725,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const saveExpense = useCallback(
     async (draft: ExpenseDraft) => {
-      const amount = parseInt(draft.amountYen, 10)
-      if (!Number.isFinite(amount)) {
+      const amount = Number(draft.amountYen)
+      if (!draft.amountYen.trim() || !Number.isSafeInteger(amount) || amount < 0 || amount > 2_000_000_000) {
         notify('金額を入力してください', 'error')
+        return false
+      }
+      if (!['income', 'expense'].includes(draft.type) || !Number.isFinite(new Date(draft.purchasedAtMillis).getTime())) {
+        notify('種類と記録日時を確認してください', 'error')
         return false
       }
       const valid = draft.splits
         .map((s) => ({ memberId: s.memberId, amount: parseInt(s.amount, 10) }))
         .filter((s) => Number.isFinite(s.amount) && s.amount > 0)
+      if (draft.type === TYPE_EXPENSE && valid.some((split) => !members.some((member) => member.id === split.memberId))) {
+        notify('割り勘メンバーが削除されています。選び直すか、該当の割り勘を外してください', 'error')
+        return false
+      }
       const splitSum = valid.reduce((a, b) => a + b.amount, 0)
       if (splitSum > amount) {
         notify(`割り勘の合計（¥${splitSum}）が金額を超えています`, 'error')
@@ -783,42 +780,53 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }
       const ts = now()
       const id = draft.editingId ?? newId()
-      await db.expenses.put({
-        id,
-        title: draft.title.trim() || DEFAULT_TITLE,
-        amountYen: amount,
-        purchasedAtMillis: draft.purchasedAtMillis,
-        category: draft.category.trim() || DEFAULT_TITLE,
-        source: draft.source,
-        type: draft.type,
-        paymentMethodId,
-        updatedAt: ts,
-        deleted: false,
-      })
-      // 既存の割り勘を論理削除してから入れ直す
-      const olds = await db.expenseSplits.where('expenseId').equals(id).toArray()
-      if (olds.length)
-        await db.expenseSplits.bulkPut(
-          olds.map((o) => ({ ...o, deleted: true, updatedAt: ts })),
-        )
-      if (draft.type === TYPE_EXPENSE && valid.length) {
-        await db.expenseSplits.bulkPut(
-          valid.map((v) => ({
-            id: newId(),
-            expenseId: id,
-            memberId: v.memberId,
-            amountYen: v.amount,
-            updatedAt: ts,
-            deleted: false,
-          })),
-        )
+      try {
+        const ticket = await writeExpense({
+          id,
+          title: draft.title.trim() || DEFAULT_TITLE,
+          amountYen: amount,
+          purchasedAtMillis: draft.purchasedAtMillis,
+          category: draft.category.trim() || DEFAULT_TITLE,
+          source: draft.source,
+          type: draft.type,
+          paymentMethodId,
+          updatedAt: ts,
+          deleted: false,
+        }, draft.type === TYPE_EXPENSE ? valid.map((v) => ({
+          id: newId(),
+          expenseId: id,
+          memberId: v.memberId,
+          amountYen: v.amount,
+          updatedAt: ts,
+          deleted: false,
+        })) : [])
+        await reload()
+        const savedOwner = account?.uid ?? 'offline'
+        let undoing = false
+        setMessage({ text: '保存しました', kind: 'ok', action: { label: '取り消す', onClick: () => {
+          if (undoing) return
+          undoing = true
+          void (async () => {
+            try {
+              if ((readAccount()?.uid ?? 'offline') !== savedOwner) return
+              if (!await undoExpenseWrite(ticket)) {
+                notify('保存後に変更されたため取り消せません。履歴から確認してください', 'error')
+                return
+              }
+              await reload()
+              notify('直前の保存を取り消しました')
+              autoSync()
+            } catch { notify('取り消せませんでした。履歴を確認してください', 'error') }
+          })()
+        } } })
+        autoSync()
+        return true
+      } catch {
+        notify('保存できませんでした。入力内容を確認して再試行してください', 'error')
+        return false
       }
-      await reload()
-      notify('保存しました')
-      autoSync()
-      return true
     },
-    [autoSync, expenses, notify, paymentMethods, prepaidCharges, reload],
+    [account?.uid, autoSync, expenses, members, notify, paymentMethods, prepaidCharges, reload],
   )
 
   const deleteExpense = useCallback(

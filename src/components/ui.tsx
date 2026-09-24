@@ -163,10 +163,12 @@ export function Toast({
   text,
   kind,
   onDone,
+  action,
 }: {
   text: string
   kind: 'ok' | 'error'
   onDone: () => void
+  action?: { label: string; onClick: () => void }
 }) {
   return (
     <Snackbar
@@ -179,6 +181,7 @@ export function Toast({
         severity={kind === 'error' ? 'error' : 'success'}
         variant="filled"
         onClose={onDone}
+        action={action && <MuiButton color="inherit" size="small" onClick={action.onClick}>{action.label}</MuiButton>}
         sx={{ width: '100%', borderRadius: 2 }}
       >
         {text}

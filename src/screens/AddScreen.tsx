@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import CalculateRoundedIcon from '@mui/icons-material/CalculateRounded'
 import CameraAltRoundedIcon from '@mui/icons-material/CameraAltRounded'
@@ -22,11 +22,33 @@ import { matchReceiptPayment, receiptDateMillis } from '../receipt'
 import { expectedWithdrawalDate } from '../payments'
 import { equalSplitAmounts } from '../splits'
 import { emptyDraft, useStore, type ExpenseDraft } from '../store'
+import { draftStorageKey, findDuplicateExpenses, hasDraftContent, merchantSuggestions, readDraft, writeDraft } from '../entries/draft'
 import { PAYMENT_TYPES, PAYMENT_TYPE_LABELS, TYPE_EXPENSE, TYPE_INCOME, now } from '../types'
 
 export function AddScreen({ initial, onDone }: { initial?: ExpenseDraft | null; onDone: () => void }) {
   const s = useStore()
   const [draft, setDraft] = useState<ExpenseDraft>(() => initial ?? emptyDraft())
+  const storageKey = draftStorageKey(s.account?.uid ?? 'offline', initial?.editingId ?? null)
+  const baseUpdatedAt = useRef(initial?.editingId ? s.expenses.find((row) => row.id === initial.editingId)?.updatedAt ?? null : null)
+  const [recoverable, setRecoverable] = useState(() => readDraft(localStorage, storageKey, initial?.editingId ?? null, baseUpdatedAt.current))
+  const [dirty, setDirty] = useState(false)
+  const [draftStorageFailed, setDraftStorageFailed] = useState(false)
+  const finished = useRef(false)
+  const [saving, setSaving] = useState(false)
+  const savingRef = useRef(false)
+  const [duplicateConfirmedDraft, setDuplicateConfirmedDraft] = useState<ExpenseDraft | null>(null)
+  const suggestions = useMemo(() => merchantSuggestions(draft, s.expenses, s.categories, s.paymentMethods), [draft.title, draft.type, draft.editingId, s.expenses, s.categories, s.paymentMethods])
+  const duplicates = useMemo(() => findDuplicateExpenses(draft, s.expenses), [draft, s.expenses])
+  useEffect(() => {
+    if (!dirty || finished.current) return
+    const persist = () => {
+      if (!finished.current) return writeDraft(localStorage, storageKey, draft, baseUpdatedAt.current)
+      return true
+    }
+    setDraftStorageFailed(!persist())
+    window.addEventListener('pagehide', persist)
+    return () => window.removeEventListener('pagehide', persist)
+  }, [draft, dirty, storageKey])
   const [reading, setReading] = useState(false)
   const receiptRef = useRef<HTMLInputElement>(null)
   const receiptMode = useRef<'ai' | 'local'>('ai')
@@ -48,12 +70,39 @@ export function AddScreen({ initial, onDone }: { initial?: ExpenseDraft | null; 
     })
     return () => { active = false }
   }, [s.account?.token])
-  const patch = (value: Partial<ExpenseDraft>) => setDraft((current) => ({ ...current, ...value }))
+  const patch = (value: Partial<ExpenseDraft>) => {
+    setDirty(true)
+    setRecoverable(null)
+    setDuplicateConfirmedDraft(null)
+    setDraft((current) => ({ ...current, ...value }))
+  }
+  const save = async (confirmed = false) => {
+    if (savingRef.current) return
+    if (!confirmed && duplicates.length > 0) { setDuplicateConfirmedDraft(draft); return }
+    savingRef.current = true
+    setSaving(true)
+    try {
+      if (await s.saveExpense(draft)) {
+        finished.current = true
+        try { localStorage.removeItem(storageKey) } catch { /* Saved record is not lost if localStorage is unavailable. */ }
+        onDone()
+      }
+    } finally { savingRef.current = false; if (mounted.current) setSaving(false) }
+  }
+  const draftBanner = <>
+    {recoverable && <Alert severity="info" sx={{ mb: 2 }}>
+      <Typography variant="body2">前回の下書きがあります：{recoverable.title || '名称未入力'}{recoverable.amountYen && ` / ${recoverable.amountYen}円`}</Typography>
+      <Button variant="text" onClick={() => { setDraft(recoverable); setDirty(true); setRecoverable(null) }}>下書きを復元する</Button>
+      <Typography variant="caption">復元せず入力を始めると、新しい下書きで上書きします。</Typography>
+    </Alert>}
+    {draftStorageFailed && <Alert severity="warning">この端末に下書きを保存できません。画面を閉じる前に明細を保存してください。</Alert>}
+  </>
 
   if (!draft.type) {
     return (
       <Screen>
         <LargeTitle>記録する</LargeTitle>
+        {draftBanner}
         <Typography color="text.secondary" sx={{ mb: 3 }}>種類を選んでください。選んだ時点の日時を記録します。</Typography>
         <Stack spacing={2}>
           <Button color="#2E7D32" sx={{ minHeight: 68, fontSize: 18 }} onClick={() => patch({ type: TYPE_INCOME, purchasedAtMillis: now() })}>収入を入力</Button>
@@ -109,9 +158,13 @@ export function AddScreen({ initial, onDone }: { initial?: ExpenseDraft | null; 
         {!draft.editingId && <Button variant="text" onClick={() => patch({ type: '' })} sx={{ width: 'auto' }}>種類を変更</Button>}
       </Stack>
 
+      {draftBanner}
+      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>{dirty && hasDraftContent(draft) && !draftStorageFailed ? '下書きをこの端末に保存しています。' : '入力途中の内容はこの端末の下書きに保存します。'} 画像は保存せず、別端末には同期しません。</Typography>
+
       <SectionHeader>内容</SectionHeader>
       <Card><CardContent><Stack spacing={2}>
         <Field label="タイトル" value={draft.title} onChange={(e) => patch({ title: e.target.value })} placeholder="未入力なら「その他」" />
+        {suggestions.length > 0 && <Box><Typography variant="caption" color="text.secondary">同じタイトルの過去の記録から（押したときだけ反映）</Typography>{suggestions.map((suggestion) => <Button key={`${suggestion.category}:${suggestion.paymentMethodId}`} variant="outline" sx={{ mt: 0.75 }} onClick={() => patch({ category: suggestion.category, ...(draft.type === TYPE_EXPENSE ? { paymentMethodId: suggestion.paymentMethodId } : {}) })}>{suggestion.category}{suggestion.paymentName && ` / ${suggestion.paymentName}`}を反映（{suggestion.count}件）</Button>)}</Box>}
         <Field label="金額（円）" inputMode="numeric" value={draft.amountYen} onChange={(e) => patch({ amountYen: e.target.value.replace(/[^0-9]/g, '') })} />
         <FormControl fullWidth>
           <InputLabel id="category-label">品目</InputLabel>
@@ -174,7 +227,7 @@ export function AddScreen({ initial, onDone }: { initial?: ExpenseDraft | null; 
 
           <SectionHeader>割り勘（他の人の負担）</SectionHeader>
           <Card><CardContent>
-            {s.members.length === 0 ? (
+            {s.members.length === 0 && draft.splits.length === 0 ? (
               <Typography variant="body2" color="text.secondary">「割り勘」タブでメンバーを追加すると、この支出から他の人の負担を割り当てられます。</Typography>
             ) : (
               <Stack spacing={2}>
@@ -183,6 +236,7 @@ export function AddScreen({ initial, onDone }: { initial?: ExpenseDraft | null; 
                     <FormControl fullWidth>
                       <InputLabel id={`member-${index}`}>人</InputLabel>
                       <Select labelId={`member-${index}`} label="人" value={split.memberId} onChange={(e) => { const next = [...draft.splits]; next[index] = { ...next[index], memberId: e.target.value }; patch({ splits: next }) }}>
+                        {!s.members.some((member) => member.id === split.memberId) && <MenuItem value={split.memberId} disabled>削除されたメンバー（選び直してください）</MenuItem>}
                         {s.members.map((member) => <MenuItem key={member.id} value={member.id}>{member.name}</MenuItem>)}
                       </Select>
                     </FormControl>
@@ -191,7 +245,7 @@ export function AddScreen({ initial, onDone }: { initial?: ExpenseDraft | null; 
                   </Stack>
                 ))}
                 <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
-                  <Button variant="text" startIcon={<AddRoundedIcon />} onClick={() => patch({ splits: [...draft.splits, { memberId: s.members[0].id, amount: '' }] })} sx={{ width: 'fit-content' }}>人を追加</Button>
+                  <Button variant="text" disabled={s.members.length === 0} startIcon={<AddRoundedIcon />} onClick={() => patch({ splits: [...draft.splits, { memberId: s.members[0].id, amount: '' }] })} sx={{ width: 'fit-content' }}>人を追加</Button>
                   {draft.splits.length > 0 && (
                     <Button variant="outline" startIcon={<CalculateRoundedIcon />} onClick={fillEqualSplits} sx={{ width: 'fit-content' }}>均等割りを入力</Button>
                   )}
@@ -209,7 +263,14 @@ export function AddScreen({ initial, onDone }: { initial?: ExpenseDraft | null; 
         </>
       )}
 
-      <Button color={accent} disabled={reading} sx={{ mt: 3 }} onClick={async () => { if (await s.saveExpense(draft)) onDone() }}>{draft.editingId ? '更新' : '保存'}</Button>
+      {duplicates.length > 0 && <Alert severity="warning" sx={{ mt: 2 }}>同じ日・金額{isIncome ? '' : '・決済方法'}の記録が{duplicates.length}件あります。保存前に重複を確認してください。</Alert>}
+      <Button color={accent} disabled={reading || saving} sx={{ mt: 3 }} onClick={() => void save()}>{saving ? '保存中…' : draft.editingId ? '更新' : '保存'}</Button>
+      {duplicateConfirmedDraft && <Modal title="同じ内容の記録があります" onClose={() => setDuplicateConfirmedDraft(null)}><Stack spacing={1.5}>
+        <Typography>同日・同額{isIncome ? '' : '・同じ決済方法'}の記録です。別の買い物なら、そのまま保存できます。自動では統合・削除しません。</Typography>
+        {findDuplicateExpenses(duplicateConfirmedDraft, s.expenses).slice(0, 5).map((row) => <Typography key={row.id}>{row.title} ・ {yen(row.amountYen)} ・ {new Date(row.purchasedAtMillis).toLocaleString('ja-JP')}</Typography>)}
+        <Button disabled={saving} onClick={() => { setDuplicateConfirmedDraft(null); void save(true) }}>重複ではないので保存する</Button>
+        <Button variant="outline" onClick={() => setDuplicateConfirmedDraft(null)}>入力に戻る</Button>
+      </Stack></Modal>}
       {receiptResult && <Modal title="読み取り候補を確認" onClose={() => setReceiptResult(null)}><Stack spacing={1.5}>
         <Typography>題名：{receiptResult.title || '読み取れませんでした'}</Typography>
         <Typography>金額：{receiptResult.amountYen > 0 ? yen(receiptResult.amountYen) : '確認してください'}</Typography>
