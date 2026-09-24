@@ -4,7 +4,6 @@ import type {
   CardStatement,
   CardStatementStatus,
   Category,
-  Debt,
   Expense,
   ExpenseSplit,
   Member,
@@ -14,7 +13,8 @@ import type {
   RecurringTemplate,
   Settlement,
 } from './types'
-import { PAYMENT_TYPES } from './types'
+import { PAYMENT_TYPES } from './types.ts'
+import type { SyncResult, SyncTables } from './sync/types'
 
 /** 同一オリジンのサーバー（FastAPI）を使う */
 const BASE = ''
@@ -360,25 +360,6 @@ const cardStatementIn = (r: Raw): CardStatement => ({
   note: String(r.note ?? ''),
 })
 
-export interface SyncTables {
-  expenses: Expense[]
-  members: Member[]
-  categories: Category[]
-  expenseSplits: ExpenseSplit[]
-  settlements: Settlement[]
-  paymentMethods: PaymentMethod[]
-  prepaidCharges: PrepaidCharge[]
-  recurringTemplates: RecurringTemplate[]
-  budgets: Budget[]
-  cardStatements: CardStatement[]
-}
-
-export interface SyncResult {
-  serverTime: number
-  changes: SyncTables
-  debts: Debt[]
-}
-
 export async function apiSync(
   token: string,
   since: number,
@@ -386,6 +367,9 @@ export async function apiSync(
 ): Promise<SyncResult> {
   const body = {
     since,
+    // Full snapshot comparison, but do not echo records already on this device.
+    // Old servers ignore this optional field and return the full response safely.
+    omit_unchanged: true,
     changes: {
       expenses: local.expenses.map(expenseOut),
       members: local.members.map(memberOut),

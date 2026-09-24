@@ -207,9 +207,10 @@ export function ListScreen({ onEdit, onDuplicate }: {
                   const isIncome = expense.type === TYPE_INCOME
                   const split = s.splitSumOf(expense.id)
                   return (
-                    <Stack key={expense.id}>
+                    <Stack key={expense.id} component="li">
                       {index > 0 && <Divider />}
                       <ListItem
+                        component="div"
                         disablePadding
                         secondaryAction={
                           <Stack direction="row">
@@ -220,6 +221,7 @@ export function ListScreen({ onEdit, onDuplicate }: {
                       >
                         <ListItemButton onClick={() => onEdit(draftOf(expense))} sx={{ pr: 12, py: 1.5 }}>
                           <ListItemText
+                            disableTypography
                             primary={<Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}><Typography fontWeight={700} noWrap>{expense.title}</Typography><Typography fontWeight={700} color={isIncome ? 'success.main' : 'error.main'}>{isIncome ? '+' : '-'}{yen(expense.amountYen)}</Typography></Stack>}
                             secondary={
                               <Stack spacing={0.4} sx={{ mt: 0.5 }}>

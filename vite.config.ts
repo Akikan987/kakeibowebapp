@@ -114,6 +114,7 @@ export default defineConfig({
       '/auth': 'http://localhost:8000',
       '/sync': 'http://localhost:8000',
       '/users': 'http://localhost:8000',
+      '/ocr': 'http://localhost:8000',
       '/health': 'http://localhost:8000',
     },
   },

@@ -25,8 +25,10 @@ import {
   apiUpdateAvatar,
   apiUpdateNickname,
   type OcrResult,
-  type SyncTables,
 } from './api'
+import { applySyncChanges, readSyncSnapshot } from './sync/local'
+import { reuseUnchangedRows } from './sync/records'
+import { indexSplits, memberBalances, monthlySummary } from './domain/ledger'
 import { prepareAvatar } from './avatar'
 import {
   activeCategories,
@@ -332,16 +334,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     ])
     e.sort((a, b) => b.purchasedAtMillis - a.purchasedAtMillis)
     m.sort((a, b) => a.name.localeCompare(b.name))
-    setExpenses(e)
-    setMembers(m)
-    setCategories(c)
-    setSplits(s)
-    setSettlements(st)
-    setPaymentMethods(pm)
-    setPrepaidCharges(pc)
-    setRecurringTemplates(rt)
-    setBudgets(b)
-    setCardStatements(cs)
+    setExpenses((old) => reuseUnchangedRows(old, e))
+    setMembers((old) => reuseUnchangedRows(old, m))
+    setCategories((old) => reuseUnchangedRows(old, c))
+    setSplits((old) => reuseUnchangedRows(old, s))
+    setSettlements((old) => reuseUnchangedRows(old, st))
+    setPaymentMethods((old) => reuseUnchangedRows(old, pm))
+    setPrepaidCharges((old) => reuseUnchangedRows(old, pc))
+    setRecurringTemplates((old) => reuseUnchangedRows(old, rt))
+    setBudgets((old) => reuseUnchangedRows(old, b))
+    setCardStatements((old) => reuseUnchangedRows(old, cs))
   }, [])
 
   // ---------------- 同期 ----------------
@@ -361,51 +363,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       syncingRef.current = true
       setSyncing(true)
       try {
-        const local: SyncTables = {
-          expenses: await db.expenses.toArray(),
-          members: await db.members.toArray(),
-          categories: await db.categories.toArray(),
-          expenseSplits: await db.expenseSplits.toArray(),
-          settlements: await db.settlements.toArray(),
-          paymentMethods: await db.paymentMethods.toArray(),
-          prepaidCharges: await db.prepaidCharges.toArray(),
-          recurringTemplates: await db.recurringTemplates.toArray(),
-          budgets: await db.budgets.toArray(),
-          cardStatements: await db.cardStatements.toArray(),
-        }
-        // 差分ではなく毎回すべてを取り直す。件数が少ないアプリなので、
-        // 取りこぼし（sinceのズレで古いレコードが届かない）を確実に防ぐ方を優先する。
+        const local = await readSyncSnapshot()
+        // 全件照合を維持し、同じ内容の返信だけを省く。
+        // sinceのズレで古いレコードが届かない問題は再導入しない。
         const res = await apiSync(token, 0, local)
-
-        // last-write-wins でローカルへ反映
-        const apply = async <T extends { id: string; updatedAt: number }>(
-          table: { toArray: () => Promise<T[]>; bulkPut: (r: T[]) => unknown },
-          incoming: T[],
-        ) => {
-          if (incoming.length === 0) return
-          const localMap = new Map((await table.toArray()).map((r) => [r.id, r]))
-          const win = incoming.filter((r) => {
-            const cur = localMap.get(r.id)
-            return !cur || r.updatedAt >= cur.updatedAt
-          })
-          if (win.length) await table.bulkPut(win)
-        }
-        await apply(db.expenses, res.changes.expenses)
-        await apply(db.members, res.changes.members)
-        await apply(db.categories, res.changes.categories)
-        await apply(db.expenseSplits, res.changes.expenseSplits)
-        await apply(db.settlements, res.changes.settlements)
-        await apply(db.paymentMethods, res.changes.paymentMethods)
-        await apply(db.prepaidCharges, res.changes.prepaidCharges)
-        await apply(db.recurringTemplates, res.changes.recurringTemplates)
-        await apply(db.budgets, res.changes.budgets)
-        await apply(db.cardStatements, res.changes.cardStatements)
+        await applySyncChanges(res.changes)
 
         // 端末ごとに既定品目のIDが違うと重複するので、取り込み後にまとめる。
         // 消えた分は次回の同期で他の端末にも反映される。
         const deduped = await dedupeCategories()
 
-        setDebts(res.debts)
+        setDebts((old) => reuseUnchangedRows(old, res.debts))
         localStorage.setItem(LS_LAST_SYNC, String(res.serverTime))
         setLastSync(res.serverTime)
         setSyncError(false)
@@ -872,9 +840,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [autoSync, notify, reload],
   )
 
+  const splitIndex = useMemo(() => indexSplits(expenses, splits), [expenses, splits])
   const splitsOfExpense = useCallback(
-    (expenseId: string) => splits.filter((s) => s.expenseId === expenseId),
-    [splits],
+    (expenseId: string) => splitIndex.byExpense.get(expenseId) ?? [],
+    [splitIndex],
   )
 
   // ---------------- メンバー ----------------
@@ -971,15 +940,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [autoSync, reload],
   )
 
+  const memberNames = useMemo(() => new Map(members.map((m) => [m.id, m.name])), [members])
   const memberName = useCallback(
-    (id: string) => members.find((m) => m.id === id)?.name ?? '(削除済み)',
-    [members],
+    (id: string) => memberNames.get(id) ?? '(削除済み)',
+    [memberNames],
   )
 
+  const paymentNames = useMemo(
+    () => new Map(paymentMethods.map((method) => [method.id, method.name])), [paymentMethods],
+  )
   const paymentMethodName = useCallback(
-    (id: string) =>
-      paymentMethods.find((method) => method.id === id)?.name ?? '未設定',
-    [paymentMethods],
+    (id: string) => paymentNames.get(id) ?? '未設定',
+    [paymentNames],
   )
 
   // ---------------- 清算 ----------------
@@ -1745,15 +1717,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   // ---------------- 派生データ ----------------
 
-  const splitSumMap = useMemo(() => {
-    const m = new Map<string, number>()
-    const activeExpenseIds = new Set(expenses.map((e) => e.id))
-    for (const s of splits) {
-      if (!activeExpenseIds.has(s.expenseId)) continue
-      m.set(s.expenseId, (m.get(s.expenseId) ?? 0) + s.amountYen)
-    }
-    return m
-  }, [expenses, splits])
+  const splitSumMap = splitIndex.totals
 
   const splitSumOf = useCallback(
     (id: string) => splitSumMap.get(id) ?? 0,
@@ -1764,61 +1728,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [splitSumMap],
   )
 
-  const summary = useMemo<MonthlySummary>(() => {
-    const start = new Date(month.year, month.month - 1, 1).getTime()
-    const end = new Date(month.year, month.month, 1).getTime() - 1
-    const inRange = expenses.filter(
-      (e) => e.purchasedAtMillis >= start && e.purchasedAtMillis <= end,
-    )
-    const monthExpenses = inRange.filter((e) => e.type === TYPE_EXPENSE)
-    const monthIncome = inRange.filter((e) => e.type === TYPE_INCOME)
-    const net = (e: Expense) => e.amountYen - (splitSumMap.get(e.id) ?? 0)
+  const summary = useMemo(
+    () => monthlySummary(expenses, splitSumMap, month.year, month.month),
+    [expenses, month, splitSumMap],
+  )
 
-    const catMap = new Map<string, number>()
-    for (const e of monthExpenses)
-      catMap.set(e.category, (catMap.get(e.category) ?? 0) + net(e))
-    const categoryTotals = [...catMap.entries()]
-      .map(([name, total]) => ({ name, total }))
-      .filter((c) => c.total !== 0)
-      .sort((a, b) => b.total - a.total)
-
-    const dailyTotals = new Map<number, number>()
-    for (const e of monthExpenses) {
-      const d = new Date(e.purchasedAtMillis).getDate()
-      dailyTotals.set(d, (dailyTotals.get(d) ?? 0) + net(e))
-    }
-
-    const incomeTotal = monthIncome.reduce((a, e) => a + e.amountYen, 0)
-    const expenseTotal = monthExpenses.reduce((a, e) => a + net(e), 0)
-    return {
-      incomeTotal,
-      expenseTotal,
-      balance: incomeTotal - expenseTotal,
-      categoryTotals,
-      dailyTotals,
-    }
-  }, [expenses, month, splitSumMap])
-
-  const balances = useMemo<MemberBalance[]>(() => {
-    const charged = new Map<string, number>()
-    for (const s of splits)
-      charged.set(s.memberId, (charged.get(s.memberId) ?? 0) + s.amountYen)
-    const settled = new Map<string, number>()
-    for (const s of settlements)
-      settled.set(s.memberId, (settled.get(s.memberId) ?? 0) + s.amountYen)
-    return members.map((m) => {
-      const c = charged.get(m.id) ?? 0
-      const st = settled.get(m.id) ?? 0
-      return {
-        memberId: m.id,
-        name: m.name,
-        linkedUid: m.linkedUid,
-        charged: c,
-        settled: st,
-        remaining: c - st,
-      }
-    })
-  }, [members, settlements, splits])
+  const balances = useMemo(
+    () => memberBalances(members, splits, settlements),
+    [members, settlements, splits],
+  )
 
   const prepaidBalances = useMemo(
     () => computePrepaidBalances(paymentMethods, prepaidCharges, expenses),

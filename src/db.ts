@@ -12,13 +12,13 @@ import {
   type Settlement,
   newId,
   now,
-} from './types'
+} from './types.ts'
 
 /**
  * ブラウザ内のローカルDB（IndexedDB）。
  * Androidアプリの Room と同じ役割で、オフラインでも使えるようにする。
  */
-class KakeiboDB extends Dexie {
+export class KakeiboDB extends Dexie {
   expenses!: Table<Expense, string>
   members!: Table<Member, string>
   categories!: Table<Category, string>
@@ -30,8 +30,8 @@ class KakeiboDB extends Dexie {
   budgets!: Table<Budget, string>
   cardStatements!: Table<CardStatement, string>
 
-  constructor() {
-    super('kakeibo')
+  constructor(name = 'kakeibo') {
+    super(name)
     this.version(1).stores({
       expenses: 'id, purchasedAtMillis, type, deleted, updatedAt',
       members: 'id, deleted, updatedAt',

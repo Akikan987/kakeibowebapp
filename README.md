@@ -6,7 +6,7 @@
 
 **紹介ページ: https://app.kakeibodata.com/pr/** — アプリの主な機能を紹介する独立したPRページ。
 
-> これが家計簿の**メインアプリ**。Android版（[kakeibo](https://github.com/Akikan987/kakeibo)）は同じサーバー・同じアカウントで動く旧クライアントで、新機能はこちらに入れていく。
+> これが家計簿の**メインアプリ**。Android版は2026-08-31に廃止済みで、[kakeibo](https://github.com/Akikan987/kakeibo)は現在サーバー専用リポジトリ。Android・iPhoneともWeb/PWA版を利用する。
 
 ## できること
 
@@ -30,7 +30,7 @@
 | データ出力・バックアップ | 明細をCSVへ出力。全データはJSONファイルに書き出し／取り込み |
 | 履歴検索・複製 | 月送りで対象月を切り替え、店名・品目・決済方法や期間・金額などで絞り込み、過去の明細を現在日時で複製 |
 | 定期項目 | 家賃・給与などをテンプレート保存し、対象月を確認してからワンタップで明細登録。端末間の二重登録を防止 |
-| 月間予算 | 全体予算と品目別予算を月ごとに設定し、使用額・残額・進捗をホームで確認 |
+| 月間予算 | 全体予算と品目別予算を月ごとに設定し、使用額・残額・進捗を予算タブで確認 |
 | カード請求照合 | 計算上の引き落とし予定をカード会社の確定額で上書きし、確定／引き落とし済みを管理 |
 
 ## 決済と集計の考え方
@@ -97,10 +97,13 @@ Cloudflare Tunnel ── app.kakeibodata.com
 nginx (kakeibo-web)  … 静的配信 + API中継
       ▼
 FastAPI (kakeibo-api) ── PostgreSQL (kakeibo-db)
-      └─────────────── YomiToku (kakeibo-ocr)
+      ├─────────────── YomiToku (kakeibo-ocr)
+      └─────────────── OpenAI（明示的な同意時のみ）
 ```
 
 サーバー側は [kakeibo](https://github.com/Akikan987/kakeibo) リポジトリの `server/` にある。
+
+ソースの責務分担・最適化の測定結果・今後の整理方針は [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) を参照。
 
 - **React + TypeScript + Vite** / Material UI（Material Design 3風テーマ）
 - **Dexie（IndexedDB）** でローカル保存
@@ -109,12 +112,13 @@ FastAPI (kakeibo-api) ── PostgreSQL (kakeibo-db)
 
 ## 同期のしくみ
 
-Android版と同じプロトコル。
+従来の同期形式との後方互換を維持する。
 
 - 各レコードは **UUID主キー + `updated_at` + `deleted`（論理削除）**
 - 競合は**最終更新優先（last-write-wins）**でマージ
 - `POST /sync` で「自分の変更を送る」と「サーバーの変更を受け取る」を同時に行う
-- 件数が少ないアプリなので**毎回全件を取得**する（差分同期は取りこぼしの原因になったため）
+- **毎回全件を照合**し、端末が既に持つ同一内容の返信だけを省く（`since: 0` / `omit_unchanged: true`）。時刻ベースの差分同期は取りこぼしの原因になったため使わない。旧サーバーから全件が返っても動く
+- 端末DBの同一行は書き直さず、変更行をトランザクションで反映する
 - 同じ名前の品目が複数できた場合は自動で1つにまとめる（残す1件はID最小で決めるので、どの端末でも同じ結果に収束する）
 
 ## データの保存先と持続性
@@ -129,7 +133,7 @@ Android版と同じプロトコル。
 ```bash
 npm install
 npm run dev     # http://localhost:5173（APIは localhost:8000 へプロキシ）
-npm test        # 決済日・プリペイド残高・カード引落額のテスト
+npm test        # 決済・集計・レシート照合・同期とIndexedDBの回帰テスト
 npm run build   # dist/ に出力
 ```
 
@@ -147,7 +151,7 @@ docker compose up -d --build   # http://localhost:3000
 ```
 
 Cloudflare Tunnel の Public Hostname（`app` → `kakeibodata.com` → `HTTP localhost:3000`）で公開している。
-API（`kakeibodata.com`）はそのままなので、Android版には影響しない。
+API（`kakeibodata.com`）は別リポジトリで運用する。両方を変更するときはAPIを先に反映し、次にWebを更新する。
 
 ## 2026-08-29〜30 変更まとめ
 
@@ -203,6 +207,7 @@ API（`kakeibodata.com`）はそのままなので、Android版には影響し�
 | 2026-09-14 | 支出の割り勘入力に「均等割りを入力」を追加し、本人を含む人数で自動計算。割り切れない端数は本人負担に残す仕様にした |
 | 2026-09-14 | theme-colorのmedia属性を解釈しないAndroid PWA向けに、単一タグ・ダーク初期値・描画前更新の互換方式へ変更 |
 | 2026-09-23 | OpenAIによる同意付きAIレシート解析、確認画面、カード末尾4桁の入力・照合・同期を追加。キー設定とクレジット追加後に合成レシートで接続試験を完了 |
+| 2026-09-24 | 全件照合を保った同期応答の省データ化、IndexedDBの重複書き込み削減と原子的な反映、集計の1走査化・名前/割り勘索引化。同期と集計を別モジュールへ分離し、回帰テストを追加。履歴HTMLと開発OCRプロキシを修正、開発依存の脆弱性2件を解消 |
 
 ## 制限
 
