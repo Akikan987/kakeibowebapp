@@ -1,4 +1,6 @@
-import type { InputHTMLAttributes, ReactNode } from 'react'
+import { useState, type InputHTMLAttributes, type ReactNode } from 'react'
+import CalculateOutlinedIcon from '@mui/icons-material/CalculateOutlined'
+import { AmountCalculator } from './AmountCalculator'
 import {
   Alert,
   Box,
@@ -10,6 +12,8 @@ import {
   Divider as MuiDivider,
   Snackbar,
   TextField,
+  IconButton,
+  InputAdornment,
   Typography,
   type ButtonProps as MuiButtonProps,
   type CardProps,
@@ -32,6 +36,7 @@ export const formatDateTime = (ms: number) => {
 }
 
 export const toLocalInput = (ms: number) => {
+  if (!Number.isFinite(new Date(ms).getTime())) return ''
   const d = new Date(ms)
   const p = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`
@@ -80,11 +85,14 @@ type FieldProps = {
   sx?: SxProps<Theme>
   error?: boolean
   helperText?: ReactNode
+  onCalculate?: (value: string) => void
+  calculatorAllowNegative?: boolean
 } & Omit<InputHTMLAttributes<HTMLInputElement>, 'size'>
 
-export function Field({ label, sx, error, helperText, ...props }: FieldProps) {
+export function Field({ label, sx, error, helperText, onCalculate, calculatorAllowNegative = false, ...props }: FieldProps) {
+  const [calculatorOpen, setCalculatorOpen] = useState(false)
   return (
-    <TextField
+    <><TextField
       label={label}
       fullWidth
       error={error}
@@ -97,9 +105,9 @@ export function Field({ label, sx, error, helperText, ...props }: FieldProps) {
       disabled={props.disabled}
       autoFocus={props.autoFocus}
       autoComplete={props.autoComplete}
-      slotProps={{ htmlInput: props }}
+      slotProps={{ htmlInput: props, input: onCalculate ? { endAdornment: <InputAdornment position="end"><IconButton size="small" aria-label={`${label}を電卓で計算`} disabled={props.disabled || props.readOnly} edge="end" onClick={() => setCalculatorOpen(true)}><CalculateOutlinedIcon /></IconButton></InputAdornment> } : undefined }}
       sx={sx}
-    />
+    />{calculatorOpen && onCalculate && <AmountCalculator label={label} initial={String(props.value ?? '')} allowNegative={calculatorAllowNegative} onApply={onCalculate} onClose={() => setCalculatorOpen(false)} />}</>
   )
 }
 

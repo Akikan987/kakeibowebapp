@@ -1,6 +1,7 @@
 import Dexie, { type Table } from 'dexie'
 import {
   type Category,
+  type CashAccount, type AccountTransfer, type ExpenseRefund,
   type Budget,
   type CardStatement,
   type Expense,
@@ -19,6 +20,9 @@ import {
  * Androidアプリの Room と同じ役割で、オフラインでも使えるようにする。
  */
 export class KakeiboDB extends Dexie {
+  cashAccounts!: Table<CashAccount, string>
+  accountTransfers!: Table<AccountTransfer, string>
+  expenseRefunds!: Table<ExpenseRefund, string>
   expenses!: Table<Expense, string>
   members!: Table<Member, string>
   categories!: Table<Category, string>
@@ -64,6 +68,11 @@ export class KakeiboDB extends Dexie {
       budgets: 'id, monthKey, category, deleted, updatedAt',
       cardStatements:
         'id, paymentMethodId, withdrawalAtMillis, status, deleted, updatedAt',
+    })
+    this.version(4).stores({
+      cashAccounts: 'id, deleted, updatedAt',
+      accountTransfers: 'id, fromAccountId, toAccountId, deleted, updatedAt',
+      expenseRefunds: 'id, expenseId, deleted, updatedAt',
     })
   }
 }
@@ -175,6 +184,7 @@ export async function clearLocalData() {
       db.recurringTemplates,
       db.budgets,
       db.cardStatements,
+      db.cashAccounts, db.accountTransfers, db.expenseRefunds,
     ],
     async () => {
       await Promise.all([
@@ -188,6 +198,7 @@ export async function clearLocalData() {
         db.recurringTemplates.clear(),
         db.budgets.clear(),
         db.cardStatements.clear(),
+        db.cashAccounts.clear(), db.accountTransfers.clear(), db.expenseRefunds.clear(),
       ])
     },
   )

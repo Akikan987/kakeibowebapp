@@ -1,9 +1,13 @@
 import type {
   Budget, CardStatement, Category, Debt, Expense, ExpenseSplit, Member,
   PaymentMethod, PrepaidCharge, RecurringTemplate, Settlement,
+  CashAccount, AccountTransfer, ExpenseRefund, SplitInvitation,
 } from '../types.ts'
 
 export interface SyncTables {
+  cashAccounts: CashAccount[]
+  accountTransfers: AccountTransfer[]
+  expenseRefunds: ExpenseRefund[]
   expenses: Expense[]
   members: Member[]
   categories: Category[]
@@ -19,10 +23,12 @@ export interface SyncTables {
 export const SYNC_TABLE_NAMES = [
   'expenses', 'members', 'categories', 'expenseSplits', 'settlements',
   'paymentMethods', 'prepaidCharges', 'recurringTemplates', 'budgets', 'cardStatements',
+  'cashAccounts', 'accountTransfers', 'expenseRefunds',
 ] as const satisfies readonly (keyof SyncTables)[]
 
 export interface SyncResult {
   serverTime: number
   changes: SyncTables
   debts: Debt[]
+  invitations: SplitInvitation[]
 }

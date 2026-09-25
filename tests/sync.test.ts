@@ -10,11 +10,12 @@ import type { Expense } from '../src/types.ts'
 
 const expense = (id: string, updatedAt = 1, amountYen = 100): Expense => ({
   id, updatedAt, amountYen, deleted: false, title: 'test', category: '食費',
-  source: 'manual', type: 'expense', paymentMethodId: '', purchasedAtMillis: 1,
+  source: 'manual', type: 'expense', paymentMethodId: '', purchasedAtMillis: 1, cashAccountId: '',
 })
 const changes = (partial: Partial<SyncTables> = {}): SyncTables => ({
   expenses: [], members: [], categories: [], expenseSplits: [], settlements: [],
   paymentMethods: [], prepaidCharges: [], recurringTemplates: [], budgets: [], cardStatements: [],
+  cashAccounts: [], accountTransfers: [], expenseRefunds: [],
   ...partial,
 })
 
@@ -40,7 +41,7 @@ test('APIへ全件と省略フラグを送り、旧APIの全件応答と新API�
     assert.equal(body.omit_unchanged, true)
     assert.equal(body.changes.expenses.length, 1)
     assert.equal(body.changes.expenses[0].amount_yen, 100)
-    assert.equal(Object.keys(body.changes).length, 10)
+    assert.equal(Object.keys(body.changes).length, 13)
     return Response.json({
       server_time: 100,
       changes: compact ? {} : body.changes,

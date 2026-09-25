@@ -26,6 +26,8 @@ import { DEFAULT_CASH_METHOD_ID, DEFAULT_OTHER_METHOD_ID } from '../db'
 import { cardWithdrawalsByDay } from '../payments'
 import { buildWithdrawalSchedule, withdrawalKey } from '../domain/paymentOverview'
 import { PaymentOverview, WithdrawalDetails, WithdrawalStatus } from '../components/PaymentOverview'
+import { AccountsPanel } from '../components/AccountsPanel'
+import { CashAccountSelect } from '../components/CashAccountSelect'
 import { type CardStatementDraft, type PaymentMethodDraft, type PrepaidChargeDraft, useStore } from '../store'
 import { PAYMENT_TYPES, PAYMENT_TYPE_LABELS, now, type CardStatement, type CardWithdrawal, type PaymentMethod, type PrepaidCharge } from '../types'
 
@@ -72,9 +74,11 @@ export function PaymentsScreen() {
       actualAmountYen: String(existing?.actualAmountYen ?? withdrawal.amountYen),
       status: existing?.status ?? 'confirmed',
       note: existing?.note ?? '',
+      cashAccountId: existing ? existing.cashAccountId ?? '' : s.paymentMethods.find((method) => method.id === withdrawal.methodId)?.cashAccountId ?? '',
+      paidAtMillis: existing?.paidAtMillis || withdrawal.withdrawalAtMillis,
     })
   }
-  const editMethod = (method: PaymentMethod) => setMethodDraft({ editingId: method.id, name: method.name, type: method.type, closingDay: method.closingDay || 31, paymentDay: method.paymentDay || 27, cardLastFour: method.cardLastFour ?? '' })
+  const editMethod = (method: PaymentMethod) => setMethodDraft({ editingId: method.id, name: method.name, type: method.type, closingDay: method.closingDay || 31, paymentDay: method.paymentDay || 27, cardLastFour: method.cardLastFour ?? '', cashAccountId: method.cashAccountId ?? '' })
 
   return (
     <Screen>
@@ -139,13 +143,15 @@ export function PaymentsScreen() {
         ))}</Card>
       </>}
 
+      <AccountsPanel />
       <SectionHeader>決済方法</SectionHeader>
       <Card>{s.paymentMethods.map((method, index) => (
         <Box key={method.id}>
           {index > 0 && <Divider />}
           <Stack direction="row" alignItems="center" spacing={1} sx={{ pl: 2, pr: 1, py: 1.25 }}>
             <Box sx={{ minWidth: 0, flex: 1 }}><Typography fontWeight={700} noWrap>{method.name}</Typography><Typography variant="caption" color="text.secondary">{PAYMENT_TYPE_LABELS[method.type]}{method.cardLastFour && <> ・ 末尾 {method.cardLastFour}</>}{method.type === 'credit' && <> ・ {dayLabel(method.closingDay)}締め ・ {dayLabel(method.paymentDay)}引き落とし</>}</Typography></Box>
-            {method.id !== DEFAULT_CASH_METHOD_ID && method.id !== DEFAULT_OTHER_METHOD_ID && <><IconButton color="primary" aria-label="編集" onClick={() => editMethod(method)}><EditRoundedIcon /></IconButton><IconButton aria-label="決済方法を削除" onClick={() => setPendingMethodDelete(method)}><DeleteOutlineRoundedIcon /></IconButton></>}
+            <IconButton color="primary" aria-label={`${method.name}を編集`} onClick={() => editMethod(method)}><EditRoundedIcon /></IconButton>
+            {method.id !== DEFAULT_CASH_METHOD_ID && method.id !== DEFAULT_OTHER_METHOD_ID && <IconButton aria-label="決済方法を削除" onClick={() => setPendingMethodDelete(method)}><DeleteOutlineRoundedIcon /></IconButton>}
           </Stack>
         </Box>
       ))}</Card>
@@ -156,7 +162,7 @@ export function PaymentsScreen() {
       {chargeDraft && <ChargeModal draft={chargeDraft} methods={s.paymentMethods} prepaidMethods={prepaidMethods} onChange={setChargeDraft} onClose={() => setChargeDraft(null)} onSave={async () => { if (await s.recordPrepaidCharge(chargeDraft)) setChargeDraft(null) }} />}
       {pendingMethodDelete && <ConfirmModal title="決済方法を削除しますか？" description={`「${pendingMethodDelete.name}」を削除します。使用済みの場合は削除できません。`} action="削除" onClose={() => setPendingMethodDelete(null)} onConfirm={async () => { await s.deletePaymentMethod(pendingMethodDelete); setPendingMethodDelete(null) }} />}
       {pendingChargeDelete && <ConfirmModal title="チャージ記録を取り消しますか？" description={`${yen(pendingChargeDelete.amountYen)}のチャージを取り消すと、残高とカード引落予定から除かれます。`} action="取り消す" onClose={() => setPendingChargeDelete(null)} onConfirm={async () => { await s.deletePrepaidCharge(pendingChargeDelete); setPendingChargeDelete(null) }} />}
-      {detailRow && <WithdrawalDetails key={detailKey} row={detailRow} expenses={s.expenses} charges={s.prepaidCharges} onClose={() => setDetailKey(null)} onConfirm={() => { openStatement(detailRow); setDetailKey(null) }} />}
+      {detailRow && <WithdrawalDetails key={detailKey} row={detailRow} expenses={s.expenses} charges={s.prepaidCharges} refunds={s.expenseRefunds} onClose={() => setDetailKey(null)} onConfirm={() => { openStatement(detailRow); setDetailKey(null) }} />}
       {statementDraft && <StatementModal draft={statementDraft} withdrawal={statementRow ? { ...statementRow, amountYen: statementRow.estimatedAmountYen } : undefined} canReset={s.cardStatements.some((item) => item.paymentMethodId === statementDraft.paymentMethodId && item.withdrawalAtMillis === statementDraft.withdrawalAtMillis)} onChange={setStatementDraft} onClose={() => setStatementDraft(null)} onSave={async () => { if (await s.saveCardStatement(statementDraft)) setStatementDraft(null) }} onReset={() => { const existing = s.cardStatements.find((item) => item.paymentMethodId === statementDraft.paymentMethodId && item.withdrawalAtMillis === statementDraft.withdrawalAtMillis); if (existing) setPendingStatementDelete(existing) }} />}
       {pendingStatementDelete && <ConfirmModal title="予定額に戻しますか？" description="入力した確定請求額と支払状態を削除し、利用履歴からの予定額に戻します。" action="戻す" onClose={() => setPendingStatementDelete(null)} onConfirm={async () => { await s.deleteCardStatement(pendingStatementDelete); setPendingStatementDelete(null); setStatementDraft(null) }} />}
     </Screen>
@@ -209,7 +215,17 @@ function StatementModal({ draft, withdrawal, canReset, onChange, onClose, onSave
   const actual = Number(draft.actualAmountYen) || 0
   const estimate = withdrawal?.amountYen ?? 0
   const difference = actual - estimate
-  return <Modal title="カード請求を確認" onClose={onClose}><Stack spacing={2}><Box><Typography fontWeight={700}>{withdrawal?.methodName}</Typography><Typography variant="body2" color="text.secondary">予定日 {withdrawal && fullDate(withdrawal.withdrawalAtMillis)} ・ 計算上 {yen(estimate)}</Typography></Box><Field label="カード会社の確定請求額" inputMode="numeric" value={draft.actualAmountYen} onChange={(event) => patch({ actualAmountYen: event.target.value.replace(/[^0-9]/g, '') })} /><Typography variant="body2" color={difference === 0 ? 'text.secondary' : 'warning.main'}>予定との差額 {difference >= 0 ? '+' : ''}{yen(difference)}</Typography><FormControl fullWidth><InputLabel>状態</InputLabel><Select label="状態" value={draft.status} onChange={(event) => patch({ status: event.target.value as CardStatementDraft['status'] })}><MenuItem value="confirmed">請求額確定</MenuItem><MenuItem value="paid">引き落とし済み</MenuItem></Select></FormControl><Field label="メモ（任意）" value={draft.note} onChange={(event) => patch({ note: event.target.value })} /><Stack direction="row" spacing={1}><Button variant="outline" onClick={onClose}>キャンセル</Button><Button onClick={() => void onSave()}>保存</Button></Stack>{canReset && <MuiButton color="error" onClick={onReset}>入力を削除して予定額に戻す</MuiButton>}</Stack></Modal>
+  return <Modal title="カード請求を確認" onClose={onClose}><Stack spacing={2}>
+    <Box><Typography fontWeight={700}>{withdrawal?.methodName}</Typography><Typography variant="body2" color="text.secondary">予定日 {withdrawal && fullDate(withdrawal.withdrawalAtMillis)} ・ 計算上 {yen(estimate)}</Typography></Box>
+    <Field onCalculate={(value) => patch({ actualAmountYen: value })} label="カード会社の確定請求額" inputMode="numeric" value={draft.actualAmountYen} onChange={(event) => patch({ actualAmountYen: event.target.value.replace(/[^0-9]/g, '') })} />
+    <Typography variant="body2" color={difference === 0 ? 'text.secondary' : 'warning.main'}>予定との差額 {difference >= 0 ? '+' : ''}{yen(difference)}</Typography>
+    <FormControl fullWidth><InputLabel id="statement-status">状態</InputLabel><Select labelId="statement-status" label="状態" value={draft.status} onChange={(event) => patch({ status: event.target.value as CardStatementDraft['status'] })}><MenuItem value="confirmed">請求額確定</MenuItem><MenuItem value="paid">引き落とし済み</MenuItem></Select></FormControl>
+    <CashAccountSelect label="引き落とし口座" value={draft.cashAccountId ?? ''} onChange={(cashAccountId) => patch({ cashAccountId })} />
+    {draft.status === 'paid' && <Field label="実際の引き落とし日時" type="datetime-local" value={toLocalInput(draft.paidAtMillis ?? draft.withdrawalAtMillis)} onChange={(event) => patch({ paidAtMillis: fromLocalInput(event.target.value) })} />}
+    <Typography variant="caption">指定口座の残高は「引き落とし済み」の記録だけで減らします。確定・見込みの段階では減りません。</Typography>
+    <Field label="メモ（任意）" value={draft.note} onChange={(event) => patch({ note: event.target.value })} />
+    <Stack direction="row" spacing={1}><Button variant="outline" onClick={onClose}>キャンセル</Button><Button onClick={() => void onSave()}>保存</Button></Stack>{canReset && <MuiButton color="error" onClick={onReset}>入力を削除して予定額に戻す</MuiButton>}
+  </Stack></Modal>
 }
 
 function EmptyText({ children }: { children: React.ReactNode }) { return <Typography variant="body2" color="text.secondary" sx={{ p: 2 }}>{children}</Typography> }
@@ -236,6 +252,7 @@ function PaymentMethodModal({ draft, onChange, onClose, onSave }: { draft: Payme
   return <Modal title={draft.editingId ? '決済方法を編集' : '決済方法を追加'} onClose={onClose}><Stack spacing={2}>
     <FormControl fullWidth><InputLabel>種類</InputLabel><Select label="種類" value={draft.type} onChange={(event) => patch({ type: event.target.value as PaymentMethodDraft['type'] })}>{PAYMENT_TYPES.map((type) => <MenuItem key={type} value={type}>{PAYMENT_TYPE_LABELS[type]}</MenuItem>)}</Select></FormControl>
     <Field label={draft.type === 'credit' ? 'カード名から検索' : '名前'} value={draft.name} onChange={(event) => patch({ name: event.target.value })} placeholder={draft.type === 'credit' ? '例: 楽天カード' : '例: Suica'} />
+    {draft.type !== 'prepaid' && <><CashAccountSelect label={draft.type === 'credit' ? '既定の引き落とし口座' : '既定の支出元口座・財布'} value={draft.cashAccountId ?? ''} onChange={(cashAccountId) => patch({ cashAccountId })} /><Typography variant="caption">変更は今後の記録の初期値に使います。過去の入出金の口座は自動で移しません。</Typography></>}
     {draft.type !== 'cash' && <>
       <Field label="カード末尾4桁（任意）" inputMode="numeric" value={draft.cardLastFour} onChange={(event) => patch({ cardLastFour: event.target.value.replace(/[^0-9]/g, '').slice(0, 4) })} placeholder="例: 0123" />
       <Typography variant="caption" color="text.secondary">レシートのカード末尾と照合します。カード番号全体は入力しないでください。Apple Payなどでは、券面とレシートの末尾が異なる場合があります。</Typography>
@@ -300,7 +317,7 @@ function ChargeModal({ draft, methods, prepaidMethods, onChange, onClose, onSave
   const patch = (value: Partial<PrepaidChargeDraft>) => onChange({ ...draft, ...value })
   return <Modal title="プリペイドにチャージ" onClose={onClose}><Stack spacing={2}>
     <FormControl fullWidth><InputLabel>チャージ先</InputLabel><Select label="チャージ先" value={draft.prepaidMethodId} onChange={(event) => patch({ prepaidMethodId: event.target.value })}>{prepaidMethods.map((method) => <MenuItem key={method.id} value={method.id}>{method.name}</MenuItem>)}</Select></FormControl>
-    <Field label="チャージ額（円）" inputMode="numeric" value={draft.amountYen} onChange={(event) => patch({ amountYen: event.target.value.replace(/[^0-9]/g, '') })} />
+    <Field onCalculate={(value) => patch({ amountYen: value })} label="チャージ額（円）" inputMode="numeric" value={draft.amountYen} onChange={(event) => patch({ amountYen: event.target.value.replace(/[^0-9]/g, '') })} />
     <Field label="チャージ日時" type="datetime-local" value={toLocalInput(draft.chargedAtMillis)} onChange={(event) => patch({ chargedAtMillis: fromLocalInput(event.target.value) })} />
     <FormControl fullWidth><InputLabel>チャージに使った決済方法</InputLabel><Select label="チャージに使った決済方法" value={draft.fundingMethodId} onChange={(event) => patch({ fundingMethodId: event.target.value })}><MenuItem value="">初期残高・残高調整（引落に加算しない）</MenuItem>{methods.filter((method) => method.id !== draft.prepaidMethodId).map((method) => <MenuItem key={method.id} value={method.id}>[{PAYMENT_TYPE_LABELS[method.type]}] {method.name}</MenuItem>)}</Select></FormControl>
     <Field label="メモ（任意）" value={draft.note} onChange={(event) => patch({ note: event.target.value })} />

@@ -19,7 +19,7 @@ import {
   apiRequestEmailChange,
   apiRequestReset,
   apiResetPassword,
-  apiSearchUser,
+  apiInviteMember, apiInvitationAction,
   apiReadReceipt,
   apiSync,
   apiUpdateAvatar,
@@ -31,6 +31,9 @@ import { reuseUnchangedRows } from './sync/records'
 import { indexSplits, memberBalances, monthlySummary } from './domain/ledger'
 import { clearDrafts, type ExpenseDraft } from './entries/draft'
 import { undoExpenseWrite, writeExpense } from './entries/persistence'
+import { saveCashAccount as persistCashAccount, saveTransfer as persistTransfer, saveRefund as persistRefund } from './finance/persistence'
+import { refundAdjustments, refundTotal } from './finance/ledger'
+import { validateFinance } from './finance/validation'
 export type { ExpenseDraft, DraftSplit } from './entries/draft'
 import { prepareAvatar } from './avatar'
 import {
@@ -61,6 +64,7 @@ import {
   newId,
   now,
   type Account,
+  type CashAccount, type AccountTransfer, type ExpenseRefund, type SplitInvitation,
   type Budget,
   type CardStatement,
   type CardStatementStatus,
@@ -115,6 +119,7 @@ export const emptyDraft = (): ExpenseDraft => ({
 })
 
 export interface PaymentMethodDraft {
+  cashAccountId?: string
   editingId: string | null
   name: string
   type: PaymentType
@@ -143,6 +148,8 @@ export interface RecurringTemplateDraft {
 }
 
 export interface CardStatementDraft {
+  cashAccountId?: string
+  paidAtMillis?: number
   paymentMethodId: string
   withdrawalAtMillis: number
   actualAmountYen: string
@@ -151,6 +158,15 @@ export interface CardStatementDraft {
 }
 
 interface Store {
+  cashAccounts: CashAccount[]
+  accountTransfers: AccountTransfer[]
+  expenseRefunds: ExpenseRefund[]
+  invitations: SplitInvitation[]
+  saveCashAccount: (row: CashAccount) => Promise<boolean>
+  saveTransfer: (row: AccountTransfer) => Promise<boolean>
+  saveRefund: (row: ExpenseRefund) => Promise<boolean>
+  inviteMember: (memberId: string, nickname: string) => Promise<boolean>
+  invitationAction: (id: string, action: 'accept' | 'reject' | 'revoke') => Promise<boolean>
   // データ
   expenses: Expense[]
   members: Member[]
@@ -262,6 +278,10 @@ export const useStore = () => {
 }
 
 export function StoreProvider({ children }: { children: ReactNode }) {
+  const [cashAccounts, setCashAccounts] = useState<CashAccount[]>([])
+  const [accountTransfers, setAccountTransfers] = useState<AccountTransfer[]>([])
+  const [expenseRefunds, setExpenseRefunds] = useState<ExpenseRefund[]>([])
+  const [invitations, setInvitations] = useState<SplitInvitation[]>([])
   const [expenses, setExpenses] = useState<Expense[]>([])
   const [members, setMembers] = useState<Member[]>([])
   const [categories, setCategories] = useState<Category[]>([])
@@ -281,6 +301,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   })
 
   const [account, setAccount] = useState<Account | null>(readAccount)
+  useEffect(() => { setInvitations([]) }, [account?.uid])
   const [offlineMode, setOfflineMode] = useState(
     () => localStorage.getItem(LS_OFFLINE) === '1',
   )
@@ -306,7 +327,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   /** ローカルDBから全部読み直す */
   const reload = useCallback(async () => {
-    const [e, m, c, s, st, pm, pc, rt, b, cs] = await Promise.all([
+    const [e, m, c, s, st, pm, pc, rt, b, cs, ca, at, er] = await Promise.all([
       activeExpenses(),
       activeMembers(),
       activeCategories(),
@@ -317,6 +338,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       activeRecurringTemplates(),
       activeBudgets(),
       activeCardStatements(),
+      db.cashAccounts.filter((r) => !r.deleted).toArray(),
+      db.accountTransfers.filter((r) => !r.deleted).toArray(),
+      db.expenseRefunds.filter((r) => !r.deleted).toArray(),
     ])
     e.sort((a, b) => b.purchasedAtMillis - a.purchasedAtMillis)
     m.sort((a, b) => a.name.localeCompare(b.name))
@@ -330,6 +354,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setRecurringTemplates((old) => reuseUnchangedRows(old, rt))
     setBudgets((old) => reuseUnchangedRows(old, b))
     setCardStatements((old) => reuseUnchangedRows(old, cs))
+    setCashAccounts((old) => reuseUnchangedRows(old, ca))
+    setAccountTransfers((old) => reuseUnchangedRows(old, at))
+    setExpenseRefunds((old) => reuseUnchangedRows(old, er))
   }, [])
 
   // ---------------- 同期 ----------------
@@ -360,6 +387,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const deduped = await dedupeCategories()
 
         setDebts((old) => reuseUnchangedRows(old, res.debts))
+        setInvitations(res.invitations)
         localStorage.setItem(LS_LAST_SYNC, String(res.serverTime))
         setLastSync(res.serverTime)
         setSyncError(false)
@@ -757,6 +785,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         notify('決済方法を選んでください', 'error')
         return false
       }
+      const prior = draft.editingId ? expenses.find((row) => row.id === draft.editingId) : undefined
+      // Keep the historical snapshot when editing; changing the default account is not retroactive.
+      const cashAccountId = draft.type === TYPE_EXPENSE && ['credit', 'prepaid'].includes(paymentMethod!.type) ? '' :
+        draft.cashAccountId ?? (prior && prior.paymentMethodId === paymentMethodId ? prior.cashAccountId ?? '' : paymentMethod?.cashAccountId ?? '')
+      if (cashAccountId && !cashAccounts.some((row) => row.id === cashAccountId)) { notify('口座を選び直してください', 'error'); return false }
+      const refunded = draft.editingId ? refundTotal(expenseRefunds, draft.editingId) : 0
+      if (refunded && (draft.type !== TYPE_EXPENSE || amount - splitSum < refunded)) { notify('返金済みの本人負担額を下回る変更はできません', 'error'); return false }
       if (paymentMethod?.type === 'prepaid') {
         const charged = prepaidCharges
           .filter((charge) => charge.prepaidMethodId === paymentMethod.id)
@@ -769,7 +804,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               expense.paymentMethodId === paymentMethod.id,
           )
           .reduce((sum, expense) => sum + expense.amountYen, 0)
-        const available = charged - spentExceptEditing
+        const transferredOut = prepaidCharges.filter((charge) => charge.fundingMethodId === paymentMethod.id).reduce((sum, charge) => sum + charge.amountYen, 0)
+        const available = charged - transferredOut - spentExceptEditing + expenseRefunds.filter((row) => row.paymentMethodId === paymentMethod.id).reduce((sum, row) => sum + row.amountYen, 0)
         if (amount > available) {
           notify(
             `「${paymentMethod.name}」の残高（¥${available.toLocaleString()}）が不足しています`,
@@ -790,6 +826,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           source: draft.source,
           type: draft.type,
           paymentMethodId,
+          cashAccountId,
           updatedAt: ts,
           deleted: false,
         }, draft.type === TYPE_EXPENSE ? valid.map((v) => ({
@@ -826,26 +863,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         return false
       }
     },
-    [account?.uid, autoSync, expenses, members, notify, paymentMethods, prepaidCharges, reload],
+    [account?.uid, autoSync, cashAccounts, expenseRefunds, expenses, members, notify, paymentMethods, prepaidCharges, reload],
   )
 
   const deleteExpense = useCallback(
     async (e: Expense) => {
-      const ts = now()
-      const olds = await db.expenseSplits
-        .where('expenseId')
-        .equals(e.id)
-        .toArray()
-      if (olds.length)
-        await db.expenseSplits.bulkPut(
-          olds.map((o) => ({ ...o, deleted: true, updatedAt: ts })),
-        )
-      await db.expenses.put({ ...e, deleted: true, updatedAt: ts })
+      if (expenseRefunds.some((row) => row.expenseId === e.id)) { notify('返金記録がある明細は削除できません。先に返金記録を確認してください', 'error'); return }
+      try { await writeExpense({ ...e, deleted: true, updatedAt: now() }, []) }
+      catch { notify('返金記録がある明細は削除できません', 'error'); return }
       await reload()
       notify('削除しました')
       autoSync()
     },
-    [autoSync, notify, reload],
+    [autoSync, expenseRefunds, notify, reload],
   )
 
   const splitIndex = useMemo(() => indexSplits(expenses, splits), [expenses, splits])
@@ -864,19 +894,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         notify(`「${trimmed}」は既に追加されています`, 'error')
         return false
       }
-      let linkedUid = ''
-      let finalName = trimmed
-      if (account?.token) {
-        try {
-          const res = await apiSearchUser(account.token, trimmed)
-          if (res.found) {
-            linkedUid = res.uid
-            finalName = res.nickname
-          }
-        } catch {
-          /* 検索できなくても通常メンバーとして追加 */
-        }
-      }
+      const linkedUid = ''
+      const finalName = trimmed
       await db.members.put({
         id: newId(),
         name: finalName,
@@ -900,19 +919,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     async (member: Member, name: string) => {
       const trimmed = name.trim()
       if (!trimmed) return false
-      let linkedUid = ''
-      let finalName = trimmed
-      if (account?.token) {
-        try {
-          const res = await apiSearchUser(account.token, trimmed)
-          if (res.found) {
-            linkedUid = res.uid
-            finalName = res.nickname
-          }
-        } catch {
-          /* 検索できない場合は通常メンバーとして保存 */
-        }
-      }
+      const linkedUid = member.linkedUid
+      const finalName = trimmed
       if (
         members.some(
           (existing) => existing.id !== member.id && existing.name === finalName,
@@ -928,11 +936,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         updatedAt: now(),
       })
       await reload()
-      notify(
-        linkedUid
-          ? `「${finalName}」さんのアカウントと連携しました`
-          : 'メンバーの名前を変更しました',
-      )
+      notify('メンバーの表示名を変更しました（共有先は変わりません）')
       autoSync()
       return true
     },
@@ -1083,6 +1087,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const existing = draft.editingId
         ? paymentMethods.find((method) => method.id === draft.editingId)
         : undefined
+      if (draft.cashAccountId && !cashAccounts.some((row) => row.id === draft.cashAccountId)) { notify('口座を選び直してください', 'error'); return false }
+      if (existing && [DEFAULT_CASH_METHOD_ID, DEFAULT_OTHER_METHOD_ID].includes(existing.id) && existing.type !== draft.type) { notify('標準の決済方法は種類を変更できません', 'error'); return false }
       const cardLastFour = draft.type === 'cash' ? '' : draft.cardLastFour.trim()
       if (!/^([0-9]{4})?$/.test(cardLastFour)) {
         notify('カード末尾は半角数字4桁で入力してください', 'error')
@@ -1090,6 +1096,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }
       const isUsed = existing
         ? expenses.some((expense) => expense.paymentMethodId === existing.id) ||
+          expenseRefunds.some((refund) => refund.paymentMethodId === existing.id) ||
+          cardStatements.some((statement) => statement.paymentMethodId === existing.id) ||
           prepaidCharges.some(
             (charge) =>
               charge.prepaidMethodId === existing.id ||
@@ -1107,6 +1115,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         closingDay: draft.type === 'credit' ? draft.closingDay : 0,
         paymentDay: draft.type === 'credit' ? draft.paymentDay : 0,
         cardLastFour,
+        cashAccountId: draft.type === 'prepaid' ? '' : draft.cashAccountId ?? existing?.cashAccountId ?? '',
         updatedAt: now(),
         deleted: false,
       })
@@ -1115,7 +1124,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       autoSync()
       return true
     },
-    [autoSync, expenses, notify, paymentMethods, prepaidCharges, reload],
+    [autoSync, cardStatements, cashAccounts, expenseRefunds, expenses, notify, paymentMethods, prepaidCharges, reload],
   )
 
   const deletePaymentMethod = useCallback(
@@ -1124,6 +1133,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         method.id === DEFAULT_CASH_METHOD_ID ||
         method.id === DEFAULT_OTHER_METHOD_ID ||
         expenses.some((expense) => expense.paymentMethodId === method.id) ||
+        expenseRefunds.some((refund) => refund.paymentMethodId === method.id) ||
+        cardStatements.some((statement) => statement.paymentMethodId === method.id) ||
         prepaidCharges.some(
           (charge) =>
             charge.prepaidMethodId === method.id ||
@@ -1138,7 +1149,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       notify('決済方法を削除しました')
       autoSync()
     },
-    [autoSync, expenses, notify, prepaidCharges, reload],
+    [autoSync, cardStatements, expenseRefunds, expenses, notify, prepaidCharges, reload],
   )
 
   const recordPrepaidCharge = useCallback(
@@ -1171,6 +1182,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         id: newId(),
         prepaidMethodId: prepaid.id,
         fundingMethodId: draft.fundingMethodId,
+        cashAccountId: (() => { const method = paymentMethods.find((m) => m.id === draft.fundingMethodId); return method && !['credit', 'prepaid'].includes(method.type) ? method.cashAccountId ?? '' : '' })(),
         amountYen: amount,
         chargedAtMillis: draft.chargedAtMillis,
         note: draft.note.trim(),
@@ -1266,6 +1278,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         source,
         type: template.type,
         paymentMethodId: template.type === TYPE_EXPENSE ? template.paymentMethodId : '',
+        cashAccountId: (() => { const method = paymentMethods.find((row) => row.id === template.paymentMethodId); return template.type === TYPE_EXPENSE && method && !['credit', 'prepaid'].includes(method.type) ? method.cashAccountId ?? '' : '' })(),
         updatedAt: now(),
         deleted: false,
       })
@@ -1274,7 +1287,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       autoSync()
       return true
     },
-    [autoSync, expenses, notify, reload],
+    [autoSync, expenses, notify, paymentMethods, reload],
   )
 
   // ---------------- 予算 ----------------
@@ -1315,10 +1328,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const saveCardStatement = useCallback(
     async (draft: CardStatementDraft) => {
       const actualAmountYen = Number(draft.actualAmountYen)
-      if (!draft.paymentMethodId || !Number.isFinite(actualAmountYen) || actualAmountYen < 0) {
+      if (!draft.actualAmountYen.trim() || !draft.paymentMethodId || !Number.isSafeInteger(actualAmountYen) || actualAmountYen < 0 || actualAmountYen > 2_000_000_000 || !Number.isFinite(new Date(draft.withdrawalAtMillis).getTime()) || draft.status === 'paid' && !Number.isFinite(new Date(draft.paidAtMillis ?? draft.withdrawalAtMillis).getTime())) {
         notify('カードの確定請求額を入力してください', 'error')
         return false
       }
+      if (draft.cashAccountId && !cashAccounts.some((row) => row.id === draft.cashAccountId)) { notify('口座を選び直してください', 'error'); return false }
       const id = `statement:${draft.paymentMethodId}:${draft.withdrawalAtMillis}`
       await db.cardStatements.put({
         id,
@@ -1326,6 +1340,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         withdrawalAtMillis: draft.withdrawalAtMillis,
         actualAmountYen,
         status: draft.status,
+        cashAccountId: draft.cashAccountId ?? '',
+        paidAtMillis: draft.status === 'paid' ? draft.paidAtMillis ?? draft.withdrawalAtMillis : 0,
         note: draft.note.trim(),
         updatedAt: now(),
         deleted: false,
@@ -1335,7 +1351,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       autoSync()
       return true
     },
-    [autoSync, notify, reload],
+    [autoSync, cashAccounts, notify, reload],
   )
 
   const deleteCardStatement = useCallback(
@@ -1396,6 +1412,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           expense.category,
           methodNames.get(expense.paymentMethodId) ?? '',
         ]),
+      ...expenseRefunds.map((row) => [new Date(row.refundedAtMillis).toLocaleString('ja-JP'), '返金（支出減額）', expenses.find((expense) => expense.id === row.expenseId)?.title ?? row.note, -row.amountYen, row.category, methodNames.get(row.paymentMethodId) ?? '']),
+      ...accountTransfers.map((row) => [new Date(row.transferredAtMillis).toLocaleString('ja-JP'), '振替（収支対象外）', row.note, row.amountYen, '', `${cashAccounts.find((a) => a.id === row.fromAccountId)?.name ?? ''} → ${cashAccounts.find((a) => a.id === row.toAccountId)?.name ?? ''}`]),
     ]
     const csv = `\uFEFF${rows.map((row) => row.map(escape).join(',')).join('\r\n')}`
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
@@ -1407,12 +1425,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     a.click()
     URL.revokeObjectURL(a.href)
     notify('CSVをエクスポートしました')
-  }, [expenses, notify, paymentMethods])
+  }, [accountTransfers, cashAccounts, expenseRefunds, expenses, notify, paymentMethods])
 
   const exportJson = useCallback(() => {
     const payload = {
       app: 'kakeibo',
-      version: 5,
+      version: 6,
+      cashAccounts, accountTransfers, expenseRefunds,
       expenses: expenses.map((e) => ({
         id: e.id,
         title: e.title,
@@ -1422,6 +1441,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         source: e.source,
         type: e.type,
         paymentMethodId: e.paymentMethodId,
+        cashAccountId: e.cashAccountId ?? '',
       })),
       members: members.map(({ id, name, linkedUid }) => ({ id, name, linkedUid })),
       categories: categories.map(({ id, name, position }) => ({ id, name, position })),
@@ -1438,13 +1458,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         dateMillis,
       })),
       paymentMethods: paymentMethods.map(
-        ({ id, name, type, closingDay, paymentDay, cardLastFour }) => ({
+        ({ id, name, type, closingDay, paymentDay, cardLastFour, cashAccountId }) => ({
           id,
           name,
           type,
           closingDay,
           paymentDay,
           cardLastFour: cardLastFour ?? '',
+          cashAccountId: cashAccountId ?? '',
         }),
       ),
       prepaidCharges: prepaidCharges.map(
@@ -1455,6 +1476,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           amountYen,
           chargedAtMillis,
           note,
+          cashAccountId,
         }) => ({
           id,
           prepaidMethodId,
@@ -1462,6 +1484,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           amountYen,
           chargedAtMillis,
           note,
+          cashAccountId: cashAccountId ?? '',
         }),
       ),
       recurringTemplates: recurringTemplates.map(
@@ -1483,13 +1506,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         amountYen,
       })),
       cardStatements: cardStatements.map(
-        ({ id, paymentMethodId, withdrawalAtMillis, actualAmountYen, status, note }) => ({
+        ({ id, paymentMethodId, withdrawalAtMillis, actualAmountYen, status, note, cashAccountId, paidAtMillis }) => ({
           id,
           paymentMethodId,
           withdrawalAtMillis,
           actualAmountYen,
           status,
           note,
+          cashAccountId: cashAccountId ?? '', paidAtMillis: paidAtMillis ?? 0,
         }),
       ),
     }
@@ -1504,13 +1528,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     a.click()
     URL.revokeObjectURL(a.href)
     notify('エクスポートしました')
-  }, [budgets, cardStatements, categories, expenses, members, notify, paymentMethods, prepaidCharges, recurringTemplates, settlements, splits])
+  }, [cashAccounts, accountTransfers, expenseRefunds, budgets, cardStatements, categories, expenses, members, notify, paymentMethods, prepaidCharges, recurringTemplates, settlements, splits])
 
   const importJson = useCallback(
     async (file: File, replace: boolean) => {
       try {
         const text = await file.text()
         const json = JSON.parse(text)
+        if (replace && Number(json.version ?? 0) < 6 && (await db.cashAccounts.count() || await db.expenseRefunds.count() || await db.accountTransfers.count())) throw new Error('口座・返金のある環境で全置換するにはバージョン6以降のバックアップが必要です')
         const isFullBackup =
           !Array.isArray(json) && Number(json.version ?? 0) >= 4
         const items = Array.isArray(json) ? json : (json.expenses ?? [])
@@ -1524,6 +1549,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           source: String(o.source ?? 'manual'),
           type: String(o.type ?? TYPE_EXPENSE),
           paymentMethodId: String(o.paymentMethodId ?? ''),
+          cashAccountId: o.cashAccountId === undefined ? undefined : String(o.cashAccountId),
           updatedAt: ts,
           deleted: false,
         }))
@@ -1532,7 +1558,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const memberRows: Member[] = objects('members').map((o) => ({
           id: String(o.id ?? newId()),
           name: String(o.name ?? ''),
-          linkedUid: String(o.linkedUid ?? ''),
+          linkedUid: '', // Sharing permissions are server-owned, never imported from a file.
           updatedAt: ts,
           deleted: false,
         }))
@@ -1572,6 +1598,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               closingDay: Number(o.closingDay ?? 0),
               paymentDay: Number(o.paymentDay ?? 0),
               cardLastFour: /^([0-9]{4})?$/.test(String(o.cardLastFour ?? '')) ? String(o.cardLastFour ?? '') : '',
+              cashAccountId: o.cashAccountId === undefined ? undefined : String(o.cashAccountId),
               updatedAt: ts,
               deleted: false,
             }
@@ -1584,6 +1611,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             fundingMethodId: String(o.fundingMethodId ?? ''),
             amountYen: Number(o.amountYen ?? 0),
             chargedAtMillis: Number(o.chargedAtMillis ?? ts),
+            cashAccountId: o.cashAccountId === undefined ? undefined : String(o.cashAccountId),
             note: String(o.note ?? ''),
             updatedAt: ts,
             deleted: false,
@@ -1617,10 +1645,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           withdrawalAtMillis: Number(o.withdrawalAtMillis ?? ts),
           actualAmountYen: Number(o.actualAmountYen ?? 0),
           status: String(o.status ?? 'confirmed') === 'paid' ? 'paid' : 'confirmed',
+          cashAccountId: o.cashAccountId === undefined ? undefined : String(o.cashAccountId),
+          paidAtMillis: o.paidAtMillis === undefined ? undefined : Number(o.paidAtMillis),
           note: String(o.note ?? ''),
           updatedAt: ts,
           deleted: false,
         }))
+
+        const cashAccountRows: CashAccount[] = objects('cashAccounts').map((o) => ({ id: String(o.id ?? newId()), name: String(o.name ?? ''), kind: o.kind === 'wallet' ? 'wallet' : o.kind === 'other' ? 'other' : 'bank', openingBalanceYen: Number(o.openingBalanceYen ?? 0), openedAtMillis: Number(o.openedAtMillis ?? ts), updatedAt: ts, deleted: false }))
+        const transferRows: AccountTransfer[] = objects('accountTransfers').map((o) => ({ id: String(o.id ?? newId()), fromAccountId: String(o.fromAccountId ?? ''), toAccountId: String(o.toAccountId ?? ''), amountYen: Number(o.amountYen ?? 0), transferredAtMillis: Number(o.transferredAtMillis ?? ts), note: String(o.note ?? ''), updatedAt: ts, deleted: false }))
+        const refundRows: ExpenseRefund[] = objects('expenseRefunds').map((o) => ({ id: String(o.id ?? newId()), expenseId: String(o.expenseId ?? ''), amountYen: Number(o.amountYen ?? 0), refundedAtMillis: Number(o.refundedAtMillis ?? ts), category: String(o.category ?? DEFAULT_TITLE), paymentMethodId: String(o.paymentMethodId ?? ''), cashAccountId: String(o.cashAccountId ?? ''), cardWithdrawalAtMillis: Number(o.cardWithdrawalAtMillis ?? 0), note: String(o.note ?? ''), updatedAt: ts, deleted: false }))
 
         await db.transaction(
           'rw',
@@ -1635,6 +1669,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             db.recurringTemplates,
             db.budgets,
             db.cardStatements,
+            db.cashAccounts, db.accountTransfers, db.expenseRefunds,
           ],
           async () => {
             if (replace) {
@@ -1651,6 +1686,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
                   allSplits.map((row) => ({ ...row, deleted: true, updatedAt: ts })),
                 )
               if (isFullBackup) {
+                for (const table of [db.cashAccounts, db.accountTransfers, db.expenseRefunds]) {
+                  const rows = await table.toArray()
+                  if (rows.length) await (table as import('dexie').Table<import('./types').SyncBase, string>).bulkPut(rows.map((row) => ({ ...row, deleted: true, updatedAt: ts })))
+                }
                 const [allMembers, allCategories, allSettlements, allMethods, allCharges, allRecurring, allBudgets, allStatements] =
                   await Promise.all([
                     db.members.toArray(),
@@ -1696,6 +1735,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
                   )
               }
             }
+            // Legacy files must not silently clear the new historical account snapshots.
+            for (const [table, rows] of [[db.expenses, expenseRows], [db.paymentMethods, paymentMethodRows], [db.prepaidCharges, prepaidChargeRows], [db.cardStatements, cardStatementRows]] as const) {
+              for (const row of rows) {
+                const existing = await table.get(row.id)
+                if (row.cashAccountId === undefined) row.cashAccountId = existing?.cashAccountId ?? ''
+                if ('paidAtMillis' in row && row.paidAtMillis === undefined && existing && 'paidAtMillis' in existing) row.paidAtMillis = existing.paidAtMillis
+              }
+            }
             if (expenseRows.length) await db.expenses.bulkPut(expenseRows)
             if (memberRows.length) await db.members.bulkPut(memberRows)
             if (categoryRows.length) await db.categories.bulkPut(categoryRows)
@@ -1710,14 +1757,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             if (budgetRows.length) await db.budgets.bulkPut(budgetRows)
             if (cardStatementRows.length)
               await db.cardStatements.bulkPut(cardStatementRows)
+            if (cashAccountRows.length) await db.cashAccounts.bulkPut(cashAccountRows)
+            if (transferRows.length) await db.accountTransfers.bulkPut(transferRows)
+            if (refundRows.length) await db.expenseRefunds.bulkPut(refundRows)
+            validateFinance(await readSyncSnapshot())
           },
         )
         await seedPaymentMethodsIfEmpty()
         await reload()
         notify(`${expenseRows.length}件インポートしました`)
         autoSync()
-      } catch {
-        notify('インポートに失敗しました', 'error')
+      } catch (error) {
+        notify(error instanceof Error ? `インポートに失敗しました: ${error.message}` : 'インポートに失敗しました', 'error')
       }
     },
     [autoSync, notify, reload],
@@ -1737,8 +1788,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   )
 
   const summary = useMemo(
-    () => monthlySummary(expenses, splitSumMap, month.year, month.month),
-    [expenses, month, splitSumMap],
+    () => monthlySummary([...expenses, ...refundAdjustments(expenseRefunds)], splitSumMap, month.year, month.month),
+    [expenses, expenseRefunds, month, splitSumMap],
   )
 
   const balances = useMemo(
@@ -1747,15 +1798,32 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   )
 
   const prepaidBalances = useMemo(
-    () => computePrepaidBalances(paymentMethods, prepaidCharges, expenses),
-    [expenses, paymentMethods, prepaidCharges],
+    () => computePrepaidBalances(paymentMethods, prepaidCharges, [...expenses, ...refundAdjustments(expenseRefunds)]),
+    [expenses, expenseRefunds, paymentMethods, prepaidCharges],
   )
   const cardWithdrawals = useMemo(
-    () => computeCardWithdrawals(paymentMethods, prepaidCharges, expenses),
-    [expenses, paymentMethods, prepaidCharges],
+    () => computeCardWithdrawals(paymentMethods, prepaidCharges, expenses, expenseRefunds),
+    [expenses, expenseRefunds, paymentMethods, prepaidCharges],
   )
 
+  const financeSave = async (action: () => Promise<unknown>) => {
+    try { await action(); await reload(); autoSync(); notify('記録しました'); return true }
+    catch (error) { notify(error instanceof Error ? error.message : '記録できませんでした', 'error'); return false }
+  }
+  const sharingAction = async (action: (token: string) => Promise<unknown>) => {
+    if (!account?.token) { notify('招待・承認にはログインが必要です', 'error'); return false }
+    if (!await syncNow(false)) { notify('先に同期を完了してください。通信状態を確認して再試行してください', 'error'); return false }
+    try { await action(account.token); const refreshed = await syncNow(false); notify(refreshed ? '共有状態を更新しました' : '操作は完了しました。画面の状態更新には再同期が必要です'); return true }
+    catch (error) { notify(error instanceof ApiError && error.status === 429 ? '招待の再送は24時間後にお試しください' : '共有操作を完了できませんでした。相手の名前と通信状態を確認してください', 'error'); return false }
+  }
+
   const value: Store = {
+    cashAccounts, accountTransfers, expenseRefunds, invitations,
+    saveCashAccount: (row) => financeSave(() => persistCashAccount(row)),
+    saveTransfer: (row) => financeSave(() => persistTransfer(row)),
+    saveRefund: (row) => financeSave(() => persistRefund(row)),
+    inviteMember: (id, nickname) => sharingAction((token) => apiInviteMember(token, id, nickname)),
+    invitationAction: (id, action) => sharingAction((token) => apiInvitationAction(token, id, action)),
     expenses,
     members,
     categories,

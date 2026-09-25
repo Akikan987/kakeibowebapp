@@ -3,7 +3,7 @@ import { Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, Chip
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded'
 import { Card, Divider, Modal, SectionHeader, yen } from './ui'
 import { paymentOverview, withdrawalItems, withdrawalKey, type ScheduledWithdrawal } from '../domain/paymentOverview'
-import type { Expense, PrepaidCharge } from '../types'
+import type { Expense, ExpenseRefund, PrepaidCharge } from '../types'
 
 const fullDate = (timestamp: number) => new Date(timestamp).toLocaleDateString('ja-JP')
 export function WithdrawalStatus({ status }: { status: ScheduledWithdrawal['status'] }) {
@@ -58,20 +58,21 @@ export function PaymentOverview({ schedule, onSelect }: { schedule: ScheduledWit
   </>
 }
 
-export function WithdrawalDetails({ row, expenses, charges, onClose, onConfirm }: {
-  row: ScheduledWithdrawal; expenses: Expense[]; charges: PrepaidCharge[]; onClose: () => void; onConfirm: () => void,
+export function WithdrawalDetails({ row, expenses, charges, refunds = [], onClose, onConfirm }: {
+  row: ScheduledWithdrawal; expenses: Expense[]; charges: PrepaidCharge[]; refunds?: ExpenseRefund[]; onClose: () => void; onConfirm: () => void,
 }) {
   const [limit, setLimit] = useState(30)
-  const items = useMemo(() => withdrawalItems(row, expenses, charges), [row, expenses, charges])
+  const items = useMemo(() => withdrawalItems(row, expenses, charges, refunds), [row, expenses, charges, refunds])
   return <Modal title="引き落としの内訳" onClose={onClose}><Stack spacing={1.5}>
     <Typography variant="h6">{row.methodName}</Typography><Typography>{fullDate(row.withdrawalAtMillis)}予定</Typography>
     <Stack direction="row" alignItems="center" spacing={1}><Typography variant="h5">{yen(row.amountYen)}</Typography><WithdrawalStatus status={row.status} /></Stack>
     <Typography variant="body2">利用履歴の合計 {yen(row.estimatedAmountYen)}（カード利用 {yen(row.expenseAmountYen)} / チャージ {yen(row.chargeAmountYen)}）</Typography>
+    {!!row.refundAmountYen && <Alert severity="info">返金 {yen(row.refundAmountYen)}を見込みから控除しています。返金超過分の翌月繰越や口座への入金は自動計算しません。</Alert>}
     {row.status !== 'estimated' && row.amountYen !== row.estimatedAmountYen && <Alert severity="info">確定額との差額 {yen(row.amountYen - row.estimatedAmountYen)}。未登録の利用・返金・締め日の違いなどをカード会社の明細で確認してください。</Alert>}
     <Button variant="contained" onClick={onConfirm}>請求額・支払状態を確認する</Button>
     <Typography variant="caption" color="text.secondary">利用時の全額を表示します（割り勘相手の負担も含みます）。チャージはここに含みますが、家計簿の支出統計には二重計上しません。</Typography>
     {items.length === 0 && <Typography color="text.secondary">対応する利用履歴がありません。確定請求の記録は保持しています。</Typography>}
-    {items.slice(0, limit).map((item) => <Box key={`${item.kind}:${item.id}`}><Divider /><Stack direction="row" spacing={1} justifyContent="space-between" sx={{ py: 1 }}><Box><Typography sx={{ overflowWrap: 'anywhere' }}>{item.title}</Typography><Typography variant="caption" color="text.secondary">{fullDate(item.date)} ・ {item.kind === 'charge' ? 'チャージ' : 'カード利用'}</Typography></Box><Typography sx={{ flexShrink: 0 }}>{yen(item.amountYen)}</Typography></Stack></Box>)}
+    {items.slice(0, limit).map((item) => <Box key={`${item.kind}:${item.id}`}><Divider /><Stack direction="row" spacing={1} justifyContent="space-between" sx={{ py: 1 }}><Box><Typography sx={{ overflowWrap: 'anywhere' }}>{item.title}</Typography><Typography variant="caption" color="text.secondary">{fullDate(item.date)} ・ {item.kind === 'charge' ? 'チャージ' : item.kind === 'refund' ? '返金' : 'カード利用'}</Typography></Box><Typography sx={{ flexShrink: 0 }}>{yen(item.amountYen)}</Typography></Stack></Box>)}
     {items.length > limit && <Button onClick={() => setLimit((value) => value + 30)}>内訳をさらに表示</Button>}
     <Button onClick={onClose}>閉じる</Button>
   </Stack></Modal>

@@ -2,6 +2,7 @@ import type { Category, Expense, PaymentMethod } from '../types.ts'
 
 export interface DraftSplit { memberId: string; amount: string }
 export interface ExpenseDraft {
+  cashAccountId?: string
   editingId: string | null
   type: string
   title: string
@@ -68,6 +69,7 @@ export function readDraft(storage: Pick<Storage, 'getItem'>, key: string, editin
     if (saved?.version !== 1 || saved.baseUpdatedAt !== baseUpdatedAt) return null
     const draft = saved.draft
     if (!draft || draft.editingId !== editingId || !['', 'income', 'expense'].includes(draft.type)) return null
+    if (draft.cashAccountId !== undefined && typeof draft.cashAccountId !== 'string') return null
     if (!['title', 'amountYen', 'category', 'source', 'paymentMethodId'].every((key) => typeof draft[key as keyof ExpenseDraft] === 'string')) return null
     if (!Number.isFinite(draft.purchasedAtMillis) || !Number.isFinite(new Date(draft.purchasedAtMillis).getTime())) return null
     if (!Array.isArray(draft.splits) || !draft.splits.every((row) => row && typeof row.memberId === 'string' && typeof row.amount === 'string')) return null

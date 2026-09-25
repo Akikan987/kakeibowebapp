@@ -19,6 +19,7 @@ export interface SyncBase {
 }
 
 export interface Expense extends SyncBase {
+  cashAccountId?: string
   title: string
   amountYen: number
   purchasedAtMillis: number
@@ -51,6 +52,7 @@ export interface Settlement extends SyncBase {
 }
 
 export interface PaymentMethod extends SyncBase {
+  cashAccountId?: string
   name: string
   type: PaymentType
   /** 未登録の旧データはundefined。番号全体は保存しない */
@@ -62,6 +64,7 @@ export interface PaymentMethod extends SyncBase {
 }
 
 export interface PrepaidCharge extends SyncBase {
+  cashAccountId?: string
   prepaidMethodId: string
   /** 空なら初期残高・残高調整。指定時はその決済方法の実際の支払いに加算 */
   fundingMethodId: string
@@ -91,6 +94,8 @@ export interface Budget extends SyncBase {
 export type CardStatementStatus = 'confirmed' | 'paid'
 
 export interface CardStatement extends SyncBase {
+  cashAccountId?: string
+  paidAtMillis?: number
   paymentMethodId: string
   withdrawalAtMillis: number
   actualAmountYen: number
@@ -107,6 +112,7 @@ export interface PrepaidBalance {
 }
 
 export interface CardWithdrawal {
+  refundAmountYen?: number
   methodId: string
   methodName: string
   closingDay: number
@@ -153,6 +159,43 @@ export interface MonthlySummary {
   balance: number
   categoryTotals: { name: string; total: number }[]
   dailyTotals: Map<number, number>
+}
+
+export interface CashAccount extends SyncBase {
+  name: string
+  kind: 'bank' | 'wallet' | 'other'
+  openingBalanceYen: number
+  openedAtMillis: number
+}
+
+export interface AccountTransfer extends SyncBase {
+  fromAccountId: string
+  toAccountId: string
+  amountYen: number
+  transferredAtMillis: number
+  note: string
+}
+
+/** Refunds reduce personal spending, not income. Split participants are unchanged. */
+export interface ExpenseRefund extends SyncBase {
+  expenseId: string
+  amountYen: number
+  refundedAtMillis: number
+  category: string
+  paymentMethodId: string
+  cashAccountId: string
+  cardWithdrawalAtMillis: number
+  note: string
+}
+
+export interface SplitInvitation {
+  legacy: boolean
+  id: string
+  memberId: string
+  direction: 'incoming' | 'outgoing'
+  nickname: string
+  status: 'pending' | 'accepted' | 'rejected' | 'revoked'
+  updatedAt: number
 }
 
 export const newId = () =>

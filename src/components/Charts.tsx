@@ -5,15 +5,17 @@ import { yen } from './ui'
 const COLORS = ['#1565C0', '#2E7D32', '#ED6C02', '#D32F2F', '#7B1FA2', '#00838F']
 
 export function CategoryChart({
-  data,
+  data: rawData,
 }: {
   data: { name: string; total: number }[]
 }) {
   const [selectedName, setSelectedName] = useState<string | null>(null)
   const [focusedName, setFocusedName] = useState<string | null>(null)
   const theme = useTheme()
+  const data = rawData.filter((row) => row.total > 0)
+  const credits = rawData.filter((row) => row.total < 0)
   if (data.length === 0)
-    return <Typography color="text.secondary">支出データなし</Typography>
+    return <Typography color="text.secondary">正の支出データなし{credits.map((row) => ` / ${row.name}：返金超過 ${yen(-row.total)}`).join('')}</Typography>
   const total = data.reduce((sum, item) => sum + item.total, 0)
   const selected = data.find((item) => item.name === selectedName) ?? null
   let angle = -90
@@ -36,6 +38,7 @@ export function CategoryChart({
 
   return (
     <Box>
+      {credits.length > 0 && <Typography variant="caption" color="text.secondary">円グラフは正の支出のみ。返金超過：{credits.map((row) => `${row.name} ${yen(-row.total)}`).join('、')}</Typography>}
       <Box sx={{ position: 'relative', width: 220, height: 220, mx: 'auto' }}>
         <svg viewBox="0 0 200 200" width="220" height="220" aria-label="品目別支出の円グラフ">
           {slices.map((item) => item.end - item.start >= 359.999 ? (
@@ -123,7 +126,7 @@ export function DailyChart({
   if (data.size === 0)
     return <Typography color="text.secondary">支出データなし</Typography>
 
-  const max = Math.max(...data.values())
+  const max = Math.max(1, ...[...data.values()].map(Math.abs))
   const top = [...data.entries()].sort((a, b) => b[1] - a[1])[0]
   const days = Array.from({ length: daysInMonth }, (_, index) => index + 1)
 
@@ -156,12 +159,12 @@ export function DailyChart({
                 sx={{
                   width: '100%',
                   minHeight: 2,
-                  height: value > 0 ? `${Math.max(2, (value / max) * 100)}%` : 2,
+                  height: value !== 0 ? `${Math.max(2, (Math.abs(value) / max) * 100)}%` : 2,
                   bgcolor: isSelected
                     ? 'warning.main'
                     : value > 0
                       ? 'primary.main'
-                      : 'divider',
+                      : value < 0 ? 'success.main' : 'divider',
                   borderRadius: '4px 4px 0 0',
                   transition: theme.transitions.create(['height', 'background-color']),
                 }}
@@ -174,7 +177,8 @@ export function DailyChart({
         <Typography variant="caption" color="text.secondary">1日</Typography>
         <Typography variant="caption" color="text.secondary">{daysInMonth}日</Typography>
       </Stack>
-      {top && (
+      {[...data.values()].some((value) => value < 0) && <Typography variant="caption">緑の棒は返金が支出を上回った日です（高さは絶対額）。</Typography>}
+      {top && top[1] > 0 && (
         <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5 }}>
           最も使った日: {top[0]}日（{yen(top[1])}）
         </Typography>

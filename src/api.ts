@@ -1,5 +1,6 @@
 import type {
   Account,
+  CashAccount, AccountTransfer, ExpenseRefund, SplitInvitation,
   Budget,
   CardStatement,
   CardStatementStatus,
@@ -198,6 +199,7 @@ const baseIn = (r: Raw) => ({
 })
 
 const expenseOut = (e: Expense): Raw => ({
+  cash_account_id: e.cashAccountId ?? '',
   ...baseOut(e),
   title: e.title,
   amount_yen: e.amountYen,
@@ -208,6 +210,7 @@ const expenseOut = (e: Expense): Raw => ({
   payment_method_id: e.paymentMethodId,
 })
 const expenseIn = (r: Raw): Expense => ({
+  cashAccountId: String(r.cash_account_id ?? ''),
   ...baseIn(r),
   title: String(r.title ?? ''),
   amountYen: Number(r.amount_yen ?? 0),
@@ -274,6 +277,7 @@ const paymentTypeIn = (value: unknown): PaymentType => {
 }
 
 const paymentMethodOut = (m: PaymentMethod): Raw => ({
+  cash_account_id: m.cashAccountId ?? '',
   ...baseOut(m),
   name: m.name,
   type: m.type,
@@ -282,6 +286,7 @@ const paymentMethodOut = (m: PaymentMethod): Raw => ({
   ...(m.cardLastFour !== undefined ? { card_last_four: m.cardLastFour } : {}),
 })
 const paymentMethodIn = (r: Raw): PaymentMethod => ({
+  cashAccountId: String(r.cash_account_id ?? ''),
   ...baseIn(r),
   name: String(r.name ?? ''),
   type: paymentTypeIn(r.type),
@@ -291,6 +296,7 @@ const paymentMethodIn = (r: Raw): PaymentMethod => ({
 })
 
 const prepaidChargeOut = (c: PrepaidCharge): Raw => ({
+  cash_account_id: c.cashAccountId ?? '',
   ...baseOut(c),
   prepaid_method_id: c.prepaidMethodId,
   funding_method_id: c.fundingMethodId,
@@ -299,6 +305,7 @@ const prepaidChargeOut = (c: PrepaidCharge): Raw => ({
   note: c.note,
 })
 const prepaidChargeIn = (r: Raw): PrepaidCharge => ({
+  cashAccountId: String(r.cash_account_id ?? ''),
   ...baseIn(r),
   prepaidMethodId: String(r.prepaid_method_id ?? ''),
   fundingMethodId: String(r.funding_method_id ?? ''),
@@ -344,6 +351,7 @@ const budgetIn = (r: Raw): Budget => ({
 const statementStatusIn = (value: unknown): CardStatementStatus =>
   value === 'paid' ? 'paid' : 'confirmed'
 const cardStatementOut = (s: CardStatement): Raw => ({
+  cash_account_id: s.cashAccountId ?? '', paid_at_millis: s.paidAtMillis ?? 0,
   ...baseOut(s),
   payment_method_id: s.paymentMethodId,
   withdrawal_at_millis: s.withdrawalAtMillis,
@@ -352,6 +360,7 @@ const cardStatementOut = (s: CardStatement): Raw => ({
   note: s.note,
 })
 const cardStatementIn = (r: Raw): CardStatement => ({
+  cashAccountId: String(r.cash_account_id ?? ''), paidAtMillis: Number(r.paid_at_millis ?? 0),
   ...baseIn(r),
   paymentMethodId: String(r.payment_method_id ?? ''),
   withdrawalAtMillis: Number(r.withdrawal_at_millis ?? 0),
@@ -359,6 +368,16 @@ const cardStatementIn = (r: Raw): CardStatement => ({
   status: statementStatusIn(r.status),
   note: String(r.note ?? ''),
 })
+
+const cashAccountOut = (r: CashAccount): Raw => ({ ...baseOut(r), name: r.name, kind: r.kind, opening_balance_yen: r.openingBalanceYen, opened_at_millis: r.openedAtMillis })
+const cashAccountIn = (r: Raw): CashAccount => ({ ...baseIn(r), name: String(r.name ?? ''), kind: r.kind === 'wallet' ? 'wallet' : r.kind === 'other' ? 'other' : 'bank', openingBalanceYen: Number(r.opening_balance_yen ?? 0), openedAtMillis: Number(r.opened_at_millis ?? 0) })
+const transferOut = (r: AccountTransfer): Raw => ({ ...baseOut(r), from_account_id: r.fromAccountId, to_account_id: r.toAccountId, amount_yen: r.amountYen, transferred_at_millis: r.transferredAtMillis, note: r.note })
+const transferIn = (r: Raw): AccountTransfer => ({ ...baseIn(r), fromAccountId: String(r.from_account_id ?? ''), toAccountId: String(r.to_account_id ?? ''), amountYen: Number(r.amount_yen ?? 0), transferredAtMillis: Number(r.transferred_at_millis ?? 0), note: String(r.note ?? '') })
+const refundOut = (r: ExpenseRefund): Raw => ({ ...baseOut(r), expense_id: r.expenseId, amount_yen: r.amountYen, refunded_at_millis: r.refundedAtMillis, category: r.category, payment_method_id: r.paymentMethodId, cash_account_id: r.cashAccountId, card_withdrawal_at_millis: r.cardWithdrawalAtMillis, note: r.note })
+const refundIn = (r: Raw): ExpenseRefund => ({ ...baseIn(r), expenseId: String(r.expense_id ?? ''), amountYen: Number(r.amount_yen ?? 0), refundedAtMillis: Number(r.refunded_at_millis ?? 0), category: String(r.category ?? 'その他'), paymentMethodId: String(r.payment_method_id ?? ''), cashAccountId: String(r.cash_account_id ?? ''), cardWithdrawalAtMillis: Number(r.card_withdrawal_at_millis ?? 0), note: String(r.note ?? '') })
+
+export const apiInviteMember = (token: string, memberId: string, nickname: string) => request('/users/invitations', { token, method: 'POST', body: { member_id: memberId, nickname } })
+export const apiInvitationAction = (token: string, id: string, action: 'accept' | 'reject' | 'revoke') => request(`/users/invitations/${encodeURIComponent(id)}`, { token, method: 'POST', body: { action } })
 
 export async function apiSync(
   token: string,
@@ -371,6 +390,9 @@ export async function apiSync(
     // Old servers ignore this optional field and return the full response safely.
     omit_unchanged: true,
     changes: {
+      cash_accounts: local.cashAccounts.map(cashAccountOut),
+      account_transfers: local.accountTransfers.map(transferOut),
+      expense_refunds: local.expenseRefunds.map(refundOut),
       expenses: local.expenses.map(expenseOut),
       members: local.members.map(memberOut),
       categories: local.categories.map(categoryOut),
@@ -385,6 +407,10 @@ export async function apiSync(
   }
   const res = await request<Raw>('/sync', { method: 'POST', body, token })
   const ch = (res.changes ?? {}) as Record<string, Raw[]>
+  if ((local.cashAccounts.length || local.accountTransfers.length || local.expenseRefunds.length) &&
+    ['cash_accounts', 'account_transfers', 'expense_refunds'].some((table) => !Array.isArray(ch[table]))) {
+    throw new ApiError(409, '口座・振替・返金に対応したサーバーへの更新が必要です。端末の記録は保持しています')
+  }
   const debts = ((res.debts ?? []) as Raw[]).map((d) => ({
     ownerUid: String(d.owner_uid ?? ''),
     ownerNickname: String(d.owner_nickname ?? ''),
@@ -394,7 +420,11 @@ export async function apiSync(
   }))
   return {
     serverTime: Number(res.server_time ?? 0),
+    invitations: ((res.invitations ?? []) as Raw[]).map((r): SplitInvitation => ({ id: String(r.id), memberId: String(r.member_id), direction: r.direction === 'incoming' ? 'incoming' : 'outgoing', nickname: String(r.nickname), status: r.status as SplitInvitation['status'], legacy: r.legacy === true, updatedAt: Number(r.updated_at) })),
     changes: {
+      cashAccounts: (ch.cash_accounts ?? []).map(cashAccountIn),
+      accountTransfers: (ch.account_transfers ?? []).map(transferIn),
+      expenseRefunds: (ch.expense_refunds ?? []).map(refundIn),
       expenses: (ch.expenses ?? []).map(expenseIn),
       members: (ch.members ?? []).map(memberIn),
       categories: (ch.categories ?? []).map(categoryIn),

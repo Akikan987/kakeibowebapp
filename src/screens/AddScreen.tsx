@@ -21,6 +21,7 @@ import { apiReceiptConfig, type OcrResult } from '../api'
 import { matchReceiptPayment, receiptDateMillis } from '../receipt'
 import { expectedWithdrawalDate } from '../payments'
 import { equalSplitAmounts } from '../splits'
+import { CashAccountSelect } from '../components/CashAccountSelect'
 import { emptyDraft, useStore, type ExpenseDraft } from '../store'
 import { draftStorageKey, findDuplicateExpenses, hasDraftContent, merchantSuggestions, readDraft, writeDraft } from '../entries/draft'
 import { PAYMENT_TYPES, PAYMENT_TYPE_LABELS, TYPE_EXPENSE, TYPE_INCOME, now } from '../types'
@@ -71,6 +72,7 @@ export function AddScreen({ initial, onDone }: { initial?: ExpenseDraft | null; 
     return () => { active = false }
   }, [s.account?.token])
   const patch = (value: Partial<ExpenseDraft>) => {
+    if (value.paymentMethodId !== undefined && value.cashAccountId === undefined) value.cashAccountId = s.paymentMethods.find((row) => row.id === value.paymentMethodId)?.cashAccountId ?? ''
     setDirty(true)
     setRecoverable(null)
     setDuplicateConfirmedDraft(null)
@@ -165,7 +167,7 @@ export function AddScreen({ initial, onDone }: { initial?: ExpenseDraft | null; 
       <Card><CardContent><Stack spacing={2}>
         <Field label="タイトル" value={draft.title} onChange={(e) => patch({ title: e.target.value })} placeholder="未入力なら「その他」" />
         {suggestions.length > 0 && <Box><Typography variant="caption" color="text.secondary">同じタイトルの過去の記録から（押したときだけ反映）</Typography>{suggestions.map((suggestion) => <Button key={`${suggestion.category}:${suggestion.paymentMethodId}`} variant="outline" sx={{ mt: 0.75 }} onClick={() => patch({ category: suggestion.category, ...(draft.type === TYPE_EXPENSE ? { paymentMethodId: suggestion.paymentMethodId } : {}) })}>{suggestion.category}{suggestion.paymentName && ` / ${suggestion.paymentName}`}を反映（{suggestion.count}件）</Button>)}</Box>}
-        <Field label="金額（円）" inputMode="numeric" value={draft.amountYen} onChange={(e) => patch({ amountYen: e.target.value.replace(/[^0-9]/g, '') })} />
+        <Field onCalculate={(value) => patch({ amountYen: value })} label="金額（円）" inputMode="numeric" value={draft.amountYen} onChange={(e) => patch({ amountYen: e.target.value.replace(/[^0-9]/g, '') })} />
         <FormControl fullWidth>
           <InputLabel id="category-label">品目</InputLabel>
           <Select labelId="category-label" label="品目" value={draft.category} onChange={(e) => patch({ category: e.target.value })}>
@@ -174,6 +176,7 @@ export function AddScreen({ initial, onDone }: { initial?: ExpenseDraft | null; 
           </Select>
         </FormControl>
         <Field label="記録日時" type="datetime-local" value={toLocalInput(draft.purchasedAtMillis)} onChange={(e) => patch({ purchasedAtMillis: fromLocalInput(e.target.value) })} />
+        {(isIncome || !selectedPayment || !['credit', 'prepaid'].includes(selectedPayment.type)) && <CashAccountSelect label={isIncome ? '入金先の口座・財布' : '支出元の口座・財布'} value={draft.cashAccountId ?? (draft.editingId ? s.expenses.find((row) => row.id === draft.editingId)?.cashAccountId ?? '' : isIncome ? '' : selectedPayment?.cashAccountId ?? '')} onChange={(cashAccountId) => patch({ cashAccountId })} />}
         {!isIncome && (
           <Box>
             <FormControl fullWidth>
@@ -240,7 +243,7 @@ export function AddScreen({ initial, onDone }: { initial?: ExpenseDraft | null; 
                         {s.members.map((member) => <MenuItem key={member.id} value={member.id}>{member.name}</MenuItem>)}
                       </Select>
                     </FormControl>
-                    <Field label="円" inputMode="numeric" value={split.amount} onChange={(e) => { const next = [...draft.splits]; next[index] = { ...next[index], amount: e.target.value.replace(/[^0-9]/g, '') }; patch({ splits: next }) }} sx={{ maxWidth: 130 }} />
+                    <Field onCalculate={(value) => { const next = [...draft.splits]; next[index] = { ...next[index], amount: value }; patch({ splits: next }) }} label="円" inputMode="numeric" value={split.amount} onChange={(e) => { const next = [...draft.splits]; next[index] = { ...next[index], amount: e.target.value.replace(/[^0-9]/g, '') }; patch({ splits: next }) }} sx={{ maxWidth: 165 }} />
                     <IconButton aria-label="削除" onClick={() => patch({ splits: draft.splits.filter((_, itemIndex) => itemIndex !== index) })}><CloseRoundedIcon /></IconButton>
                   </Stack>
                 ))}

@@ -2,6 +2,7 @@ import {
   TYPE_EXPENSE,
   type CardWithdrawal,
   type Expense,
+  type ExpenseRefund,
   type PaymentMethod,
   type PrepaidBalance,
   type PrepaidCharge,
@@ -44,14 +45,18 @@ export function computePrepaidBalances(
 ): PrepaidBalance[] {
   const charged = new Map<string, number>()
   for (const charge of charges) {
+    if (charge.deleted) continue
     charged.set(
       charge.prepaidMethodId,
       (charged.get(charge.prepaidMethodId) ?? 0) + charge.amountYen,
     )
   }
   const spent = new Map<string, number>()
+  // A transfer from another prepaid balance is not new money.
+  for (const charge of charges) if (!charge.deleted)
+    spent.set(charge.fundingMethodId, (spent.get(charge.fundingMethodId) ?? 0) + charge.amountYen)
   for (const expense of expenses) {
-    if (expense.type !== TYPE_EXPENSE) continue
+    if (expense.deleted || expense.type !== TYPE_EXPENSE) continue
     spent.set(
       expense.paymentMethodId,
       (spent.get(expense.paymentMethodId) ?? 0) + expense.amountYen,
@@ -77,6 +82,7 @@ export function computeCardWithdrawals(
   methods: PaymentMethod[],
   charges: PrepaidCharge[],
   expenses: Expense[],
+  refunds: ExpenseRefund[] = [],
 ): CardWithdrawal[] {
   const cards = new Map(
     methods
@@ -121,14 +127,29 @@ export function computeCardWithdrawals(
   }
 
   for (const expense of expenses) {
-    if (expense.type !== TYPE_EXPENSE) continue
+    if (expense.deleted || expense.type !== TYPE_EXPENSE) continue
     const card = cards.get(expense.paymentMethodId)
     if (card) add(card, expense.purchasedAtMillis, expense.amountYen, 'expense')
   }
   for (const charge of charges) {
+    if (charge.deleted) continue
     const card = cards.get(charge.fundingMethodId)
     if (card) add(card, charge.chargedAtMillis, charge.amountYen, 'charge')
   }
+
+  for (const refund of refunds) {
+    if (refund.deleted) continue
+    const card = cards.get(refund.paymentMethodId)
+    if (!card || !refund.cardWithdrawalAtMillis) continue
+    const key = `${card.id}:${refund.cardWithdrawalAtMillis}`
+    const row = grouped.get(key) ?? { methodId: card.id, methodName: card.name, closingDay: card.closingDay, paymentDay: card.paymentDay, withdrawalAtMillis: refund.cardWithdrawalAtMillis, amountYen: 0, expenseAmountYen: 0, chargeAmountYen: 0, itemCount: 0 }
+    row.amountYen -= refund.amountYen
+    row.refundAmountYen = (row.refundAmountYen ?? 0) + refund.amountYen
+    row.itemCount += 1
+    grouped.set(key, row)
+  }
+  // A negative card balance is not an automatic bank deposit or next-cycle carry.
+  for (const row of grouped.values()) row.amountYen = Math.max(0, row.amountYen)
 
   return [...grouped.values()].sort(
     (a, b) =>

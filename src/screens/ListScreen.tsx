@@ -5,6 +5,8 @@ import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import FilterListRoundedIcon from '@mui/icons-material/FilterListRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
+import UndoRoundedIcon from '@mui/icons-material/UndoRounded'
+import { RefundHistory, RefundModal } from '../components/Refunds'
 import {
   Accordion,
   AccordionDetails,
@@ -26,7 +28,7 @@ import {
   TextField,
   Typography,
 } from '@mui/material'
-import { Button, Card, Divider, LargeTitle, Modal, Screen, formatDate, yen } from '../components/ui'
+import { Button, Card, Divider, Field, LargeTitle, Modal, Screen, formatDate, yen } from '../components/ui'
 import { useStore, type ExpenseDraft } from '../store'
 import { TYPE_EXPENSE, TYPE_INCOME, now, type Expense } from '../types'
 
@@ -62,6 +64,7 @@ export function ListScreen({ onEdit, onDuplicate }: {
 }) {
   const s = useStore()
   const [pendingDelete, setPendingDelete] = useState<Expense | null>(null)
+  const [refundTarget, setRefundTarget] = useState<Expense | null>(null)
   const [filters, setFilters] = useState<Filters>(initialFilters)
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
 
@@ -103,6 +106,7 @@ export function ListScreen({ onEdit, onDuplicate }: {
     .filter(([, value]) => value !== '' && value !== false).length
 
   const draftOf = (expense: Expense, duplicate = false): ExpenseDraft => ({
+    cashAccountId: duplicate ? undefined : expense.cashAccountId ?? '',
     editingId: duplicate ? null : expense.id,
     type: expense.type,
     title: expense.title,
@@ -175,8 +179,8 @@ export function ListScreen({ onEdit, onDuplicate }: {
               <TextField fullWidth label="終了日" type="date" value={filters.to} onChange={(event) => setFilters({ ...filters, to: event.target.value })} slotProps={{ inputLabel: { shrink: true } }} />
             </Stack>
             <Stack direction="row" spacing={1.5}>
-              <TextField fullWidth label="最低金額" type="number" value={filters.minAmount} onChange={(event) => setFilters({ ...filters, minAmount: event.target.value })} />
-              <TextField fullWidth label="最高金額" type="number" value={filters.maxAmount} onChange={(event) => setFilters({ ...filters, maxAmount: event.target.value })} />
+              <Field onCalculate={(value) => setFilters({ ...filters, minAmount: value })} label="最低金額" type="number" value={filters.minAmount} onChange={(event) => setFilters({ ...filters, minAmount: event.target.value })} />
+              <Field onCalculate={(value) => setFilters({ ...filters, maxAmount: value })} label="最高金額" type="number" value={filters.maxAmount} onChange={(event) => setFilters({ ...filters, maxAmount: event.target.value })} />
             </Stack>
             <FormControlLabel
               control={<Checkbox checked={filters.splitOnly} onChange={(event) => setFilters({ ...filters, splitOnly: event.target.checked })} />}
@@ -214,12 +218,13 @@ export function ListScreen({ onEdit, onDuplicate }: {
                         disablePadding
                         secondaryAction={
                           <Stack direction="row">
+                            {!isIncome && <IconButton onClick={() => setRefundTarget(expense)} aria-label={`${expense.title}の返金を記録`}><UndoRoundedIcon /></IconButton>}
                             <IconButton onClick={() => onDuplicate(draftOf(expense, true))} aria-label={`${expense.title}を複製`}><ContentCopyRoundedIcon /></IconButton>
                             <IconButton edge="end" onClick={() => setPendingDelete(expense)} aria-label="削除"><DeleteOutlineRoundedIcon /></IconButton>
                           </Stack>
                         }
                       >
-                        <ListItemButton onClick={() => onEdit(draftOf(expense))} sx={{ pr: 12, py: 1.5 }}>
+                        <ListItemButton onClick={() => onEdit(draftOf(expense))} sx={{ pr: isIncome ? 12 : 17, py: 1.5 }}>
                           <ListItemText
                             disableTypography
                             primary={<Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}><Typography fontWeight={700} noWrap>{expense.title}</Typography><Typography fontWeight={700} color={isIncome ? 'success.main' : 'error.main'}>{isIncome ? '+' : '-'}{yen(expense.amountYen)}</Typography></Stack>}
@@ -251,6 +256,8 @@ export function ListScreen({ onEdit, onDuplicate }: {
         </>
       )}
 
+      <RefundHistory />
+      {refundTarget && <RefundModal expense={refundTarget} onClose={() => setRefundTarget(null)} />}
       {pendingDelete && (
         <Modal title="削除しますか？" onClose={() => setPendingDelete(null)}>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>「{pendingDelete.title}」（{yen(pendingDelete.amountYen)}）を削除します。</Typography>

@@ -1,5 +1,5 @@
 import { expectedWithdrawalDate } from '../payments.ts'
-import type { CardStatement, CardWithdrawal, Expense, PaymentMethod, PrepaidCharge } from '../types.ts'
+import type { CardStatement, CardWithdrawal, Expense, ExpenseRefund, PaymentMethod, PrepaidCharge } from '../types.ts'
 
 export interface ScheduledWithdrawal extends CardWithdrawal {
   estimatedAmountYen: number
@@ -66,9 +66,9 @@ export function paymentOverview(schedule: ScheduledWithdrawal[], timestamp: numb
   }
 }
 
-export interface WithdrawalItem { id: string; title: string; date: number; amountYen: number; kind: 'expense' | 'charge' }
+export interface WithdrawalItem { id: string; title: string; date: number; amountYen: number; kind: 'expense' | 'charge' | 'refund' }
 
-export function withdrawalItems(row: CardWithdrawal, expenses: Expense[], charges: PrepaidCharge[]): WithdrawalItem[] {
+export function withdrawalItems(row: CardWithdrawal, expenses: Expense[], charges: PrepaidCharge[], refunds: ExpenseRefund[] = []): WithdrawalItem[] {
   if (row.closingDay < 1 || row.paymentDay < 1) return []
   const matches = (date: number) => expectedWithdrawalDate(date, row.closingDay, row.paymentDay) === row.withdrawalAtMillis
   const items: WithdrawalItem[] = []
@@ -82,5 +82,7 @@ export function withdrawalItems(row: CardWithdrawal, expenses: Expense[], charge
       items.push({ id: charge.id, title: charge.note || 'プリペイドチャージ', date: charge.chargedAtMillis, amountYen: charge.amountYen, kind: 'charge' })
     }
   }
+  for (const refund of refunds) if (!refund.deleted && refund.paymentMethodId === row.methodId && refund.cardWithdrawalAtMillis === row.withdrawalAtMillis)
+    items.push({ id: refund.id, title: refund.note || '返金', date: refund.refundedAtMillis, amountYen: -refund.amountYen, kind: 'refund' })
   return items.sort((a, b) => b.date - a.date || a.id.localeCompare(b.id))
 }
