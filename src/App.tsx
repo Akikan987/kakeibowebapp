@@ -22,6 +22,7 @@ import {
 } from '@mui/material'
 import { Toast } from './components/ui'
 import { AuthScreen } from './screens/AuthScreen'
+import { SocialCallbackScreen } from './screens/SocialCallbackScreen'
 import { clearAppShortcutFromUrl, parseAppShortcut } from './shortcuts'
 import { emptyDraft, useStore, type ExpenseDraft } from './store'
 import { TYPE_EXPENSE, TYPE_INCOME, now } from './types'
@@ -55,6 +56,7 @@ const TABS = [
 
 export default function App() {
   const s = useStore()
+  const [socialCallback, setSocialCallback] = useState(() => new URLSearchParams(window.location.search).get('social'))
   const lastTab = readLastTab()
   const shortcut = parseAppShortcut(window.location.search)
   const shortcutDraft = shortcut === 'add-expense' || shortcut === 'add-income'
@@ -95,6 +97,16 @@ export default function App() {
   useEffect(() => {
     if (MAIN_TABS.includes(tab as MainTab)) localStorage.setItem(LAST_TAB_KEY, tab)
   }, [tab])
+
+  if (socialCallback === 'complete' || socialCallback === 'error') {
+    return <><SocialCallbackScreen failed={socialCallback === 'error'} onDone={(linked) => {
+      const url = new URL(window.location.href)
+      url.searchParams.delete('social')
+      window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`)
+      setSocialCallback(null)
+      if (linked) setTab('settings')
+    }} />{s.message && <Toast text={s.message.text} kind={s.message.kind} onDone={s.clearMessage} />}</>
+  }
 
   if (!s.hasEntered) {
     return (

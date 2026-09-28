@@ -205,6 +205,7 @@ interface Store {
   notify: (text: string, kind?: 'ok' | 'error') => void
   // 認証
   login: (identifier: string, password: string) => Promise<void>
+  acceptSocialAccount: (account: Account) => Promise<void>
   register: (
     phone: string,
     email: string,
@@ -519,6 +520,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     },
     [applyLogin, notify],
   )
+
+  const acceptSocialAccount = useCallback(async (acc: Account) => {
+    pendingLoginSync.current = true
+    await applyLogin(acc)
+    notify('ログインしました')
+  }, [applyLogin, notify])
 
   const register = useCallback(
     async (
@@ -1866,6 +1873,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     clearMessage,
     notify,
     login,
+    acceptSocialAccount,
     register,
     requestReset,
     resetPassword,

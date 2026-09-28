@@ -15,6 +15,7 @@ import { Button, Card, Divider, Field, LargeTitle, Modal, Screen, SectionHeader,
 import { refreshAppShell, storageStatus } from '../offline'
 import { useStore } from '../store'
 import type { Category } from '../types'
+import { SocialLogin } from '../components/SocialLogin'
 import { useAppTheme, type AppThemeMode } from '../theme'
 
 export function SettingsScreen() {
@@ -125,6 +126,7 @@ export function SettingsScreen() {
           </Stack>
           <Box>{s.account.email && <Typography variant="body2" color="text.secondary">{s.account.email}</Typography>}{s.account.phone && <Typography variant="body2" color="text.secondary">電話: {s.account.phone}</Typography>}<Typography variant="body2" color="text.secondary">最終同期: {formatDateTime(s.lastSync)}</Typography>{s.hasPendingChanges && <Chip size="small" color={s.syncError ? 'error' : 'warning'} label={s.syncError ? '未同期の変更があります（接続を確認してください）' : '未同期の変更があります'} sx={{ mt: 1 }} />}<Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>記録の変更はオンライン時に自動で同期されます。</Typography></Box>
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}><Button variant="text" onClick={() => void s.logout()} sx={{ color: 'error.main' }}>ログアウト</Button><Button variant="text" onClick={() => void s.logoutAll()} sx={{ color: 'error.main' }}>すべての端末からログアウト</Button></Stack>
+          <SocialLogin token={s.account.token} />
         </Stack> : <Stack spacing={2}><Typography variant="body2" color="text.secondary">この端末のみでオフライン利用中です。</Typography><Button onClick={s.backToAuth}>ログイン / 新規登録</Button><Typography variant="caption" color="text.secondary">登録すると、今のデータもサーバーに同期され、他の端末からも使えます。</Typography></Stack>}
       </CardContent></Card>
 

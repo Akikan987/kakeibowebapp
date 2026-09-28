@@ -77,6 +77,24 @@ const toAccount = (r: AuthRaw): Account => ({
   avatarDataUrl: r.avatar_data_url ?? '',
 })
 
+export type SocialProviderId = 'google' | 'line' | 'kakao' | 'x'
+export interface SocialProvider { id: SocialProviderId; name: string; enabled: boolean }
+export const apiSocialProviders = () => request<{ providers: SocialProvider[] }>('/auth/social/providers')
+export const apiSocialConnections = (token: string) => request<{ linked: SocialProviderId[] }>('/auth/social/connections', { token })
+export const apiSocialStart = (provider: SocialProviderId, token?: string, password = '') =>
+  request<{ url: string }>(`/auth/social/${provider}/start`, { method: 'POST', token, body: { link: Boolean(token), current_password: password } })
+export const apiSocialUnlink = (provider: SocialProviderId, token: string, password: string) =>
+  request<{ ok: boolean }>(`/auth/social/${provider}/connection`, { method: 'DELETE', token, body: { current_password: password } })
+export const apiSocialCancel = () => request<{ ok: boolean }>('/auth/social/cancel', { method: 'POST', body: {} })
+export const apiSocialComplete = async (token?: string) => {
+  const response = await request<
+    { status: 'authenticated'; account: AuthRaw } | { status: 'signup'; provider: SocialProviderId } | { status: 'linked' }
+  >('/auth/social/complete', { method: 'POST', token, body: {} })
+  return response.status === 'authenticated' ? { status: 'authenticated' as const, account: toAccount(response.account) } : response
+}
+export const apiSocialRegister = async (phone: string, email: string, nickname: string, password: string) =>
+  toAccount(await request<AuthRaw>('/auth/social/register', { method: 'POST', body: { phone, email, nickname, password } }))
+
 export const apiRegister = async (
   phone: string,
   email: string,
