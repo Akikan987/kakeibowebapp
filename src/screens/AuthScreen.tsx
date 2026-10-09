@@ -60,7 +60,7 @@ export function AuthScreen({ socialSignup = false, onCancel }: { socialSignup?: 
       <Typography variant="h4" component="h1" fontWeight={800}>家計簿</Typography>
       <Typography variant="body2" color="text.secondary">毎日のお金を、ひとつの場所で。</Typography>
     </Stack>
-    <Paper elevation={0} sx={{ p: { xs: 2.5, sm: 4 }, borderRadius: 4, border: '1px solid', borderColor: 'divider' }}>
+    <Paper elevation={0} sx={{ p: { xs: 3, sm: 4 }, borderRadius: '24px', border: '1px solid', borderColor: 'divider' }}>
       <Stack spacing={3}>
         {!socialSignup && (step === 'login' || step === 'register') ? <>
           <Tabs value={step} variant="fullWidth" onChange={(_, value: Step) => { if (!busy) go(value) }} aria-label="ログインまたは新規登録">

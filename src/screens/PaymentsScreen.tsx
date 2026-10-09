@@ -96,7 +96,7 @@ export function PaymentsScreen() {
         onMoveMonth={moveCalendarMonth}
       />
       {selectedCalendarDay !== null && <Card sx={{ mt: 1.5 }}>
-        <Box sx={{ px: 2, py: 1.5 }}>
+        <Box sx={{ p: 3 }}>
           <Typography fontWeight={700}>{calendarMonth.month + 1}月{selectedCalendarDay}日の引き落とし</Typography>
           {selectedWithdrawals.length === 0 ? (
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>この日の引き落とし予定はありません</Typography>
@@ -104,8 +104,8 @@ export function PaymentsScreen() {
             <Box key={item.methodId}>
               {index > 0 && <Divider />}
               <MuiButton fullWidth color="inherit" onClick={() => setDetailKey(withdrawalKey(item.methodId, item.withdrawalAtMillis))} sx={{ justifyContent: 'space-between', gap: 2, py: 1 }}>
-                <Typography>{item.methodName}</Typography>
-                <Stack alignItems="flex-end" spacing={0.5}><Typography fontWeight={700}>{yen(item.amountYen)}</Typography><WithdrawalStatus status={displayWithdrawals.find((row) => row.methodId === item.methodId && row.withdrawalAtMillis === item.withdrawalAtMillis)?.status ?? 'estimated'} /></Stack>
+                <Typography sx={{ minWidth: 0, textAlign: 'left' }}>{item.methodName}</Typography>
+                <Stack alignItems="flex-end" spacing={0.5} sx={{ flexShrink: 0 }}><Typography fontWeight={600}>{yen(item.amountYen)}</Typography><WithdrawalStatus status={displayWithdrawals.find((row) => row.methodId === item.methodId && row.withdrawalAtMillis === item.withdrawalAtMillis)?.status ?? 'estimated'} /></Stack>
               </MuiButton>
             </Box>
           ))}
@@ -120,10 +120,13 @@ export function PaymentsScreen() {
         {s.prepaidBalances.length === 0 ? <EmptyText>プリペイドを登録すると、チャージと利用から現在残高を表示します。</EmptyText> : s.prepaidBalances.map((balance, index) => (
           <Box key={balance.methodId}>
             {index > 0 && <Divider />}
-            <Stack direction="row" alignItems="center" spacing={1.5} sx={{ px: 2, py: 1.5 }}>
-              <Box sx={{ minWidth: 0, flex: 1 }}><Typography fontWeight={700} noWrap>{balance.name}</Typography><Typography variant="caption" color="text.secondary">チャージ {yen(balance.charged)} ・ 利用 {yen(balance.spent)}</Typography></Box>
-              <Typography fontWeight={700} color="primary.main">{yen(balance.balance)}</Typography>
-              <MuiButton size="small" onClick={() => setChargeDraft(emptyCharge(balance.methodId))}>チャージ</MuiButton>
+            <Stack spacing={1} sx={{ p: 3 }}>
+              <Typography fontWeight={600}>{balance.name}</Typography>
+              <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}>
+                <Typography variant="h6" color="primary.main" sx={{ minWidth: 0 }}>{yen(balance.balance)}</Typography>
+                <MuiButton size="small" sx={{ flexShrink: 0 }} onClick={() => setChargeDraft(emptyCharge(balance.methodId))}>チャージ</MuiButton>
+              </Stack>
+              <Typography variant="caption" color="text.secondary">チャージ {yen(balance.charged)} ・ 利用 {yen(balance.spent)}</Typography>
             </Stack>
           </Box>
         ))}
@@ -134,9 +137,8 @@ export function PaymentsScreen() {
         <Card>{s.prepaidCharges.slice(0, 20).map((charge, index) => (
           <Box key={charge.id}>
             {index > 0 && <Divider />}
-            <Stack direction="row" alignItems="center" spacing={1} sx={{ pl: 2, pr: 1, py: 1.25 }}>
-              <Box sx={{ minWidth: 0, flex: 1 }}><Typography fontWeight={700} noWrap>{s.paymentMethodName(charge.prepaidMethodId)}</Typography><Typography variant="caption" color="text.secondary">{fullDate(charge.chargedAtMillis)} ・ {charge.fundingMethodId ? s.paymentMethodName(charge.fundingMethodId) : '初期残高・残高調整'}{charge.note && ` ・ ${charge.note}`}</Typography></Box>
-              <Typography fontWeight={700} color="success.main">+{yen(charge.amountYen)}</Typography>
+            <Stack direction="row" alignItems="center" spacing={1} sx={{ p: 3 }}>
+              <Box sx={{ minWidth: 0, flex: 1 }}><Typography fontWeight={600}>{s.paymentMethodName(charge.prepaidMethodId)}</Typography><Typography fontWeight={600} color="success.main" sx={{ my: 0.5 }}>+{yen(charge.amountYen)}</Typography><Typography variant="caption" color="text.secondary">{fullDate(charge.chargedAtMillis)} ・ {charge.fundingMethodId ? s.paymentMethodName(charge.fundingMethodId) : '初期残高・残高調整'}{charge.note && ` ・ ${charge.note}`}</Typography></Box>
               <IconButton aria-label="チャージ記録を取り消す" onClick={() => setPendingChargeDelete(charge)}><DeleteOutlineRoundedIcon /></IconButton>
             </Stack>
           </Box>
@@ -148,10 +150,14 @@ export function PaymentsScreen() {
       <Card>{s.paymentMethods.map((method, index) => (
         <Box key={method.id}>
           {index > 0 && <Divider />}
-          <Stack direction="row" alignItems="center" spacing={1} sx={{ pl: 2, pr: 1, py: 1.25 }}>
-            <Box sx={{ minWidth: 0, flex: 1 }}><Typography fontWeight={700} noWrap>{method.name}</Typography><Typography variant="caption" color="text.secondary">{PAYMENT_TYPE_LABELS[method.type]}{method.cardLastFour && <> ・ 末尾 {method.cardLastFour}</>}{method.type === 'credit' && <> ・ {dayLabel(method.closingDay)}締め ・ {dayLabel(method.paymentDay)}引き落とし</>}</Typography></Box>
+          <Stack spacing={1} sx={{ p: 3 }}>
+            <Typography fontWeight={600}>{method.name}</Typography>
+            <Typography variant="caption" color="text.secondary">{PAYMENT_TYPE_LABELS[method.type]}{method.cardLastFour && <> ・ 末尾 {method.cardLastFour}</>}</Typography>
+            {method.type === 'credit' && <Typography variant="body2" color="text.secondary">{dayLabel(method.closingDay)}締め ・ {dayLabel(method.paymentDay)}引き落とし</Typography>}
+            <Stack direction="row" justifyContent="flex-end" spacing={0.5}>
             <IconButton color="primary" aria-label={`${method.name}を編集`} onClick={() => editMethod(method)}><EditRoundedIcon /></IconButton>
             {method.id !== DEFAULT_CASH_METHOD_ID && method.id !== DEFAULT_OTHER_METHOD_ID && <IconButton aria-label="決済方法を削除" onClick={() => setPendingMethodDelete(method)}><DeleteOutlineRoundedIcon /></IconButton>}
+            </Stack>
           </Stack>
         </Box>
       ))}</Card>
@@ -184,12 +190,12 @@ function WithdrawalCalendar({ year, month, withdrawals, selectedDay, onSelectDay
     ...Array.from({ length: daysInMonth }, (_, index) => index + 1),
   ]
   return <Card>
-    <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ p: 0.75 }}>
+    <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ px: 1.5, pt: 1.5, pb: 1 }}>
       <IconButton aria-label="カレンダーの前の月" onClick={() => onMoveMonth(-1)}><ChevronLeftRoundedIcon /></IconButton>
       <Typography variant="h6">{year}年{month + 1}月</Typography>
       <IconButton aria-label="カレンダーの次の月" onClick={() => onMoveMonth(1)}><ChevronRightRoundedIcon /></IconButton>
     </Stack>
-    <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', px: 1, pb: 1.25 }}>
+    <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', px: 1.5, pb: 2 }}>
       {['月', '火', '水', '木', '金', '土', '日'].map((label) => <Typography key={label} variant="caption" color="text.secondary" align="center" sx={{ py: 0.75 }}>{label}</Typography>)}
       {cells.map((day, index) => {
         if (day === null) return <Box key={`empty-${index}`} />
@@ -228,7 +234,7 @@ function StatementModal({ draft, withdrawal, canReset, onChange, onClose, onSave
   </Stack></Modal>
 }
 
-function EmptyText({ children }: { children: React.ReactNode }) { return <Typography variant="body2" color="text.secondary" sx={{ p: 2 }}>{children}</Typography> }
+function EmptyText({ children }: { children: React.ReactNode }) { return <Typography variant="body2" color="text.secondary" sx={{ p: 3 }}>{children}</Typography> }
 function HelpText({ children }: { children: React.ReactNode }) { return <Typography variant="caption" color="text.secondary" sx={{ display: 'block', px: 0.5, py: 1 }}>{children}</Typography> }
 
 function DaySelect({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => void }) {
@@ -289,16 +295,16 @@ function PaymentMethodModal({ draft, onChange, onClose, onSave }: { draft: Payme
           ) : (
             <Stack spacing={1.25}>
               {presetCandidates.map((preset) => (
-                <Stack key={preset.id} direction="row" alignItems="center" spacing={1}>
+                <Stack key={preset.id} direction={{ xs: 'column', sm: 'row' }} alignItems={{ xs: 'stretch', sm: 'center' }} spacing={1.25} sx={{ py: 1 }}>
                   <Box sx={{ minWidth: 0, flex: 1 }}>
-                    <Typography variant="body2" fontWeight={700} noWrap>
+                    <Typography variant="body2" fontWeight={600} sx={{ overflowWrap: 'anywhere' }}>
                       {preset.name}
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
                       {preset.note}
                     </Typography>
                   </Box>
-                  <MuiButton size="small" variant="outlined" onClick={() => applyPreset(preset)}>
+                  <MuiButton size="small" variant="outlined" sx={{ alignSelf: 'flex-end', flexShrink: 0 }} onClick={() => applyPreset(preset)}>
                     反映
                   </MuiButton>
                 </Stack>

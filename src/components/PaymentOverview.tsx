@@ -27,17 +27,17 @@ export function PaymentOverview({ schedule, onSelect }: { schedule: ScheduledWit
   const overview = useMemo(() => paymentOverview(schedule, timestamp), [schedule, timestamp])
   const list = (rows: ScheduledWithdrawal[]) => rows.map((row, index) => <Box key={withdrawalKey(row.methodId, row.withdrawalAtMillis)}>
     {index > 0 && <Divider />}
-    <Button fullWidth color="inherit" onClick={() => onSelect(row)} sx={{ textAlign: 'left', px: 2, py: 1.5, display: 'block', borderRadius: 0 }}>
+    <Button fullWidth color="inherit" onClick={() => onSelect(row)} sx={{ textAlign: 'left', p: 3, display: 'block', borderRadius: 0 }}>
       <Stack direction="row" spacing={1} justifyContent="space-between" alignItems="center">
         <Box sx={{ minWidth: 0 }}><Typography fontWeight={700} sx={{ overflowWrap: 'anywhere' }}>{row.methodName}</Typography><Typography variant="body2" color="text.secondary">{fullDate(row.withdrawalAtMillis)}予定</Typography></Box>
-        <Stack alignItems="flex-end" spacing={0.5}><Typography fontWeight={700}>{yen(row.amountYen)}</Typography><WithdrawalStatus status={row.status} /></Stack>
+        <Stack alignItems="flex-end" spacing={0.5} sx={{ flexShrink: 0 }}><Typography fontWeight={600}>{yen(row.amountYen)}</Typography><WithdrawalStatus status={row.status} /></Stack>
       </Stack>
       <Typography variant="caption" color="text.secondary">{row.itemCount}件 ・ タップで内訳・請求確認</Typography>
     </Button>
   </Box>)
   return <>
     <SectionHeader>これからの支払い</SectionHeader>
-    <Card sx={{ p: 2 }}>
+    <Card sx={{ p: 3 }}>
       <Typography variant="body2" color="text.secondary">次の引き落とし（支払済みを除く）</Typography>
       {overview.nextDate === undefined ? <Typography sx={{ my: 1 }}>今後の引き落とし予定はありません</Typography> : <Box sx={{ my: 1 }}>
         <Typography>{fullDate(overview.nextDate)}</Typography><Typography variant="h5">{yen(overview.next.total)}</Typography>
@@ -53,7 +53,7 @@ export function PaymentOverview({ schedule, onSelect }: { schedule: ScheduledWit
       {overview.past.length > pastLimit && <Button fullWidth onClick={() => setPastLimit((value) => value + 12)}>過去の予定をさらに表示</Button>}
     </AccordionDetails></Accordion>}
     <SectionHeader>今後の予定（支払済みを除く）</SectionHeader>
-    <Card>{overview.upcoming.length === 0 ? <Typography sx={{ p: 2 }}>カード利用を記録すると予定が表示されます。過去分・支払済みはカレンダーから確認できます。</Typography> : list(overview.upcoming.slice(0, limit))}</Card>
+    <Card>{overview.upcoming.length === 0 ? <Typography sx={{ p: 3 }}>カード利用を記録すると予定が表示されます。過去分・支払済みはカレンダーから確認できます。</Typography> : list(overview.upcoming.slice(0, limit))}</Card>
     {overview.upcoming.length > limit && <Button fullWidth onClick={() => setLimit((value) => value + 12)}>さらに12件表示（残り{overview.upcoming.length - limit}件）</Button>}
   </>
 }

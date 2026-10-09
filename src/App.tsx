@@ -135,7 +135,7 @@ export default function App() {
           bgcolor: (theme) =>
             theme.palette.mode === 'dark'
               ? 'rgba(16,20,24,0.88)'
-              : 'rgba(247,249,252,0.9)',
+              : 'rgba(245,245,247,0.9)',
           backdropFilter: 'blur(18px)',
           borderBottom: '1px solid',
           borderColor: 'divider',
@@ -208,7 +208,7 @@ export default function App() {
       <Paper
         component="nav"
         square
-        elevation={10}
+        elevation={0}
         sx={{
           position: 'fixed',
           right: 0,
@@ -227,7 +227,7 @@ export default function App() {
             showLabels
             value={tab === 'add' || tab === 'settings' ? false : tab}
             onChange={(_, value: MainTab) => setTab(value)}
-            sx={{ height: 68, bgcolor: 'transparent' }}
+            sx={{ height: 72, bgcolor: 'transparent' }}
           >
             {TABS.map((item) => (
               <BottomNavigationAction
@@ -248,7 +248,7 @@ export default function App() {
               setAddReturnTab(tab as MainTab)
               setTab('add')
             }}
-            sx={{ position: 'absolute', right: 16, top: -56 }}
+            sx={{ position: 'absolute', right: 20, top: -64, boxShadow: '0 4px 16px rgba(0,0,0,0.16)' }}
           >
             <AddRoundedIcon />
           </Fab>}

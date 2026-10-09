@@ -13,9 +13,9 @@ import {
   useMediaQuery,
 } from '@mui/material'
 
-const BRAND_BLUE = '#1565C0'
+const BRAND_BLUE = '#0066CC'
 const THEME_STORAGE_KEY = 'kakeibo.theme'
-const LIGHT_BACKGROUND = '#F7F9FC'
+const LIGHT_BACKGROUND = '#F5F5F7'
 const DARK_BACKGROUND = '#101418'
 
 export type AppThemeMode = 'system' | 'light' | 'dark'
@@ -67,29 +67,35 @@ export function AppThemeProvider({ children }: { children: ReactNode }) {
       createTheme({
         palette: {
           mode: resolvedMode,
-          primary: { main: BRAND_BLUE },
+          primary: { main: isDark ? '#8ABBFF' : BRAND_BLUE, contrastText: isDark ? '#102238' : '#FFFFFF' },
           secondary: { main: '#625B71' },
-          success: { main: '#2E7D32' },
-          error: { main: '#D32F2F' },
-          warning: { main: '#ED6C02' },
+          success: { main: isDark ? '#75CE91' : '#237B36' },
+          error: { main: isDark ? '#FF8585' : '#C53333' },
+          warning: { main: isDark ? '#FFBE70' : '#A85A00' },
+          text: isDark ? { primary: '#F5F5F7', secondary: '#ABB2BC' } : { primary: '#1D1D1F', secondary: '#68686E' },
           background: isDark
-            ? { default: DARK_BACKGROUND, paper: '#191C20' }
+            ? { default: DARK_BACKGROUND, paper: '#1C2026' }
             : { default: LIGHT_BACKGROUND, paper: '#FFFFFF' },
         },
-        shape: { borderRadius: 16 },
+        // Numeric sx radii are multiples of this value, not pixel values.
+        shape: { borderRadius: 8 },
         typography: {
           fontFamily:
             '-apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", "Segoe UI", Roboto, sans-serif',
-          h4: { fontSize: '2rem', fontWeight: 700, letterSpacing: '-0.02em' },
+          h4: { fontSize: '2rem', fontWeight: 700, letterSpacing: '-0.035em', lineHeight: 1.2 },
           h5: { fontWeight: 700, letterSpacing: '-0.015em' },
-          h6: { fontWeight: 700 },
-          button: { fontWeight: 700, textTransform: 'none' },
+          h6: { fontSize: '1.125rem', fontWeight: 600, letterSpacing: '-0.015em' },
+          body1: { lineHeight: 1.6 },
+          body2: { lineHeight: 1.6 },
+          subtitle2: { fontWeight: 600 },
+          button: { fontWeight: 600, textTransform: 'none' },
+          allVariants: { fontVariantNumeric: 'tabular-nums' },
         },
         components: {
           MuiButton: {
             defaultProps: { disableElevation: true },
             styleOverrides: {
-              root: { minHeight: 44, borderRadius: 14, paddingInline: 18 },
+              root: { minHeight: 48, borderRadius: 16, paddingInline: 20 },
             },
           },
           MuiCard: {
@@ -98,22 +104,35 @@ export function AppThemeProvider({ children }: { children: ReactNode }) {
               root: {
                 border: '1px solid',
                 borderColor: isDark
-                  ? 'rgba(255,255,255,0.09)'
-                  : 'rgba(20,42,74,0.08)',
+                  ? 'rgba(255,255,255,0.07)'
+                  : 'rgba(29,29,31,0.06)',
                 boxShadow: isDark
-                  ? '0 10px 30px rgba(0,0,0,0.18)'
-                  : '0 8px 28px rgba(28,55,90,0.06)',
+                  ? 'none'
+                  : '0 2px 8px rgba(29,29,31,0.025)',
+                backgroundImage: 'none',
               },
             },
           },
+          MuiCardContent: {
+            styleOverrides: { root: { padding: 24, '&:last-child': { paddingBottom: 24 } } },
+          },
+          MuiIconButton: {
+            styleOverrides: { root: { minWidth: 44, minHeight: 44 } },
+          },
+          MuiBottomNavigationAction: {
+            styleOverrides: {
+              root: { gap: 4 },
+              label: { fontSize: '0.6875rem', fontWeight: 500, '&.Mui-selected': { fontSize: '0.6875rem', fontWeight: 600 } },
+            },
+          },
           MuiDialog: {
-            styleOverrides: { paper: { borderRadius: 24 } },
+            styleOverrides: { paper: { borderRadius: 28, backgroundImage: 'none', '@media (max-width: 475px)': { margin: 16, width: 'calc(100% - 32px)', maxWidth: 'calc(100% - 32px)', maxHeight: 'calc(100% - 32px)' } } },
           },
           MuiTextField: {
             defaultProps: { size: 'medium', variant: 'outlined' },
           },
           MuiOutlinedInput: {
-            styleOverrides: { root: { borderRadius: 14 } },
+            styleOverrides: { root: { borderRadius: 16 } },
           },
           MuiChip: {
             styleOverrides: { root: { borderRadius: 10, fontWeight: 600 } },

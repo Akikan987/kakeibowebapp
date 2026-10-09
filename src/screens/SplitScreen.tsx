@@ -26,14 +26,28 @@ export function SplitScreen() {
       <SplitInvitations />
       {s.debts.length > 0 && <>
         <SectionHeader>あなたが払う分</SectionHeader>
-        <Card>{s.debts.map((debt, index) => <Box key={debt.ownerUid}>{index > 0 && <Divider />}<Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ px: 2, py: 1.5 }}><Box><Typography fontWeight={700}>{debt.ownerNickname}さんへ</Typography><Typography variant="body2" color="text.secondary">割当 {yen(debt.charged)} ・ 清算済 {yen(debt.settled)}</Typography></Box><Typography fontWeight={700} color={debt.remaining > 0 ? 'error.main' : 'text.secondary'}>{yen(debt.remaining)}</Typography></Stack></Box>)}</Card>
+        <Card>{s.debts.map((debt, index) => <Box key={debt.ownerUid}>{index > 0 && <Divider />}<Stack spacing={1} sx={{ p: 3 }}><Typography fontWeight={600}>{debt.ownerNickname}さんへ</Typography><Typography variant="h6" color={debt.remaining > 0 ? 'error.main' : 'text.secondary'}>{yen(debt.remaining)}</Typography><Typography variant="body2" color="text.secondary">割当 {yen(debt.charged)} ・ 清算済 {yen(debt.settled)}</Typography></Stack></Box>)}</Card>
         <HelpText>相手が清算を記録すると、同期時にここの残額が減ります。</HelpText>
       </>}
 
       <SectionHeader>割り勘メンバー</SectionHeader>
       {s.balances.length > 0 ? <Card>{s.balances.map((balance, index) => {
         const member = memberFor(balance.memberId)
-        return <Box key={balance.memberId}>{index > 0 && <Divider />}<Stack direction="row" alignItems="center" spacing={1} sx={{ pl: 2, pr: 0.75, py: 1.25 }}><Box sx={{ minWidth: 0, flex: 1 }}><Stack direction="row" alignItems="center" spacing={0.75}><Typography fontWeight={700} noWrap>{balance.name}</Typography><Chip size="small" color={balance.linkedUid ? 'primary' : 'default'} variant={balance.linkedUid ? 'filled' : 'outlined'} label={balance.linkedUid ? '共有中' : '自分だけ'} /></Stack><Typography variant="body2" color="text.secondary">割当 {yen(balance.charged)} ・ 清算済 {yen(balance.settled)}</Typography><Typography variant="body2" fontWeight={700} color={balance.remaining > 0 ? 'success.main' : 'text.secondary'}>残り {yen(balance.remaining)}</Typography></Box><Button variant="text" onClick={() => { setSettleTarget(balance); setSettleAmount('') }} sx={{ width: 'auto', minWidth: 48 }}>清算</Button>{member && <><IconButton aria-label={`${member.name}を編集`} onClick={() => { setRenameTarget(member); setRenameText(member.name) }}><EditRoundedIcon /></IconButton><IconButton aria-label={`${member.name}を削除`} onClick={() => setPendingMemberDelete(member)}><DeleteOutlineRoundedIcon /></IconButton></>}</Stack></Box>
+        return <Box key={balance.memberId}>
+          {index > 0 && <Divider />}
+          <Stack spacing={1} sx={{ p: 3 }}>
+            <Stack direction="row" alignItems="center" useFlexGap flexWrap="wrap" gap={1}>
+              <Typography fontWeight={600}>{balance.name}</Typography>
+              <Chip size="small" color={balance.linkedUid ? 'primary' : 'default'} variant="outlined" label={balance.linkedUid ? '共有中' : '自分だけ'} />
+            </Stack>
+            <Typography variant="h6" color={balance.remaining > 0 ? 'success.main' : 'text.secondary'}>残り {yen(balance.remaining)}</Typography>
+            <Typography variant="body2" color="text.secondary">割当 {yen(balance.charged)} ・ 清算済 {yen(balance.settled)}</Typography>
+            <Stack direction="row" alignItems="center" justifyContent="flex-end" spacing={0.5}>
+              <Button variant="text" onClick={() => { setSettleTarget(balance); setSettleAmount('') }} sx={{ width: 'auto' }}>清算</Button>
+              {member && <><IconButton aria-label={`${member.name}を編集`} onClick={() => { setRenameTarget(member); setRenameText(member.name) }}><EditRoundedIcon fontSize="small" /></IconButton><IconButton aria-label={`${member.name}を削除`} onClick={() => setPendingMemberDelete(member)}><DeleteOutlineRoundedIcon fontSize="small" /></IconButton></>}
+            </Stack>
+          </Stack>
+        </Box>
       })}</Card> : <Card><CardContent><Typography color="text.secondary">まだメンバーはいません。追加後に招待を送り、相手が承認すると割り勘情報を共有できます。</Typography></CardContent></Card>}
 
       <Card sx={{ mt: 1.5 }}><CardContent><Stack spacing={1.5}><Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems={{ sm: 'center' }}><Field label="メンバーの表示名" value={newMember} onChange={(event) => setNewMember(event.target.value)} /><Button startIcon={<PersonAddRoundedIcon />} onClick={async () => { if (await s.addMember(newMember)) setNewMember('') }} sx={{ width: { sm: 'auto' }, flexShrink: 0 }}>追加</Button></Stack><Typography variant="caption" color="text.secondary">追加しただけでは共有しません。共有する場合は上の「割り勘を共有する」から相手のアカウント名を指定して招待します。</Typography></Stack></CardContent></Card>
@@ -41,7 +55,7 @@ export function SplitScreen() {
 
       {s.settlements.length > 0 && <>
         <SectionHeader>清算の履歴</SectionHeader>
-        <Card>{s.settlements.map((settlement, index) => <Box key={settlement.id}>{index > 0 && <Divider />}<Stack direction="row" alignItems="center" spacing={1} sx={{ pl: 2, pr: 1, py: 1.25 }}><Box sx={{ minWidth: 0, flex: 1 }}><Typography fontWeight={700} noWrap>{s.memberName(settlement.memberId)}</Typography><Typography variant="body2" color="text.secondary">{formatDate(settlement.dateMillis)}</Typography></Box><Typography fontWeight={700} color="success.main">{yen(settlement.amountYen)}</Typography><IconButton aria-label="取り消し" onClick={() => setPendingDelete(settlement)}><DeleteOutlineRoundedIcon /></IconButton></Stack></Box>)}</Card>
+        <Card>{s.settlements.map((settlement, index) => <Box key={settlement.id}>{index > 0 && <Divider />}<Stack direction="row" alignItems="center" spacing={1} sx={{ p: 3 }}><Box sx={{ minWidth: 0, flex: 1 }}><Typography fontWeight={600}>{s.memberName(settlement.memberId)}</Typography><Typography variant="body2" color="text.secondary">{formatDate(settlement.dateMillis)}</Typography><Typography fontWeight={600} color="success.main">{yen(settlement.amountYen)}</Typography></Box><IconButton aria-label="取り消し" onClick={() => setPendingDelete(settlement)}><DeleteOutlineRoundedIcon fontSize="small" /></IconButton></Stack></Box>)}</Card>
       </>}
 
       {renameTarget && <Modal title="メンバー名を編集" onClose={() => setRenameTarget(null)}><Field label="メンバーの表示名" autoFocus value={renameText} onChange={(event) => setRenameText(event.target.value)} /><Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5 }}>表示名のみ変更します。共有先は変わりません。</Typography><Stack direction="row" spacing={1.5} sx={{ mt: 3 }}><Button variant="outline" onClick={() => setRenameTarget(null)}>キャンセル</Button><Button onClick={async () => { if (await s.renameMember(renameTarget, renameText)) setRenameTarget(null) }}>保存</Button></Stack></Modal>}

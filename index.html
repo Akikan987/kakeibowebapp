@@ -19,7 +19,7 @@
         const dark =
           saved === 'dark' ||
           (saved !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches)
-        const background = dark ? '#101418' : '#F7F9FC'
+        const background = dark ? '#101418' : '#F5F5F7'
         document.querySelector('#theme-color').content = background
         document.documentElement.style.colorScheme = dark ? 'dark' : 'light'
         document.documentElement.style.backgroundColor = background

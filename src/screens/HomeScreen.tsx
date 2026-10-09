@@ -1,16 +1,14 @@
-import ChevronLeftRoundedIcon from '@mui/icons-material/ChevronLeftRounded'
-import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded'
 import PersonRoundedIcon from '@mui/icons-material/PersonRounded'
-import { Avatar, Box, CardContent, IconButton, Stack, Typography } from '@mui/material'
+import { Avatar, Box, CardContent, Stack, Typography } from '@mui/material'
 import { CategoryChart, DailyChart } from '../components/Charts'
-import { Card, Divider, LargeTitle, Screen, SectionHeader, yen } from '../components/ui'
+import { Card, Divider, LargeTitle, MonthSwitcher, Screen, SectionHeader, yen } from '../components/ui'
 import { useStore } from '../store'
 
 function SummaryRow({ label, value, tone }: { label: string; value: number; tone: 'success' | 'error' }) {
   return (
-    <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ px: 2, py: 1.75 }}>
-      <Typography>{label}</Typography>
-      <Typography variant="h6" color={`${tone}.main`}>{yen(value)}</Typography>
+    <Stack spacing={0.75} sx={{ minWidth: 0 }}>
+      <Typography variant="body2" color="text.secondary">{label}</Typography>
+      <Typography color={`${tone}.main`} sx={{ fontSize: { xs: '1.125rem', sm: '1.25rem' }, fontWeight: 600 }}>{yen(value)}</Typography>
     </Stack>
   )
 }
@@ -36,21 +34,19 @@ export function HomeScreen() {
         </Stack>
       )}
 
-      <Card sx={{ mt: 2 }}>
-        <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ p: 0.5 }}>
-          <IconButton onClick={s.prevMonth} color="primary" aria-label="前の月"><ChevronLeftRoundedIcon /></IconButton>
-          <Typography variant="h6">{month.year}年{month.month}月</Typography>
-          <IconButton onClick={s.nextMonth} color="primary" aria-label="次の月"><ChevronRightRoundedIcon /></IconButton>
-        </Stack>
-      </Card>
+      <MonthSwitcher year={month.year} month={month.month} onPrevious={s.prevMonth} onNext={s.nextMonth} sx={{ mt: 3 }} />
 
       <SectionHeader>今月のサマリー</SectionHeader>
       <Card>
-        <SummaryRow label="収入合計" value={summary.incomeTotal} tone="success" />
+        <CardContent>
+          <Typography variant="body2" color="text.secondary">収支</Typography>
+          <Typography color={summary.balance >= 0 ? 'text.primary' : 'error.main'} sx={{ mt: 0.5, fontSize: { xs: '2.25rem', sm: '2.75rem' }, fontWeight: 700, lineHeight: 1.2, letterSpacing: '-0.04em' }}>{yen(summary.balance)}</Typography>
+        </CardContent>
         <Divider />
-        <SummaryRow label="支出合計" value={summary.expenseTotal} tone="error" />
-        <Divider />
-        <SummaryRow label="収支" value={summary.balance} tone={summary.balance >= 0 ? 'success' : 'error'} />
+        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 2, p: 3 }}>
+          <SummaryRow label="収入合計" value={summary.incomeTotal} tone="success" />
+          <SummaryRow label="支出合計" value={summary.expenseTotal} tone="error" />
+        </Box>
       </Card>
 
       <SectionHeader>支出：日付別</SectionHeader>

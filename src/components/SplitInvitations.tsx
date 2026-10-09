@@ -17,7 +17,7 @@ export function SplitInvitations() {
     <Alert severity="info">新しい共有は相手の承認後に開始します。既存の共有は維持されています。メンバー名の変更だけでは共有先は変わりません。</Alert>
     {!s.account ? <Typography sx={{ my: 1 }}>招待・承認はログインすると使えます。自分用の割り勘記録はそのまま使えます。</Typography> : <>
       <Button variant="text" disabled={s.syncing} onClick={() => void s.syncNow(false)}>招待の状況を更新</Button>
-      <Stack spacing={1}>{s.invitations.slice(0, limit).map((row) => <Card key={row.id} sx={{ p: 2 }}><Typography fontWeight={700}>{row.direction === 'incoming' ? `${row.nickname}さんから` : `${row.nickname}さんへ`}：{labels[row.status]}{row.legacy && '（既存共有）'}</Typography><Stack direction="row" spacing={1} sx={{ mt: 1 }}>
+      <Stack spacing={1.5}>{s.invitations.slice(0, limit).map((row) => <Card key={row.id} sx={{ p: 3 }}><Typography fontWeight={600}>{row.direction === 'incoming' ? `${row.nickname}さんから` : `${row.nickname}さんへ`}：{labels[row.status]}{row.legacy && '（既存共有）'}</Typography><Stack direction="row" spacing={1} sx={{ mt: 2 }}>
         {row.direction === 'incoming' && row.status === 'pending' && <><Button onClick={() => setAction({ row, action: 'accept' })}>承認</Button><Button variant="outline" onClick={() => setAction({ row, action: 'reject' })}>辞退</Button></>}
         {(row.status === 'accepted' || row.status === 'pending' && row.direction === 'outgoing') && <Button variant="text" onClick={() => setAction({ row, action: 'revoke' })}>{row.status === 'pending' ? '招待を取り消す' : '共有を停止する'}</Button>}
       </Stack></Card>)}</Stack>

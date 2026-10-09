@@ -1,5 +1,7 @@
 import { useState, type InputHTMLAttributes, type ReactNode } from 'react'
 import CalculateOutlinedIcon from '@mui/icons-material/CalculateOutlined'
+import ChevronLeftRoundedIcon from '@mui/icons-material/ChevronLeftRounded'
+import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded'
 import { AmountCalculator } from './AmountCalculator'
 import {
   Alert,
@@ -11,6 +13,7 @@ import {
   DialogTitle,
   Divider as MuiDivider,
   Snackbar,
+  Stack,
   TextField,
   IconButton,
   InputAdornment,
@@ -44,12 +47,12 @@ export const toLocalInput = (ms: number) => {
 export const fromLocalInput = (s: string) => new Date(s).getTime()
 
 export function Screen({ children }: { children: ReactNode }) {
-  return <Box sx={{ px: { xs: 2, sm: 3 }, pb: 4 }}>{children}</Box>
+  return <Box sx={{ px: { xs: 2.5, sm: 4 }, pb: 5, '& .MuiTypography-root': { overflowWrap: 'anywhere' } }}>{children}</Box>
 }
 
 export function LargeTitle({ children }: { children: ReactNode }) {
   return (
-    <Typography variant="h4" component="h1" sx={{ pt: 1.5, pb: 1 }}>
+    <Typography variant="h4" component="h1" sx={{ pt: 3, pb: 2 }}>
       {children}
     </Typography>
   )
@@ -61,7 +64,7 @@ export function SectionHeader({ children }: { children: ReactNode }) {
       variant="subtitle2"
       component="h2"
       color="text.secondary"
-      sx={{ mt: 3, mb: 1, px: 0.5, letterSpacing: '0.02em' }}
+      sx={{ mt: 4, mb: 1.5, px: 0.5, letterSpacing: '0.01em' }}
     >
       {children}
     </Typography>
@@ -70,14 +73,32 @@ export function SectionHeader({ children }: { children: ReactNode }) {
 
 export function Card({ children, sx, ...props }: CardProps) {
   return (
-    <MuiCard sx={{ borderRadius: 3, ...sx }} {...props}>
+    <MuiCard sx={{ borderRadius: '24px', ...sx }} {...props}>
       {children}
     </MuiCard>
   )
 }
 
 export function Divider() {
-  return <MuiDivider component="div" />
+  return <MuiDivider component="div" sx={{ mx: 3 }} />
+}
+
+export function MonthSwitcher({ year, month, onPrevious, onNext, sx }: {
+  year: number
+  month: number
+  onPrevious: () => void
+  onNext: () => void
+  sx?: SxProps<Theme>
+}) {
+  return (
+    <Card sx={sx}>
+      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ px: 1.5, py: 1 }}>
+        <IconButton onClick={onPrevious} color="primary" aria-label="前の月"><ChevronLeftRoundedIcon /></IconButton>
+        <Typography variant="h6" aria-live="polite">{year}年{month}月</Typography>
+        <IconButton onClick={onNext} color="primary" aria-label="次の月"><ChevronRightRoundedIcon /></IconButton>
+      </Stack>
+    </Card>
+  )
 }
 
 type FieldProps = {
@@ -159,8 +180,8 @@ export function Modal({
 }) {
   return (
     <Dialog open onClose={onClose} fullWidth maxWidth="xs" scroll="paper">
-      <DialogTitle sx={{ pb: 1 }}>{title}</DialogTitle>
-      <DialogContent sx={{ pt: '8px !important', pb: 3 }}>
+      <DialogTitle sx={{ px: 3, pt: 3, pb: 2 }}>{title}</DialogTitle>
+      <DialogContent sx={{ px: 3, pt: '8px !important', pb: 3 }}>
         {children}
       </DialogContent>
     </Dialog>

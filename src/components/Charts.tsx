@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Box, Stack, Typography, useTheme } from '@mui/material'
 import { yen } from './ui'
 
-const COLORS = ['#1565C0', '#2E7D32', '#ED6C02', '#D32F2F', '#7B1FA2', '#00838F']
+const COLORS = ['#3B82D0', '#65A57A', '#DDA052', '#D76D72', '#9A82BD', '#55A5AD']
 
 export function CategoryChart({
   data: rawData,
@@ -39,8 +39,8 @@ export function CategoryChart({
   return (
     <Box>
       {credits.length > 0 && <Typography variant="caption" color="text.secondary">円グラフは正の支出のみ。返金超過：{credits.map((row) => `${row.name} ${yen(-row.total)}`).join('、')}</Typography>}
-      <Box sx={{ position: 'relative', width: 220, height: 220, mx: 'auto' }}>
-        <svg viewBox="0 0 200 200" width="220" height="220" aria-label="品目別支出の円グラフ">
+      <Box sx={{ position: 'relative', width: '100%', maxWidth: 220, aspectRatio: '1 / 1', mx: 'auto' }}>
+        <svg viewBox="0 0 200 200" width="100%" height="100%" style={{ display: 'block' }} aria-label="品目別支出の円グラフ">
           {slices.map((item) => item.end - item.start >= 359.999 ? (
             <circle
               key={item.name}
@@ -81,7 +81,7 @@ export function CategoryChart({
         <Stack
           alignItems="center"
           justifyContent="center"
-          sx={{ position: 'absolute', inset: '62px 34px', textAlign: 'center', pointerEvents: 'none' }}
+          sx={{ position: 'absolute', inset: '28% 16%', textAlign: 'center', pointerEvents: 'none' }}
         >
           <Typography variant="caption" color="text.secondary" noWrap sx={{ maxWidth: 110 }}>
             {selected?.name ?? '合計'}
@@ -99,9 +99,9 @@ export function CategoryChart({
             alignItems="center"
             spacing={0.75}
             onClick={() => select(item.name)}
-            sx={{ appearance: 'none', border: 0, bgcolor: 'transparent', color: 'text.primary', p: 0.5, cursor: 'pointer' }}
+            sx={{ appearance: 'none', border: 0, borderRadius: '12px', bgcolor: selectedName === item.name ? 'action.selected' : 'transparent', color: 'text.primary', px: 1.25, py: 1, minHeight: 44, maxWidth: '100%', cursor: 'pointer', '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: 2 } }}
           >
-            <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: item.color }} />
+            <Box sx={{ width: 8, height: 8, flexShrink: 0, borderRadius: '50%', bgcolor: item.color }} />
             <Typography variant="body2" fontWeight={selectedName === item.name ? 800 : 400}>{item.name}</Typography>
           </Stack>
         ))}
@@ -150,6 +150,7 @@ export function DailyChart({
                 bgcolor: 'transparent',
                 height: '100%',
                 flex: 1,
+                minWidth: 0,
                 display: 'flex',
                 alignItems: 'flex-end',
                 cursor: 'pointer',

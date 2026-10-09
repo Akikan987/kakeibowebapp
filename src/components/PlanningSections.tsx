@@ -57,16 +57,17 @@ export function PlanningSections() {
     <SectionHeader>{s.month.month}月の定期項目</SectionHeader>
     <Card>
       {s.recurringTemplates.length === 0 ? (
-        <Typography variant="body2" color="text.secondary" sx={{ p: 2 }}>家賃・給与・サブスクなどを登録すると、毎月確認して明細へ追加できます。</Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ p: 3 }}>家賃・給与・サブスクなどを登録すると、毎月確認して明細へ追加できます。</Typography>
       ) : s.recurringTemplates.map((template, index) => {
         const registered = s.recurringRegistered(template.id, s.month.year, s.month.month)
         return <Box key={template.id}>
           {index > 0 && <Divider />}
-          <Stack direction="row" alignItems="center" spacing={0.5} sx={{ pl: 2, pr: 0.75, py: 1.25 }}>
-            <Box sx={{ minWidth: 0, flex: 1 }}>
-              <Typography fontWeight={700} noWrap>{template.title}</Typography>
+          <Stack spacing={1.5} sx={{ p: 3 }}>
+            <Box sx={{ minWidth: 0 }}>
+              <Typography fontWeight={600}>{template.title}</Typography>
               <Typography variant="caption" color="text.secondary">毎月{template.dayOfMonth}日 ・ {template.type === TYPE_INCOME ? '収入' : template.category} ・ {yen(template.amountYen)}{!template.active && ' ・ 停止中'}</Typography>
             </Box>
+            <Stack direction="row" alignItems="center" justifyContent="flex-end" spacing={0.5}>
             <Button
               variant={registered ? 'outline' : 'primary'}
               disabled={registered || !template.active}
@@ -77,6 +78,7 @@ export function PlanningSections() {
             </Button>
             <IconButton aria-label={`${template.title}を編集`} onClick={() => setTemplateDraft(editTemplate(template))}><EditRoundedIcon /></IconButton>
             <IconButton aria-label={`${template.title}を削除`} onClick={() => setPendingTemplateDelete(template)}><DeleteOutlineRoundedIcon /></IconButton>
+            </Stack>
           </Stack>
         </Box>
       })}
@@ -100,8 +102,10 @@ export function PlanningSections() {
 function BudgetRow({ label, budget, spent, onEdit, onDelete }: { label: string; budget?: Budget; spent: number; onEdit: () => void; onDelete: (budget: Budget) => void }) {
   const remaining = (budget?.amountYen ?? 0) - spent
   const progress = budget ? Math.min(100, (spent / budget.amountYen) * 100) : 0
-  return <Box sx={{ px: 2, py: 1.5 }}>
-    <Stack direction="row" alignItems="center" spacing={1}><Box sx={{ flex: 1 }}><Typography fontWeight={700}>{label}</Typography>{budget ? <><Typography variant="body2" color={remaining >= 0 ? 'success.main' : 'error.main'}>残り {yen(remaining)}（{yen(spent)} / {yen(budget.amountYen)}）</Typography><LinearProgress variant="determinate" value={progress} color={remaining >= 0 ? 'primary' : 'error'} sx={{ mt: 1, height: 7, borderRadius: 4 }} /></> : <Typography variant="body2" color="text.secondary">未設定 ・ 支出 {yen(spent)}</Typography>}</Box><IconButton aria-label={`${label}の予算を設定`} onClick={onEdit}><EditRoundedIcon /></IconButton>{budget && <IconButton aria-label={`${label}の予算を削除`} onClick={() => onDelete(budget)}><DeleteOutlineRoundedIcon /></IconButton>}</Stack>
+  return <Box sx={{ p: 3 }}>
+    <Typography fontWeight={600}>{label}</Typography>
+    {budget ? <><Typography variant="h6" color={remaining >= 0 ? 'text.primary' : 'error.main'} sx={{ mt: 1 }}>残り {yen(remaining)}</Typography><Typography variant="body2" color="text.secondary">使用 {yen(spent)} / 予算 {yen(budget.amountYen)}</Typography><LinearProgress variant="determinate" value={progress} color={remaining >= 0 ? 'primary' : 'error'} sx={{ mt: 2, height: 6, borderRadius: '3px' }} /></> : <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>未設定 ・ 支出 {yen(spent)}</Typography>}
+    <Stack direction="row" justifyContent="flex-end" sx={{ mt: 1 }}><IconButton aria-label={`${label}の予算を設定`} onClick={onEdit}><EditRoundedIcon fontSize="small" /></IconButton>{budget && <IconButton aria-label={`${label}の予算を削除`} onClick={() => onDelete(budget)}><DeleteOutlineRoundedIcon fontSize="small" /></IconButton>}</Stack>
   </Box>
 }
 

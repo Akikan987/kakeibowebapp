@@ -1,6 +1,4 @@
 import { useEffect, useMemo, useState } from 'react'
-import ChevronLeftRoundedIcon from '@mui/icons-material/ChevronLeftRounded'
-import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded'
 import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import FilterListRoundedIcon from '@mui/icons-material/FilterListRounded'
@@ -19,7 +17,6 @@ import {
   InputAdornment,
   InputLabel,
   List,
-  ListItem,
   ListItemButton,
   ListItemText,
   MenuItem,
@@ -28,7 +25,7 @@ import {
   TextField,
   Typography,
 } from '@mui/material'
-import { Button, Card, Divider, Field, LargeTitle, Modal, Screen, formatDate, yen } from '../components/ui'
+import { Button, Card, Divider, Field, LargeTitle, Modal, MonthSwitcher, Screen, formatDate, yen } from '../components/ui'
 import { useStore, type ExpenseDraft } from '../store'
 import { TYPE_EXPENSE, TYPE_INCOME, now, type Expense } from '../types'
 
@@ -122,13 +119,7 @@ export function ListScreen({ onEdit, onDuplicate }: {
   return (
     <Screen>
       <LargeTitle>履歴</LargeTitle>
-      <Card sx={{ mb: 2 }}>
-        <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ p: 0.5 }}>
-          <IconButton onClick={s.prevMonth} color="primary" aria-label="前の月"><ChevronLeftRoundedIcon /></IconButton>
-          <Typography variant="h6">{s.month.year}年{s.month.month}月</Typography>
-          <IconButton onClick={s.nextMonth} color="primary" aria-label="次の月"><ChevronRightRoundedIcon /></IconButton>
-        </Stack>
-      </Card>
+      <MonthSwitcher year={s.month.year} month={s.month.month} onPrevious={s.prevMonth} onNext={s.nextMonth} sx={{ mb: 2 }} />
       <TextField
         fullWidth
         value={filters.query}
@@ -202,7 +193,7 @@ export function ListScreen({ onEdit, onDuplicate }: {
           </Typography>
           {filteredExpenses.length === 0 ? (
             <Card sx={{ mt: 1 }}>
-              <Typography color="text.secondary" sx={{ p: 2 }}>この月に条件と一致する明細はありません</Typography>
+              <Typography color="text.secondary" sx={{ p: 3 }}>この月に条件と一致する明細はありません</Typography>
             </Card>
           ) : (
             <Card sx={{ mt: 1 }}>
@@ -213,31 +204,24 @@ export function ListScreen({ onEdit, onDuplicate }: {
                   return (
                     <Stack key={expense.id} component="li">
                       {index > 0 && <Divider />}
-                      <ListItem
-                        component="div"
-                        disablePadding
-                        secondaryAction={
-                          <Stack direction="row">
-                            {!isIncome && <IconButton onClick={() => setRefundTarget(expense)} aria-label={`${expense.title}の返金を記録`}><UndoRoundedIcon /></IconButton>}
-                            <IconButton onClick={() => onDuplicate(draftOf(expense, true))} aria-label={`${expense.title}を複製`}><ContentCopyRoundedIcon /></IconButton>
-                            <IconButton edge="end" onClick={() => setPendingDelete(expense)} aria-label="削除"><DeleteOutlineRoundedIcon /></IconButton>
-                          </Stack>
-                        }
-                      >
-                        <ListItemButton onClick={() => onEdit(draftOf(expense))} sx={{ pr: isIncome ? 12 : 17, py: 1.5 }}>
+                        <ListItemButton onClick={() => onEdit(draftOf(expense))} sx={{ px: 3, pt: 2.5, pb: 1 }}>
                           <ListItemText
                             disableTypography
-                            primary={<Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}><Typography fontWeight={700} noWrap>{expense.title}</Typography><Typography fontWeight={700} color={isIncome ? 'success.main' : 'error.main'}>{isIncome ? '+' : '-'}{yen(expense.amountYen)}</Typography></Stack>}
+                            primary={<Stack spacing={0.5}><Typography fontWeight={600}>{expense.title}</Typography><Typography fontWeight={600} sx={{ fontSize: '1.25rem' }} color={isIncome ? 'success.main' : 'text.primary'}>{isIncome ? '+' : '-'}{yen(expense.amountYen)}</Typography></Stack>}
                             secondary={
                               <Stack spacing={0.4} sx={{ mt: 0.5 }}>
                                 <Typography variant="body2" color="text.secondary">{isIncome ? '収入' : '支出'} ・ {expense.category} ・ {formatDate(expense.purchasedAtMillis)}</Typography>
                                 {!isIncome && <Typography variant="caption" color="text.secondary">決済: {s.paymentMethodName(expense.paymentMethodId)}</Typography>}
-                                {split > 0 && <Chip size="small" color="primary" variant="outlined" label={`自分の負担 ${yen(s.netAmount(expense))}（割り勘 ${yen(split)}）`} sx={{ alignSelf: 'flex-start' }} />}
+                                {split > 0 && <Chip size="small" color="primary" variant="outlined" label={`自分の負担 ${yen(s.netAmount(expense))}（割り勘 ${yen(split)}）`} sx={{ alignSelf: 'flex-start', maxWidth: '100%', height: 'auto', '& .MuiChip-label': { whiteSpace: 'normal', py: 0.5 } }} />}
                               </Stack>
                             }
                           />
                         </ListItemButton>
-                      </ListItem>
+                      <Stack direction="row" justifyContent="flex-end" spacing={0.5} sx={{ px: 2.5, pb: 1.5 }}>
+                        {!isIncome && <IconButton onClick={() => setRefundTarget(expense)} aria-label={`${expense.title}の返金を記録`}><UndoRoundedIcon fontSize="small" /></IconButton>}
+                        <IconButton onClick={() => onDuplicate(draftOf(expense, true))} aria-label={`${expense.title}を複製`}><ContentCopyRoundedIcon fontSize="small" /></IconButton>
+                        <IconButton onClick={() => setPendingDelete(expense)} aria-label="削除"><DeleteOutlineRoundedIcon fontSize="small" /></IconButton>
+                      </Stack>
                     </Stack>
                   )
                 })}

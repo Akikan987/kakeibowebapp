@@ -131,7 +131,18 @@ export function SettingsScreen() {
       </CardContent></Card>
 
       <SectionHeader>品目（ドラッグで並び替え）</SectionHeader>
-      <Card>{s.categories.map((category, index) => <Box key={category.id} draggable onDragStart={() => setDragIndex(index)} onDragOver={(event) => event.preventDefault()} onDrop={() => { if (dragIndex !== null) move(dragIndex, index); setDragIndex(null) }} sx={{ opacity: dragIndex === index ? 0.5 : 1 }}>{index > 0 && <Divider />}<Stack direction="row" alignItems="center" spacing={0.25} sx={{ px: 0.75, py: 0.75 }}><DragIndicatorRoundedIcon color="disabled" sx={{ cursor: 'grab' }} /><Typography sx={{ flex: 1, ml: 0.5 }}>{category.name}</Typography><IconButton size="small" color="primary" disabled={index === 0} onClick={() => move(index, index - 1)} aria-label="上へ"><ArrowUpwardRoundedIcon /></IconButton><IconButton size="small" color="primary" disabled={index === s.categories.length - 1} onClick={() => move(index, index + 1)} aria-label="下へ"><ArrowDownwardRoundedIcon /></IconButton><IconButton size="small" color="primary" onClick={() => { setRenameTarget(category); setRenameText(category.name) }} aria-label="編集"><EditRoundedIcon /></IconButton><IconButton size="small" onClick={() => s.deleteCategory(category)} aria-label="削除"><DeleteOutlineRoundedIcon /></IconButton></Stack></Box>)}</Card>
+      <Card>{s.categories.map((category, index) => <Box key={category.id} draggable onDragStart={() => setDragIndex(index)} onDragOver={(event) => event.preventDefault()} onDrop={() => { if (dragIndex !== null) move(dragIndex, index); setDragIndex(null) }} sx={{ opacity: dragIndex === index ? 0.5 : 1 }}>
+        {index > 0 && <Divider />}
+        <Stack spacing={0.5} sx={{ px: 3, py: 2 }}>
+          <Stack direction="row" alignItems="center" spacing={1}><DragIndicatorRoundedIcon color="disabled" sx={{ cursor: 'grab' }} /><Typography fontWeight={600} sx={{ minWidth: 0 }}>{category.name}</Typography></Stack>
+          <Stack direction="row" justifyContent="flex-end">
+            <IconButton size="small" color="primary" disabled={index === 0} onClick={() => move(index, index - 1)} aria-label="上へ"><ArrowUpwardRoundedIcon fontSize="small" /></IconButton>
+            <IconButton size="small" color="primary" disabled={index === s.categories.length - 1} onClick={() => move(index, index + 1)} aria-label="下へ"><ArrowDownwardRoundedIcon fontSize="small" /></IconButton>
+            <IconButton size="small" color="primary" onClick={() => { setRenameTarget(category); setRenameText(category.name) }} aria-label="編集"><EditRoundedIcon fontSize="small" /></IconButton>
+            <IconButton size="small" onClick={() => s.deleteCategory(category)} aria-label="削除"><DeleteOutlineRoundedIcon fontSize="small" /></IconButton>
+          </Stack>
+        </Stack>
+      </Box>)}</Card>
       <Card sx={{ mt: 1.5 }}><CardContent><Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems={{ sm: 'center' }}><Field label="品目を追加" value={newCategory} onChange={(event) => setNewCategory(event.target.value)} /><Button onClick={async () => { await s.addCategory(newCategory); setNewCategory('') }} sx={{ width: { sm: 'auto' }, flexShrink: 0 }}>追加</Button></Stack></CardContent></Card>
 
       <SectionHeader>この端末の保存状態</SectionHeader>
@@ -163,7 +174,7 @@ export function SettingsScreen() {
       </CardContent></Card>
 
       <SectionHeader>データ（収入・支出のバックアップ）</SectionHeader>
-      <Card><MuiButton fullWidth sx={{ justifyContent: 'flex-start', px: 2, py: 1.75 }} onClick={s.exportCsv}>CSVファイルにエクスポート</MuiButton><Divider /><MuiButton fullWidth sx={{ justifyContent: 'flex-start', px: 2, py: 1.75 }} onClick={s.exportJson}>JSONバックアップをエクスポート</MuiButton><Divider /><MuiButton fullWidth sx={{ justifyContent: 'flex-start', px: 2, py: 1.75 }} onClick={() => { replaceRef.current = false; fileRef.current?.click() }}>JSONをインポート（追加）</MuiButton><Divider /><MuiButton fullWidth sx={{ justifyContent: 'flex-start', px: 2, py: 1.75 }} onClick={() => { replaceRef.current = true; fileRef.current?.click() }}>JSONをインポート（全置換）</MuiButton></Card>
+      <Card><MuiButton fullWidth sx={{ justifyContent: 'flex-start', px: 3, py: 2 }} onClick={s.exportCsv}>CSVファイルにエクスポート</MuiButton><Divider /><MuiButton fullWidth sx={{ justifyContent: 'flex-start', px: 3, py: 2 }} onClick={s.exportJson}>JSONバックアップをエクスポート</MuiButton><Divider /><MuiButton fullWidth sx={{ justifyContent: 'flex-start', px: 3, py: 2 }} onClick={() => { replaceRef.current = false; fileRef.current?.click() }}>JSONをインポート（追加）</MuiButton><Divider /><MuiButton fullWidth sx={{ justifyContent: 'flex-start', px: 3, py: 2 }} onClick={() => { replaceRef.current = true; fileRef.current?.click() }}>JSONをインポート（全置換）</MuiButton></Card>
       <input ref={fileRef} type="file" accept="application/json" hidden onChange={async (event) => { const file = event.target.files?.[0]; if (file) await s.importJson(file, replaceRef.current); event.target.value = '' }} />
 
       {s.loggedIn && <><SectionHeader>アカウントの削除</SectionHeader><Card><CardContent><Typography variant="body2" color="text.secondary">アカウント、明細、決済方法、割り勘、予算など、サーバーとこの端末にある自分の全データを削除します。この操作は元に戻せません。</Typography><MuiButton color="error" sx={{ mt: 2 }} onClick={() => { setDeletePassword(''); setDeleteConfirmation(''); setDeleteDialogOpen(true) }}>アカウントと全データを削除</MuiButton></CardContent></Card></>}
