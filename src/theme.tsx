@@ -12,6 +12,7 @@ import {
   createTheme,
   useMediaQuery,
 } from '@mui/material'
+import { glassBackdrop, glassSurface } from './glass'
 
 const BRAND_BLUE = '#0066CC'
 const THEME_STORAGE_KEY = 'kakeibo.theme'
@@ -92,25 +93,22 @@ export function AppThemeProvider({ children }: { children: ReactNode }) {
           allVariants: { fontVariantNumeric: 'tabular-nums' },
         },
         components: {
+          MuiCssBaseline: {
+            styleOverrides: {
+              body: { isolation: 'isolate', '&::before': glassBackdrop(isDark) },
+            },
+          },
           MuiButton: {
             defaultProps: { disableElevation: true },
             styleOverrides: {
               root: { minHeight: 48, borderRadius: 16, paddingInline: 20 },
+              contained: { backgroundImage: 'linear-gradient(180deg, rgba(255,255,255,0.14), transparent)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.16)' },
             },
           },
           MuiCard: {
             defaultProps: { elevation: 0 },
             styleOverrides: {
-              root: {
-                border: '1px solid',
-                borderColor: isDark
-                  ? 'rgba(255,255,255,0.07)'
-                  : 'rgba(29,29,31,0.06)',
-                boxShadow: isDark
-                  ? 'none'
-                  : '0 2px 8px rgba(29,29,31,0.025)',
-                backgroundImage: 'none',
-              },
+              root: glassSurface(isDark),
             },
           },
           MuiCardContent: {
@@ -121,12 +119,15 @@ export function AppThemeProvider({ children }: { children: ReactNode }) {
           },
           MuiBottomNavigationAction: {
             styleOverrides: {
-              root: { gap: 4 },
+              root: { gap: 4, margin: '6px 2px', borderRadius: 24, '&.Mui-selected': { backgroundColor: isDark ? 'rgba(138,187,255,0.12)' : 'rgba(0,102,204,0.08)' } },
               label: { fontSize: '0.6875rem', fontWeight: 500, '&.Mui-selected': { fontSize: '0.6875rem', fontWeight: 600 } },
             },
           },
           MuiDialog: {
-            styleOverrides: { paper: { borderRadius: 28, backgroundImage: 'none', '@media (max-width: 475px)': { margin: 16, width: 'calc(100% - 32px)', maxWidth: 'calc(100% - 32px)', maxHeight: 'calc(100% - 32px)' } } },
+            styleOverrides: { paper: { ...glassSurface(isDark, 24), borderRadius: 28, '@media (max-width: 475px)': { margin: 16, width: 'calc(100% - 32px)', maxWidth: 'calc(100% - 32px)', maxHeight: 'calc(100% - 32px)' } } },
+          },
+          MuiFab: {
+            styleOverrides: { root: { border: '1px solid rgba(255,255,255,0.4)', backgroundImage: 'linear-gradient(145deg, rgba(255,255,255,0.24), transparent 65%)', boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.35), 0 6px 20px rgba(0,70,150,0.2)' } },
           },
           MuiTextField: {
             defaultProps: { size: 'medium', variant: 'outlined' },

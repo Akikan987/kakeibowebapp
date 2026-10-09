@@ -26,6 +26,7 @@ import { SocialCallbackScreen } from './screens/SocialCallbackScreen'
 import { clearAppShortcutFromUrl, parseAppShortcut } from './shortcuts'
 import { emptyDraft, useStore, type ExpenseDraft } from './store'
 import { TYPE_EXPENSE, TYPE_INCOME, now } from './types'
+import { glassSurface } from './glass'
 
 const AddScreen = lazy(() => import('./screens/AddScreen').then((module) => ({ default: module.AddScreen })))
 const HomeScreen = lazy(() => import('./screens/HomeScreen').then((module) => ({ default: module.HomeScreen })))
@@ -125,21 +126,17 @@ export default function App() {
   }
 
   return (
-    <Box sx={{ minHeight: '100dvh', pb: 'calc(82px + env(safe-area-inset-bottom))' }}>
+    <Box sx={{ minHeight: '100dvh', pb: 'calc(106px + env(safe-area-inset-bottom))' }}>
       <AppBar
         position="sticky"
         color="transparent"
         elevation={0}
-        sx={{
+        sx={(theme) => ({
+          ...glassSurface(theme.palette.mode === 'dark', 20),
           pt: 'env(safe-area-inset-top)',
-          bgcolor: (theme) =>
-            theme.palette.mode === 'dark'
-              ? 'rgba(16,20,24,0.88)'
-              : 'rgba(245,245,247,0.9)',
-          backdropFilter: 'blur(18px)',
-          borderBottom: '1px solid',
-          borderColor: 'divider',
-        }}
+          borderWidth: '0 0 1px',
+          boxShadow: 'none',
+        })}
       >
         <Toolbar sx={{ minHeight: '56px !important', maxWidth: 720, width: '100%', mx: 'auto' }}>
           <Typography variant="h6" color="text.primary" sx={{ flex: 1 }}>
@@ -163,7 +160,7 @@ export default function App() {
               aria-label={tab === 'settings' ? '設定を閉じる' : '設定を開く'}
               color="inherit"
               onClick={() => tab === 'settings' ? setTab(settingsReturnTab) : openSettings()}
-              sx={{ ml: 0.5 }}
+              sx={{ ml: 1, bgcolor: 'action.hover', border: '1px solid', borderColor: 'divider' }}
             >
               {tab === 'settings' ? <ArrowBackRoundedIcon /> : <SettingsRoundedIcon />}
             </IconButton>
@@ -215,14 +212,20 @@ export default function App() {
           bottom: 0,
           left: 0,
           zIndex: (theme) => theme.zIndex.appBar,
-          pb: 'env(safe-area-inset-bottom)',
-          bgcolor: 'background.paper',
+          pb: 'calc(8px + env(safe-area-inset-bottom))',
+          bgcolor: 'transparent',
           backgroundImage: 'none',
-          borderTop: '1px solid',
-          borderColor: 'divider',
         }}
       >
-        <Box sx={{ position: 'relative', maxWidth: 720, mx: 'auto' }}>
+        <Box sx={(theme) => ({
+          ...glassSurface(theme.palette.mode === 'dark', 24),
+          position: 'relative',
+          maxWidth: 600,
+          width: 'calc(100% - 24px)',
+          mx: 'auto',
+          px: 0.5,
+          borderRadius: '32px',
+        })}>
           <BottomNavigation
             showLabels
             value={tab === 'add' || tab === 'settings' ? false : tab}
@@ -248,7 +251,7 @@ export default function App() {
               setAddReturnTab(tab as MainTab)
               setTab('add')
             }}
-            sx={{ position: 'absolute', right: 20, top: -64, boxShadow: '0 4px 16px rgba(0,0,0,0.16)' }}
+            sx={{ position: 'absolute', right: 4, top: -68 }}
           >
             <AddRoundedIcon />
           </Fab>}

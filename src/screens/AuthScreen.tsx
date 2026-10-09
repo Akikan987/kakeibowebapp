@@ -6,6 +6,7 @@ import { Alert, Avatar, Box, Button, Container, Divider, IconButton, InputAdornm
 import { SocialLogin, socialError } from '../components/SocialLogin'
 import { apiSocialRegister } from '../api'
 import { useStore } from '../store'
+import { glassSurface } from '../glass'
 
 type Step = 'login' | 'register' | 'resetRequest' | 'resetConfirm'
 
@@ -60,7 +61,7 @@ export function AuthScreen({ socialSignup = false, onCancel }: { socialSignup?: 
       <Typography variant="h4" component="h1" fontWeight={800}>家計簿</Typography>
       <Typography variant="body2" color="text.secondary">毎日のお金を、ひとつの場所で。</Typography>
     </Stack>
-    <Paper elevation={0} sx={{ p: { xs: 3, sm: 4 }, borderRadius: '24px', border: '1px solid', borderColor: 'divider' }}>
+    <Paper elevation={0} sx={(theme) => ({ ...glassSurface(theme.palette.mode === 'dark'), p: { xs: 3, sm: 4 }, borderRadius: '24px' })}>
       <Stack spacing={3}>
         {!socialSignup && (step === 'login' || step === 'register') ? <>
           <Tabs value={step} variant="fullWidth" onChange={(_, value: Step) => { if (!busy) go(value) }} aria-label="ログインまたは新規登録">

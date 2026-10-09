@@ -204,7 +204,7 @@ export function Toast({
       open
       anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
       onClose={onDone}
-      sx={{ bottom: { xs: 88, sm: 96 } }}
+      sx={{ bottom: 'calc(104px + env(safe-area-inset-bottom))' }}
     >
       <Alert
         severity={kind === 'error' ? 'error' : 'success'}
