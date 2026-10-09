@@ -16,6 +16,7 @@ import {
   Fab,
   IconButton,
   Paper,
+  Snackbar,
   Toolbar,
   Tooltip,
   Typography,
@@ -27,6 +28,7 @@ import { clearAppShortcutFromUrl, parseAppShortcut } from './shortcuts'
 import { emptyDraft, useStore, type ExpenseDraft } from './store'
 import { TYPE_EXPENSE, TYPE_INCOME, now } from './types'
 import { glassSurface } from './glass'
+import { BACK_EXIT_WINDOW_MS, createBackNavigation } from './backNavigation'
 
 const AddScreen = lazy(() => import('./screens/AddScreen').then((module) => ({ default: module.AddScreen })))
 const HomeScreen = lazy(() => import('./screens/HomeScreen').then((module) => ({ default: module.HomeScreen })))
@@ -72,6 +74,10 @@ export default function App() {
   const [settingsReturnTab, setSettingsReturnTab] = useState<Exclude<Tab, 'settings'>>(shortcutDraft ? lastTab : initialTab)
   const [addReturnTab, setAddReturnTab] = useState<MainTab>(lastTab)
   const [editDraft, setEditDraft] = useState<ExpenseDraft | null>(shortcutDraft)
+  const [exitHint, setExitHint] = useState(false)
+  const currentTab = useRef(tab)
+  currentTab.current = tab
+  const backNavigation = useRef<ReturnType<typeof createBackNavigation> | null>(null)
   const previousOwner = useRef(s.account?.uid)
   useEffect(() => {
     if (previousOwner.current === s.account?.uid) return
@@ -99,11 +105,44 @@ export default function App() {
     if (MAIN_TABS.includes(tab as MainTab)) localStorage.setItem(LAST_TAB_KEY, tab)
   }, [tab])
 
+  const backEnabled = s.hasEntered && !socialCallback
+  useEffect(() => {
+    if (!backEnabled) {
+      backNavigation.current?.release()
+      backNavigation.current = null
+      setExitHint(false)
+      return
+    }
+    const controller = createBackNavigation({
+      history: window.history,
+      clock: { setTimeout: (callback, delay) => window.setTimeout(callback, delay), clearTimeout: (id) => window.clearTimeout(id) },
+      isHome: () => currentTab.current === 'home',
+      goHome: () => {
+        currentTab.current = 'home'
+        setEditDraft(null)
+        setTab('home')
+      },
+      showExitHint: setExitHint,
+    })
+    backNavigation.current = controller
+    window.addEventListener('popstate', controller.onPopState)
+    const resume = (event: PageTransitionEvent) => { if (event.persisted) controller.resume() }
+    window.addEventListener('pageshow', resume)
+    controller.start()
+    return () => {
+      window.removeEventListener('popstate', controller.onPopState)
+      window.removeEventListener('pageshow', resume)
+      controller.stop()
+    }
+  }, [backEnabled])
+
+  useEffect(() => { backNavigation.current?.screenChanged() }, [tab])
+
   if (socialCallback === 'complete' || socialCallback === 'error') {
     return <><SocialCallbackScreen failed={socialCallback === 'error'} onDone={(linked) => {
       const url = new URL(window.location.href)
       url.searchParams.delete('social')
-      window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`)
+      window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`)
       setSocialCallback(null)
       if (linked) setTab('settings')
     }} />{s.message && <Toast text={s.message.text} kind={s.message.kind} onDone={s.clearMessage} />}</>
@@ -261,6 +300,14 @@ export default function App() {
       {s.message && (
         <Toast text={s.message.text} kind={s.message.kind} action={s.message.action} onDone={s.clearMessage} />
       )}
+      <Snackbar
+        open={exitHint}
+        message="もう一度戻ると終了します"
+        autoHideDuration={BACK_EXIT_WINDOW_MS}
+        transitionDuration={0}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+        sx={{ bottom: 'calc(104px + env(safe-area-inset-bottom))', zIndex: (theme) => theme.zIndex.snackbar + 1 }}
+      />
     </Box>
   )
 }

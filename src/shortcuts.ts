@@ -12,5 +12,5 @@ export function clearAppShortcutFromUrl() {
   const url = new URL(window.location.href)
   if (!url.searchParams.has('shortcut')) return
   url.searchParams.delete('shortcut')
-  window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`)
+  window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`)
 }
