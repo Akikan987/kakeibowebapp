@@ -18,6 +18,10 @@ import {
   apiLogoutAll,
   apiRegister,
   apiRequestEmailChange,
+  apiReadProfile,
+  apiRequestCurrentEmailVerification,
+  apiConfirmCurrentEmailVerification,
+  type EmailVerificationChallenge,
   apiRequestReset,
   apiResetPassword,
   apiInviteMember, apiInvitationAction,
@@ -37,6 +41,7 @@ import { refundAdjustments, refundTotal } from './finance/ledger'
 import { validateFinance } from './finance/validation'
 export type { ExpenseDraft, DraftSplit } from './entries/draft'
 import { prepareAvatar } from './avatar'
+import { matchesAccountProfileSnapshot, type AccountProfileSnapshot } from './accountProfile'
 import {
   activeCategories,
   activeBudgets,
@@ -229,6 +234,9 @@ interface Store {
   updateNickname: (nickname: string) => Promise<boolean>
   requestEmailChange: (newEmail: string, currentPassword: string) => Promise<boolean>
   confirmEmailChange: (code: string) => Promise<boolean>
+  refreshAccountProfile: () => Promise<void>
+  requestCurrentEmailVerification: () => Promise<EmailVerificationChallenge | null>
+  confirmCurrentEmailVerification: (verificationId: string, code: string) => Promise<boolean>
   // 明細
   saveExpense: (draft: ExpenseDraft) => Promise<boolean>
   deleteExpense: (e: Expense) => Promise<void>
@@ -320,12 +328,65 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const syncingRef = useRef(false)
   const pendingSyncRef = useRef(false)
   const changeVersionRef = useRef(0)
+  const sessionEpoch = useRef(0)
+  const profileRefreshSequence = useRef(0)
 
   const notify = useCallback(
     (text: string, kind: 'ok' | 'error' = 'ok') => setMessage({ text, kind }),
     [],
   )
   const clearMessage = useCallback(() => setMessage(null), [])
+
+  const mergeProfileForSession = useCallback((token: string, uid: string, epoch: number, profile: Partial<Account>, snapshot?: AccountProfileSnapshot) => {
+    if (sessionEpoch.current !== epoch) return false
+    const current = readAccount()
+    if (!current || current.uid !== uid || current.token !== token) return false
+    if (snapshot && !matchesAccountProfileSnapshot(current, snapshot)) return false
+    const updated: Account = { ...current, ...profile, uid: current.uid, token: current.token }
+    localStorage.setItem(LS_ACCOUNT, JSON.stringify(updated))
+    setAccount(updated)
+    return true
+  }, [])
+
+  const refreshAccountProfile = useCallback(async () => {
+    const owner = readAccount()
+    if (!owner?.token) return
+    const epoch = sessionEpoch.current
+    const sequence = ++profileRefreshSequence.current
+    const snapshot: AccountProfileSnapshot = {
+      uid: owner.uid,
+      token: owner.token,
+      nickname: owner.nickname,
+      email: owner.email,
+      avatarDataUrl: owner.avatarDataUrl ?? '',
+    }
+    try {
+      const profile = await apiReadProfile(owner.token)
+      if (profileRefreshSequence.current !== sequence) return
+      mergeProfileForSession(owner.token, owner.uid, epoch, profile, snapshot)
+    } catch {
+      // Settings remains usable when the profile endpoint is temporarily unavailable.
+    }
+  }, [mergeProfileForSession])
+
+  const requestCurrentEmailVerification = useCallback(async () => {
+    const owner = readAccount()
+    if (!owner?.token) return null
+    const epoch = sessionEpoch.current
+    const challenge = await apiRequestCurrentEmailVerification(owner.token)
+    const current = readAccount()
+    return sessionEpoch.current === epoch && current?.uid === owner.uid && current.token === owner.token ? challenge : null
+  }, [])
+
+  const confirmCurrentEmailVerification = useCallback(async (verificationId: string, code: string) => {
+    const owner = readAccount()
+    if (!owner?.token) return false
+    const epoch = sessionEpoch.current
+    // A profile read started before confirmation must not restore the old false flag.
+    profileRefreshSequence.current += 1
+    const profile = await apiConfirmCurrentEmailVerification(owner.token, verificationId, code.trim())
+    return mergeProfileForSession(owner.token, owner.uid, epoch, profile, owner)
+  }, [mergeProfileForSession])
 
   /** ローカルDBから全部読み直す */
   const reload = useCallback(async () => {
@@ -412,6 +473,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         if (err instanceof ApiError && err.status === 401 && readAccount()?.token === token && readAccount()?.uid === ownerUid) {
           // トークン無効 → ローカルは残したままログイン画面へ
           localStorage.removeItem(LS_ACCOUNT)
+          sessionEpoch.current += 1
           setAccount(null)
           setDebts([])
         } else if (showMessage) {
@@ -458,6 +520,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             // Migration only replaces the saved session marker; it does not reset local data or owner metadata.
             savedAccount = { ...upgradedAccount, token: 'cookie' }
             localStorage.setItem(LS_ACCOUNT, JSON.stringify(savedAccount))
+            sessionEpoch.current += 1
             setAccount(savedAccount)
           }
         } catch {
@@ -502,6 +565,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       localStorage.setItem(LS_OWNER, acc.uid)
       localStorage.setItem(LS_OFFLINE, '0')
       localStorage.setItem(LS_LAST_SYNC, '0')
+      sessionEpoch.current += 1
       setAccount(acc)
       setOfflineMode(false)
       setLastSync(0)
@@ -708,6 +772,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (uid) clearDrafts(localStorage, uid)
     localStorage.removeItem(LS_ACCOUNT)
     localStorage.setItem(LS_OFFLINE, '0')
+    sessionEpoch.current += 1
     setAccount(null)
     setOfflineMode(false)
     setDebts([])
@@ -745,6 +810,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         localStorage.removeItem(LS_LAST_SYNC)
         localStorage.removeItem(LS_DIRTY)
         localStorage.setItem(LS_OFFLINE, '0')
+        sessionEpoch.current += 1
         setAccount(null)
         setOfflineMode(false)
         setLastSync(0)
@@ -1900,6 +1966,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     updateNickname,
     requestEmailChange,
     confirmEmailChange,
+    refreshAccountProfile,
+    requestCurrentEmailVerification,
+    confirmCurrentEmailVerification,
     saveExpense,
     deleteExpense,
     splitsOfExpense,

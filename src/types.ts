@@ -132,6 +132,8 @@ export interface Account {
   email: string
   phone: string
   avatarDataUrl: string
+  /** Omitted for accounts saved before email verification status was introduced. */
+  emailVerified?: boolean
 }
 
 /** 他の人があなたに割り当てた「あなたが払う分」（サーバー計算） */

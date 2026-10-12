@@ -12,8 +12,8 @@
 |---|---|
 | データ形式 | Dexie version4 / 同期13テーブル / JSONバックアップversion6 |
 | 共有権限 | サーバーの招待・承認で管理。既存共有を維持し、新規のみ承認必須 |
-| 自動テスト | Web80件 / API88件 / 管理4件 / OCR6件（2026-10-12） |
-| PWA事前キャッシュ | 27件 / 848.03 KiB（2026-10-12の本番Dockerビルド） |
+| 自動テスト | Web83件 / API99件 / 管理4件 / OCR6件（2026-10-12。今回の追加検証はWeb/API） |
+| PWA事前キャッシュ | 27件 / 854.36 KiB（2026-10-12の既存メール認証追加後の本番Dockerビルド） |
 
 ## 2026-10-12: 認証・ブラウザ防御の強化
 
@@ -23,6 +23,14 @@
 - Nginxの全配信locationへ共通ヘッダーを追加。CSPはscriptの同一Origin＋HTML初期化コードのSHA256、MUIのstyleはinline許可。frame-ancestors/DENY、nosniff、no-referrer、公開HTTPSのHSTSに対応し、localhost HTTPにHSTSは付けない。
 - 検証: Web80件、API88件（別の一時DB）、管理4件、OCR6件成功。型検査・Dockerビルド・Nginx構文検査成功。別Originの一時DBで確認コード画面を実ブラウザ表示しCSPエラーなし。実メール到達・実プロバイダー・両OSの移行は確認待ち。
 - DBバックアップ後、API/OCR/Webを更新。DBは再起動せず、全同期表とアカウント・トークンの件数維持を確認。公開HTMLと `/assets/index-_H3ePa2Z.js` はHTTP 200。データ形式・金額計算は変更なし。
+
+## 2026-10-12: 既存アカウントのメール認証 UI
+
+- 設定画面で現在のメールアドレスの認証状態を表示し、未認証なら6桁コードの送信・確認・再送を行う。メールアドレス自体は変更しない。未認証でもログイン・入力・共有を制限しない。
+- 認証 API は `POST /auth/profile/email/verification/request`（空のJSON）と `POST /auth/profile/email/verification/confirm`（`verification_id` と `code`）を使用する。再送待ち時間、コード期限、送信上限はサーバー応答に従う。
+- 保存済みアカウントに `emailVerified` を追加。古いローカル保存データでは状態を不明として扱い、ログイン中に設定を開いたとき `GET /auth/profile` から状態を読み直す。認証結果は現在のアカウント情報へマージし、ログイン状態と家計簿データを維持する。アカウント切替・プロフィール変更・認証完了前の古い読み取り応答は反映しない。
+- 検証: Web83件、API99件（本番と別の一時DB）が成功。型検査・Vite/Dockerビルド成功。テスト用アカウントの実ブラウザー操作で誤入力・認証完了・再読み込み後のログインと認証状態保持を確認。外部送信はモックで、実メールの到達は確認待ち。
+- API/Webを本番更新。DBとOCRは再起動せず、家計簿・ユーザー・セッション・外部連携の件数を維持。公開HTML・`/assets/index-ByfG1ypI.js`・設定画面JSはHTTP 200。PWA事前キャッシュ27件/854.36KiB。反映前バックアップと詳細はサーバーの[セキュリティ運用](https://github.com/Akikan987/kakeibo/blob/main/server/docs/SECURITY.md)を参照。
 
 ## 2026-10-09追加: Android／ブラウザの戻る操作
 

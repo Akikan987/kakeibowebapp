@@ -69,6 +69,7 @@ interface AuthRaw {
   email: string
   phone: string
   avatar_data_url?: string
+  email_verified?: boolean
 }
 
 const toAccount = (r: AuthRaw): Account => ({
@@ -78,6 +79,21 @@ const toAccount = (r: AuthRaw): Account => ({
   email: r.email,
   phone: r.phone,
   avatarDataUrl: r.avatar_data_url ?? '',
+  ...(typeof r.email_verified === 'boolean' ? { emailVerified: r.email_verified } : {}),
+})
+
+export interface EmailVerificationChallenge {
+  status: 'verification_required'
+  verification_id: string
+  email: string
+  expires_at: number
+}
+
+const toProfile = (profile: Omit<AuthRaw, 'token'>) => ({
+  nickname: profile.nickname,
+  email: profile.email,
+  avatarDataUrl: profile.avatar_data_url ?? '',
+  ...(typeof profile.email_verified === 'boolean' ? { emailVerified: profile.email_verified } : {}),
 })
 
 export type SocialProviderId = 'google' | 'line' | 'kakao' | 'x'
@@ -183,11 +199,25 @@ export const apiUpdateNickname = async (token: string, nickname: string) => {
     token,
     body: { nickname },
   })
-  return {
-    nickname: profile.nickname,
-    email: profile.email,
-    avatarDataUrl: profile.avatar_data_url ?? '',
-  }
+  return toProfile(profile)
+}
+
+/** Read the current profile, including verification state, for a saved cookie session. */
+export const apiReadProfile = async (token: string) => {
+  const profile = await request<Omit<AuthRaw, 'token'>>('/auth/profile', { token })
+  return toProfile(profile)
+}
+
+export const apiRequestCurrentEmailVerification = (token: string) =>
+  request<EmailVerificationChallenge>('/auth/profile/email/verification/request', {
+    method: 'POST', token, body: {},
+  })
+
+export const apiConfirmCurrentEmailVerification = async (token: string, verificationId: string, code: string) => {
+  const profile = await request<Omit<AuthRaw, 'token'>>('/auth/profile/email/verification/confirm', {
+    method: 'POST', token, body: { verification_id: verificationId, code },
+  })
+  return toProfile(profile)
 }
 
 export const apiRequestEmailChange = (
@@ -207,11 +237,7 @@ export const apiConfirmEmailChange = async (token: string, code: string) => {
     token,
     body: { code },
   })
-  return {
-    nickname: profile.nickname,
-    email: profile.email,
-    avatarDataUrl: profile.avatar_data_url ?? '',
-  }
+  return toProfile(profile)
 }
 
 export const apiSearchUser = (token: string, nickname: string) =>
