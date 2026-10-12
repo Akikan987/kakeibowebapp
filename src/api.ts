@@ -36,11 +36,14 @@ async function request<T>(
 ): Promise<T> {
   const headers: Record<string, string> = {}
   if (options.body !== undefined) headers['Content-Type'] = 'application/json'
-  if (options.token) headers['Authorization'] = `Bearer ${options.token}`
+  headers['X-Kakeibo-Session'] = 'cookie'
+  headers['X-Kakeibo-Registration'] = 'email-v1'
+  if (options.token && options.token !== 'cookie') headers['Authorization'] = `Bearer ${options.token}`
 
   const res = await fetch(BASE + path, {
     method: options.method ?? 'GET',
     headers,
+    credentials: 'same-origin',
     body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
   })
 
@@ -93,20 +96,29 @@ export const apiSocialComplete = async (token?: string) => {
   return response.status === 'authenticated' ? { status: 'authenticated' as const, account: toAccount(response.account) } : response
 }
 export const apiSocialRegister = async (phone: string, email: string, nickname: string, password: string) =>
-  toAccount(await request<AuthRaw>('/auth/social/register', { method: 'POST', body: { phone, email, nickname, password } }))
+  request<RegistrationChallenge>('/auth/social/register', { method: 'POST', body: { phone, email, nickname, password } })
+
+export interface RegistrationChallenge {
+  status: 'verification_required'
+  verification_id: string
+}
 
 export const apiRegister = async (
   phone: string,
   email: string,
   nickname: string,
   password: string,
-): Promise<Account> =>
-  toAccount(
-    await request<AuthRaw>('/auth/register', {
-      method: 'POST',
-      body: { phone, email, nickname, password },
-    }),
-  )
+): Promise<RegistrationChallenge> =>
+  request<RegistrationChallenge>('/auth/register', {
+    method: 'POST',
+    body: { phone, email, nickname, password },
+  })
+
+export const apiConfirmRegistration = async (verificationId: string, code: string): Promise<Account> =>
+  toAccount(await request<AuthRaw>('/auth/register/confirm', {
+    method: 'POST',
+    body: { verification_id: verificationId, code },
+  }))
 
 export const apiLogin = async (
   identifier: string,
@@ -118,6 +130,14 @@ export const apiLogin = async (
       body: { identifier, password },
     }),
   )
+
+/** Upgrade a previously saved bearer token to the HttpOnly-cookie session. */
+export const apiUpgradeSession = async (legacyToken: string): Promise<Account> =>
+  toAccount(await request<AuthRaw>('/auth/session', {
+    method: 'POST',
+    token: legacyToken,
+    body: { mode: 'cookie' },
+  }))
 
 export const apiRequestReset = (email: string) =>
   request<{ ok: boolean }>('/auth/request-reset', {
@@ -401,9 +421,11 @@ export async function apiSync(
   token: string,
   since: number,
   local: SyncTables,
+  expectedUid = '',
 ): Promise<SyncResult> {
   const body = {
     since,
+    expected_uid: expectedUid,
     // Full snapshot comparison, but do not echo records already on this device.
     // Old servers ignore this optional field and return the full response safely.
     omit_unchanged: true,
@@ -476,7 +498,9 @@ export interface OcrResult {
 }
 
 export async function apiReceiptConfig(token: string): Promise<boolean> {
-  const res = await fetch('/ocr/config', { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' })
+  const headers: Record<string, string> = { 'X-Kakeibo-Session': 'cookie' }
+  if (token !== 'cookie') headers.Authorization = `Bearer ${token}`
+  const res = await fetch('/ocr/config', { headers, credentials: 'same-origin', cache: 'no-store' })
   if (!res.ok) throw new ApiError(res.status, '読み取り設定を取得できませんでした')
   return (await res.json()).ai_available === true
 }
@@ -501,9 +525,12 @@ export async function apiReadReceipt(
   form.append('mode', mode)
   form.append('ai_consent', mode === 'ai' ? 'true' : 'false')
   form.append('categories', JSON.stringify(categories))
+  const headers: Record<string, string> = { 'X-Kakeibo-Session': 'cookie' }
+  if (token !== 'cookie') headers.Authorization = `Bearer ${token}`
   const res = await fetch('/ocr/receipt', {
     method: 'POST',
-    headers: { Authorization: `Bearer ${token}` },
+    headers,
+    credentials: 'same-origin',
     body: form,
   })
   if (!res.ok) {

@@ -7,6 +7,7 @@ test('外部認証は同一オリジンのPOSTから開始し、ログイント�
     assert.equal(url, '/auth/social/google/start')
     assert.equal(options.method, 'POST')
     assert.equal(options.headers.Authorization, 'Bearer test-token')
+    assert.equal(options.headers['X-Kakeibo-Session'], 'cookie')
     assert.deepEqual(JSON.parse(options.body), { link: true, current_password: 'test-password' })
     return Response.json({ url: 'https://accounts.google.com/o/oauth2/v2/auth?state=test' })
   })
@@ -36,10 +37,14 @@ test('外部認証の初回登録は専用のエンドポイントを使う', as
   t.mock.method(globalThis, 'fetch', async (url, options) => {
     assert.equal(url, '/auth/social/register')
     assert.equal(options.method, 'POST')
+    assert.equal(options.headers['X-Kakeibo-Session'], 'cookie')
+    assert.equal(options.headers['X-Kakeibo-Registration'], 'email-v1')
     assert.equal(JSON.parse(options.body).password, 'test-password')
-    return Response.json({ token: 'test', uid: 'uid', nickname: 'test', email: 'test@example.com', phone: 'test' })
+    return Response.json({ status: 'verification_required', verification_id: 'verify-1' })
   })
-  assert.equal((await apiSocialRegister('test', 'test@example.com', 'test', 'test-password')).uid, 'uid')
+  assert.deepEqual(await apiSocialRegister('test', 'test@example.com', 'test', 'test-password'), {
+    status: 'verification_required', verification_id: 'verify-1',
+  })
 })
 
 test('解除にはBearer認証と現在のパスワード、取消にはPOSTを使う', async (t) => {

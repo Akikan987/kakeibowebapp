@@ -11,6 +11,7 @@ import {
 import {
   ApiError,
   apiLogin,
+  apiUpgradeSession,
   apiConfirmEmailChange,
   apiDeleteAccount,
   apiLogout,
@@ -211,7 +212,7 @@ interface Store {
     email: string,
     nickname: string,
     password: string,
-  ) => Promise<void>
+  ) => ReturnType<typeof apiRegister>
   requestReset: (email: string) => Promise<boolean>
   resetPassword: (
     email: string,
@@ -363,9 +364,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // ---------------- 同期 ----------------
 
   const syncNow = useCallback(
-    async (showMessage = true) => {
-      const token = account?.token
-      if (!token) {
+    async (showMessage = true, tokenOverride?: string) => {
+      const savedSession = readAccount()
+      const token = tokenOverride ?? savedSession?.token
+      const ownerUid = savedSession?.uid
+      if (!token || !ownerUid) {
         if (showMessage) notify('先にログインしてください', 'error')
         return false
       }
@@ -378,9 +381,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setSyncing(true)
       try {
         const local = await readSyncSnapshot()
+        const sameOwner = () => readAccount()?.uid === ownerUid && localStorage.getItem(LS_OWNER) === ownerUid
+        if (!sameOwner()) return false
         // 全件照合を維持し、同じ内容の返信だけを省く。
         // sinceのズレで古いレコードが届かない問題は再導入しない。
-        const res = await apiSync(token, 0, local)
+        const res = await apiSync(token, 0, local, ownerUid)
+        if (!sameOwner()) return false
         await applySyncChanges(res.changes)
 
         // 端末ごとに既定品目のIDが違うと重複するので、取り込み後にまとめる。
@@ -403,7 +409,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         return true
       } catch (err) {
         setSyncError(true)
-        if (err instanceof ApiError && err.status === 401) {
+        if (err instanceof ApiError && err.status === 401 && readAccount()?.token === token && readAccount()?.uid === ownerUid) {
           // トークン無効 → ローカルは残したままログイン画面へ
           localStorage.removeItem(LS_ACCOUNT)
           setAccount(null)
@@ -435,12 +441,32 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [account, syncNow])
 
   // 起動時
+  const sessionUpgradeAttempts = useRef(new Set<string>())
   useEffect(() => {
     void (async () => {
       await seedCategoriesIfEmpty()
       await seedPaymentMethodsIfEmpty()
       await reload()
-      if (readAccount()?.token) void syncNow(false)
+      let savedAccount = readAccount()
+      const legacyToken = savedAccount?.token
+      if (legacyToken && legacyToken !== 'cookie' && !sessionUpgradeAttempts.current.has(legacyToken)) {
+        sessionUpgradeAttempts.current.add(legacyToken)
+        try {
+          const upgradedAccount = await apiUpgradeSession(legacyToken)
+          const currentAccount = readAccount()
+          if (currentAccount?.token === legacyToken) {
+            // Migration only replaces the saved session marker; it does not reset local data or owner metadata.
+            savedAccount = { ...upgradedAccount, token: 'cookie' }
+            localStorage.setItem(LS_ACCOUNT, JSON.stringify(savedAccount))
+            setAccount(savedAccount)
+          }
+        } catch {
+          // Keep the legacy account and bearer token. Normal authenticated requests can continue to use it.
+        }
+      }
+      // Re-read in case another login completed while the startup upgrade was in flight.
+      savedAccount = readAccount()
+      if (savedAccount?.token) void syncNow(false, savedAccount.token)
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -528,22 +554,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [applyLogin, notify])
 
   const register = useCallback(
-    async (
-      phone: string,
-      email: string,
-      nickname: string,
-      password: string,
-    ) => {
-      try {
-        const acc = await apiRegister(phone, email, nickname, password)
-        pendingLoginSync.current = true
-        await applyLogin(acc)
-        notify('登録しました')
-      } catch (err) {
-        notify(authErrorText(err), 'error')
-      }
-    },
-    [applyLogin, notify],
+    (phone: string, email: string, nickname: string, password: string) =>
+      apiRegister(phone, email, nickname, password),
+    [],
   )
 
   const updateAvatar = useCallback(

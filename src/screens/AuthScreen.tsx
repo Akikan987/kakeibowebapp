@@ -4,11 +4,11 @@ import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded'
 import VisibilityOffRoundedIcon from '@mui/icons-material/VisibilityOffRounded'
 import { Alert, Avatar, Box, Button, Container, Divider, IconButton, InputAdornment, Paper, Stack, Tab, Tabs, TextField, Typography } from '@mui/material'
 import { SocialLogin, socialError } from '../components/SocialLogin'
-import { apiSocialRegister } from '../api'
+import { apiConfirmRegistration, apiSocialRegister } from '../api'
 import { useStore } from '../store'
 import { glassSurface } from '../glass'
 
-type Step = 'login' | 'register' | 'resetRequest' | 'resetConfirm'
+type Step = 'login' | 'register' | 'verifyRegistration' | 'resetRequest' | 'resetConfirm'
 
 function PasswordField({ label, value, onChange, confirm = false, error = false, creating = false }: {
   label: string; value: string; onChange: (value: string) => void; confirm?: boolean; error?: boolean; creating?: boolean
@@ -33,6 +33,7 @@ export function AuthScreen({ socialSignup = false, onCancel }: { socialSignup?: 
   const [password, setPassword] = useState('')
   const [passwordConfirm, setPasswordConfirm] = useState('')
   const [code, setCode] = useState('')
+  const [verificationId, setVerificationId] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const go = (next: Step) => { s.clearMessage(); setError(''); setPassword(''); setPasswordConfirm(''); setStep(next) }
@@ -45,10 +46,17 @@ export function AuthScreen({ socialSignup = false, onCancel }: { socialSignup?: 
     try {
       if (step === 'login') await s.login(identifier, password)
       if (step === 'register') {
-        if (socialSignup) {
-          await s.acceptSocialAccount(await apiSocialRegister(phone, email, nickname, password))
-          onCancel?.()
-        } else await s.register(phone, email, nickname, password)
+        const challenge = socialSignup
+          ? await apiSocialRegister(phone, email, nickname, password)
+          : await s.register(phone, email, nickname, password)
+        setVerificationId(challenge.verification_id)
+        setCode('')
+        setStep('verifyRegistration')
+      }
+      if (step === 'verifyRegistration') {
+        const account = await apiConfirmRegistration(verificationId, code)
+        await s.acceptSocialAccount(account)
+        if (socialSignup) onCancel?.()
       }
       if (step === 'resetRequest' && await s.requestReset(email)) go('resetConfirm')
       if (step === 'resetConfirm' && await s.resetPassword(email, code, password)) go('login')
@@ -69,23 +77,40 @@ export function AuthScreen({ socialSignup = false, onCancel }: { socialSignup?: 
           </Tabs>
           <SocialLogin disabled={busy} onBusyChange={setBusy} />
           <Divider><Typography variant="caption" color="text.secondary">またはメールなどで{step === 'login' ? 'ログイン' : '登録'}</Typography></Divider>
-        </> : <Typography variant="h6" component="h2">{socialSignup ? '初回の登録を完了する' : 'パスワードを再設定'}</Typography>}
+        </> : <Typography variant="h6" component="h2">{socialSignup ? '初回の登録を完了する' : step === 'verifyRegistration' ? 'メールアドレスを確認' : 'パスワードを再設定'}</Typography>}
 
         {socialSignup && <Alert severity="info">外部サービスの認証が完了しました。初回だけ家計簿の登録情報と予備のパスワードを設定します。次回から外部サービスでログインできます。登録済みの方は戻って通常ログイン後、設定から連携してください。</Alert>}
         <Box component="form" onSubmit={(e) => { e.preventDefault(); void submit() }}>
           <Stack spacing={2.5}>
             {step === 'login' && <TextField label="メール / ニックネーム / 電話番号" required autoComplete="username" value={identifier} onChange={(e) => setIdentifier(e.target.value)} />}
             {step === 'register' && <TextField label="ニックネーム" required autoComplete="nickname" value={nickname} onChange={(e) => setNickname(e.target.value)} slotProps={{ htmlInput: { maxLength: 64 } }} helperText="割り勘で相手に表示される名前です" />}
-            {step !== 'login' && <TextField label="メールアドレス" type="email" required autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} slotProps={{ htmlInput: { maxLength: 254 } }} />}
+            {(step === 'register' || step === 'resetRequest' || step === 'resetConfirm') && <TextField label="メールアドレス" type="email" required autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} slotProps={{ htmlInput: { maxLength: 254 } }} />}
+            {step === 'verifyRegistration' && <>
+              <Typography variant="body2" color="text.secondary">確認コードを送信しました。メールアドレスを確認して、6桁のコードを入力してください。</Typography>
+              <TextField label="メールアドレス" value={email} fullWidth slotProps={{ htmlInput: { readOnly: true } }} />
+            </>}
             {step === 'register' && <TextField label="電話番号" type="tel" required autoComplete="tel" value={phone} onChange={(e) => setPhone(e.target.value)} slotProps={{ htmlInput: { maxLength: 32 } }} />}
             {step === 'resetRequest' && <Typography variant="body2" color="text.secondary">登録したメールアドレスへ、再設定用の6桁コードを送ります。</Typography>}
-            {step === 'resetConfirm' && <TextField label="メールに届いた6桁コード" required autoComplete="one-time-code" value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} slotProps={{ htmlInput: { inputMode: 'numeric', pattern: '[0-9]{6}', maxLength: 6 } }} />}
-            {step !== 'resetRequest' && <PasswordField label={step === 'resetConfirm' ? '新しいパスワード' : 'パスワード'} value={password} onChange={setPassword} creating={creating} />}
+            {(step === 'resetConfirm' || step === 'verifyRegistration') && <TextField label="メールに届いた6桁コード" required autoComplete="one-time-code" value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} slotProps={{ htmlInput: { inputMode: 'numeric', pattern: '[0-9]{6}', maxLength: 6 } }} />}
+            {step !== 'resetRequest' && step !== 'verifyRegistration' && <PasswordField label={step === 'resetConfirm' ? '新しいパスワード' : 'パスワード'} value={password} onChange={setPassword} creating={creating} />}
             {creating && <PasswordField label="パスワード（確認）" value={passwordConfirm} onChange={setPasswordConfirm} creating confirm error={mismatch} />}
             {error && <Alert severity="error">{error}</Alert>}
-            <Button type="submit" variant="contained" size="large" disabled={busy || (creating && (!passwordConfirm || mismatch))} sx={{ minHeight: 48 }}>
-              {busy ? '処理中…' : step === 'login' ? 'ログイン' : step === 'register' ? '登録してはじめる' : step === 'resetRequest' ? 'コードを送る' : 'パスワードを再設定'}
+            <Button type="submit" variant="contained" size="large" disabled={busy || (creating && (!passwordConfirm || mismatch)) || (step === 'verifyRegistration' && code.length !== 6)} sx={{ minHeight: 48 }}>
+              {busy ? '処理中…' : step === 'login' ? 'ログイン' : step === 'register' ? '登録してはじめる' : step === 'verifyRegistration' ? '確認して登録を完了' : step === 'resetRequest' ? 'コードを送る' : 'パスワードを再設定'}
             </Button>
+            {step === 'verifyRegistration' && <>
+              <Button disabled={busy} onClick={() => { setError(''); setCode(''); setStep('register') }}>登録内容を確認する</Button>
+              <Button disabled={busy} onClick={() => { if (!busy) void (async () => {
+                setBusy(true); setError('')
+                try {
+                  const challenge = socialSignup
+                    ? await apiSocialRegister(phone, email, nickname, password)
+                    : await s.register(phone, email, nickname, password)
+                  setVerificationId(challenge.verification_id)
+                  setCode('')
+                } catch (err) { setError(socialError(err)) } finally { setBusy(false) }
+              })() }}>確認コードを再送</Button>
+            </>}
             {step === 'login' && <Button size="small" disabled={busy} onClick={() => go('resetRequest')}>パスワードを忘れた方</Button>}
             {(step.startsWith('reset') || socialSignup) && <Button disabled={busy} onClick={() => { if (socialSignup) onCancel?.(); else go('login') }}>ログイン画面に戻る</Button>}
           </Stack>
