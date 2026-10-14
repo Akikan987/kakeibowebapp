@@ -10,6 +10,10 @@ export interface ExpenseUndo {
   refunds: ExpenseRefund[]
 }
 
+export class DuplicateFinancialMessageError extends Error {
+  constructor() { super('この通知は登録済みです。履歴で確認してください。'); this.name = 'DuplicateFinancialMessageError' }
+}
+
 /** Save the expense and all of its split rows as a single unit. */
 export async function writeExpense(expense: Expense, splits: ExpenseSplit[], database: KakeiboDB = db): Promise<ExpenseUndo> {
   return database.transaction('rw', [database.expenses, database.expenseSplits, database.expenseRefunds], async () => {
@@ -18,6 +22,10 @@ export async function writeExpense(expense: Expense, splits: ExpenseSplit[], dat
     if (refunds.some((row) => !row.deleted && row.refundedAtMillis < expense.purchasedAtMillis)) throw new Error('返金日時より後へ元の支出日時を移せません')
     if (refunded && (expense.deleted || expense.type !== 'expense' || expense.amountYen - splits.reduce((sum, row) => sum + (row.deleted ? 0 : row.amountYen), 0) < refunded)) throw new Error('返金記録と矛盾する変更はできません')
     const before = await database.expenses.get(expense.id)
+    if (/^financial-message:v1:[0-9a-f]{64}$/.test(expense.source)) {
+      const duplicate = await database.expenses.filter((row) => !row.deleted && row.id !== expense.id && row.source === expense.source).first()
+      if (duplicate) throw new DuplicateFinancialMessageError()
+    }
     const beforeSplits = await database.expenseSplits.where('expenseId').equals(expense.id).toArray()
     const updatedAt = beforeSplits.reduce((latest, row) => Math.max(latest, row.updatedAt + 1), Math.max(expense.updatedAt, (before?.updatedAt ?? 0) + 1))
     const saved = { ...expense, updatedAt }

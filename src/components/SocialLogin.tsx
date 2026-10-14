@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Alert, Box, Button, CircularProgress, Stack, Typography } from '@mui/material'
 import { ApiError, apiSocialConnections, apiSocialProviders, apiSocialStart, apiSocialUnlink, type SocialProvider, type SocialProviderId } from '../api'
 import { Field, Modal } from './ui'
+import { isAndroidNative } from '../native/notifications'
 
 const labels: Record<SocialProviderId, string> = { google: 'Google', line: 'LINE', kakao: 'KakaoTalk', x: 'X' }
 export const socialError = (error: unknown) => {
@@ -16,6 +17,7 @@ export const socialError = (error: unknown) => {
 }
 
 export function SocialLogin({ token, disabled = false, onBusyChange }: { token?: string; disabled?: boolean; onBusyChange?: (busy: boolean) => void }) {
+  const native = isAndroidNative()
   const [providers, setProviders] = useState<SocialProvider[]>([])
   const [linked, setLinked] = useState<SocialProviderId[]>([])
   const [loading, setLoading] = useState(true)
@@ -37,6 +39,7 @@ export function SocialLogin({ token, disabled = false, onBusyChange }: { token?:
   }, [token, attempt])
 
   const start = async (provider: SocialProviderId) => {
+    if (native) { setError('Androidアプリ版ではメール・パスワードでログインしてください。Google／LINEログインはブラウザー版で利用できます。'); return }
     setBusy(true)
     onBusyChange?.(true)
     setError('')
@@ -63,7 +66,7 @@ export function SocialLogin({ token, disabled = false, onBusyChange }: { token?:
     <Typography variant="subtitle2">{token ? '外部サービスとの連携' : '外部サービスで続ける'}</Typography>
     {loading ? <Box role="status" sx={{ textAlign: 'center', p: 2 }}><CircularProgress size={22} aria-label="ログイン方法を読み込み中" /></Box> :
       <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 1 }}>
-        {providers.map((provider) => <Button key={provider.id} variant="outlined" disabled={busy || disabled || (!provider.enabled && !linked.includes(provider.id))}
+        {providers.map((provider) => <Button key={provider.id} variant="outlined" disabled={busy || disabled || (native && !linked.includes(provider.id)) || (!provider.enabled && !linked.includes(provider.id))}
           sx={{ minHeight: 48, textTransform: 'none', borderColor: 'divider', color: 'text.primary' }}
           onClick={() => { if (token) { setSelection(provider.id); setPassword(''); setError('') } else void start(provider.id) }}>
           <Stack spacing={0.25}><span>{provider.name}</span><Typography variant="caption" color="text.secondary">
@@ -71,6 +74,7 @@ export function SocialLogin({ token, disabled = false, onBusyChange }: { token?:
           </Typography></Stack>
         </Button>)}
       </Box>}
+    {native && <Alert severity="info">Androidアプリ版はメール・パスワードでログインしてください。Google／LINEはブラウザー版で利用できます。ブラウザー版とはログイン状態が別です。</Alert>}
     {!loading && providers.length > 0 && providers.every((p) => !p.enabled) && <Typography variant="caption" color="text.secondary">外部ログインは設定準備中です。メールでのログイン・登録は利用できます。</Typography>}
     <Typography variant="caption" color="text.secondary">{token ? '連携先は各サービス1アカウントです。解除時は、この端末以外のログインも無効になります。' : '登録済みの方は、いつもの方法でログインして「設定」から連携してください。同じメールでも自動統合しません。'}</Typography>
     {error && !selection && <Alert severity="error" action={!providers.length && !loading ? <Button onClick={() => setAttempt((v) => v + 1)}>再試行</Button> : undefined}>{error}</Alert>}

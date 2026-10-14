@@ -13,6 +13,7 @@ import {
   useMediaQuery,
 } from '@mui/material'
 import { glassBackdrop, glassSurface } from './glass'
+import { isAndroidNative, nativeNotificationCommand } from './native/notifications'
 
 const BRAND_BLUE = '#0066CC'
 const THEME_STORAGE_KEY = 'kakeibo.theme'
@@ -61,6 +62,7 @@ export function AppThemeProvider({ children }: { children: ReactNode }) {
     document.documentElement.style.colorScheme = resolvedMode
     document.documentElement.style.backgroundColor = background
     document.body.style.backgroundColor = background
+    if (isAndroidNative()) void nativeNotificationCommand('appearance', { dark: isDark }).catch(() => { /* Older shells keep a safe dark fallback. */ })
   }, [isDark, resolvedMode])
 
   const theme = useMemo(

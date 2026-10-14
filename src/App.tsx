@@ -29,6 +29,7 @@ import { emptyDraft, useStore, type ExpenseDraft } from './store'
 import { TYPE_EXPENSE, TYPE_INCOME, now } from './types'
 import { glassSurface } from './glass'
 import { BACK_EXIT_WINDOW_MS, createBackNavigation } from './backNavigation'
+import { nativeNotificationCommand } from './native/notifications'
 
 const AddScreen = lazy(() => import('./screens/AddScreen').then((module) => ({ default: module.AddScreen })))
 const HomeScreen = lazy(() => import('./screens/HomeScreen').then((module) => ({ default: module.HomeScreen })))
@@ -74,6 +75,8 @@ export default function App() {
   const [settingsReturnTab, setSettingsReturnTab] = useState<Exclude<Tab, 'settings'>>(shortcutDraft ? lastTab : initialTab)
   const [addReturnTab, setAddReturnTab] = useState<MainTab>(lastTab)
   const [editDraft, setEditDraft] = useState<ExpenseDraft | null>(shortcutDraft)
+  const [nativeImport, setNativeImport] = useState<{ id: string; source: string; owner: string } | null>(null)
+  const [nativeAckError, setNativeAckError] = useState(false)
   const [exitHint, setExitHint] = useState(false)
   const currentTab = useRef(tab)
   currentTab.current = tab
@@ -83,6 +86,7 @@ export default function App() {
     if (previousOwner.current === s.account?.uid) return
     previousOwner.current = s.account?.uid
     setEditDraft(null)
+    setNativeImport(null)
     setTab(readLastTab())
   }, [s.account?.uid])
 
@@ -229,7 +233,12 @@ export default function App() {
             <AddScreen
               key={`${s.account?.uid ?? 'offline'}:${editDraft?.editingId ?? 'new'}`}
               initial={editDraft}
-              onDone={() => {
+              onDone={(source) => {
+                if (nativeImport && nativeImport.source === source && nativeImport.owner === (s.account?.uid ?? 'offline')) {
+                  // Remove a pending notification only after an expense was actually saved.
+                  void nativeNotificationCommand('ack', { ids: [nativeImport.id] }).catch(() => setNativeAckError(true))
+                }
+                setNativeImport(null)
                 setEditDraft(null)
                 setTab(addReturnTab)
               }}
@@ -237,7 +246,12 @@ export default function App() {
           )}
           {tab === 'payments' && <PaymentsScreen />}
           {tab === 'split' && <SplitScreen />}
-          {tab === 'settings' && <SettingsScreen />}
+          {tab === 'settings' && <SettingsScreen onImport={(draft, eventId) => {
+            setEditDraft(draft)
+            setNativeImport(eventId ? { id: eventId, source: draft.source, owner: s.account?.uid ?? 'offline' } : null)
+            setAddReturnTab(settingsReturnTab === 'add' ? lastTab : settingsReturnTab)
+            setTab('add')
+          }} />}
         </Suspense>
       </Container>
 
@@ -300,6 +314,13 @@ export default function App() {
       {s.message && (
         <Toast text={s.message.text} kind={s.message.kind} action={s.message.action} onDone={s.clearMessage} />
       )}
+      <Snackbar
+        open={nativeAckError}
+        message="記録は保存しました。保留通知の除外だけに失敗したため、設定で確認してください。"
+        autoHideDuration={8000}
+        onClose={() => setNativeAckError(false)}
+        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+      />
       <Snackbar
         open={exitHint}
         message="もう一度戻ると終了します"

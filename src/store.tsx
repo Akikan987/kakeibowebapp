@@ -35,7 +35,7 @@ import { applySyncChanges, readSyncSnapshot } from './sync/local'
 import { reuseUnchangedRows } from './sync/records'
 import { indexSplits, memberBalances, monthlySummary } from './domain/ledger'
 import { clearDrafts, type ExpenseDraft } from './entries/draft'
-import { undoExpenseWrite, writeExpense } from './entries/persistence'
+import { DuplicateFinancialMessageError, undoExpenseWrite, writeExpense } from './entries/persistence'
 import { saveCashAccount as persistCashAccount, saveTransfer as persistTransfer, saveRefund as persistRefund } from './finance/persistence'
 import { refundAdjustments, refundTotal } from './finance/ledger'
 import { validateFinance } from './finance/validation'
@@ -944,8 +944,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         } } })
         autoSync()
         return true
-      } catch {
-        notify('保存できませんでした。入力内容を確認して再試行してください', 'error')
+      } catch (error) {
+        notify(error instanceof DuplicateFinancialMessageError ? error.message : '保存できませんでした。入力内容を確認して再試行してください', 'error')
         return false
       }
     },

@@ -1,0 +1,11 @@
+.gradle/
+.gradle-bootstrap/
+.gradle-user-home/
+.gradle-project-cache/
+.debug/
+local.properties
+**/build/
+*.apk
+*.aab
+*.jks
+*.keystore
