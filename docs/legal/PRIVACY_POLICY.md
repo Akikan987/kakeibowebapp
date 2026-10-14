@@ -7,7 +7,7 @@ Kakeibowにおける情報の取得・利用・保存・共有と、利用者が
 運営者の氏名・住所：上記窓口へのご請求に応じ、遅滞なく回答します。  
 制定・適用開始日：2026年10月14日
 
-Gmail自動確認は現在準備中です。以下のGmail・そのAI補助・候補Push通知の説明は、有効化後の取り扱いを示すもので、現在すべての利用者のメールを取得しているという意味ではありません。
+Gmail連携の接続機能は試験提供中です。Googleのデータアクセス検証は完了しておらず、利用できる人数や接続手続きに制限がある場合があります。利用者ご本人がGoogleで対象アカウントへの接続を許可した後に、対象の利用通知を確認します。すべての利用者のメールを自動で取得するものではありません。GmailのAI補助は現在サーバー側で無効です。
 
 ## 1. 対象と利用目的
 
@@ -57,7 +57,7 @@ Google Workspace APIから取得した情報とその派生データは、本人
 
 本サービスによるGoogle APIから受け取った情報の利用および他のアプリへの転送は、[Google API Services User Data Policy](https://developers.google.com/terms/api-services-user-data-policy)および[Google Workspace User Data and Developer Policy](https://developers.google.com/workspace/workspace-api-user-data-developer-policy)のLimited Use要件を遵守します。
 
-Gmail連携は、必要な設定・安全管理・Googleの審査等を確認してから提供します。本ポリシーの公開はGoogleの審査承認や安全性評価の完了を意味しません。
+Gmail連携の一般向け正式提供は、必要な設定・安全管理・Googleの審査等の確認後に行います。接続機能の試験提供や本ポリシーの公開は、Googleの審査承認や安全性評価の完了を意味しません。
 
 ## 4. AIへの送信（任意）
 
