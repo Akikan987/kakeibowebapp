@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "node scripts/build-legal.mjs && tsc -b && vite build",
+    "legal:build": "node scripts/build-legal.mjs",
+    "legal:check": "node scripts/verify-legal.mjs",
     "test": "node --experimental-strip-types --test tests/*.test.ts",
     "preview": "vite preview"
   },

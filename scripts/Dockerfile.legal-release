@@ -1,0 +1,5 @@
+# Add the approved legal documents and homepage links without rebuilding the PWA.
+# BASE_IMAGE must be a retained tag of the currently deployed Web image.
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+COPY public/pr/privacy.html public/pr/terms.html public/pr/legal.css public/pr/index.html /usr/share/nginx/html/pr/
