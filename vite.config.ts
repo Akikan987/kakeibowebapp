@@ -87,6 +87,7 @@ export default defineConfig({
         ],
       },
       workbox: {
+        importScripts: ['/push-events.js'],
         // アプリ本体（HTML/JS/CSS/アイコン）を端末に保存し、サーバーが止まっていても起動できるようにする
         globPatterns: ['**/*.{js,css,html,svg,png}'],
         // manifestはプラグインが改訂番号付きで追加するため、globでの重複登録を避ける
@@ -94,13 +95,13 @@ export default defineConfig({
         // 未知のURLは index.html を返す（SPA）。ただしAPIは除く。
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [
-          /^\/(auth|sync|users|ocr|health|docs|openapi\.json)/,
+          /^\/(auth|sync|users|ocr|health|integrations|docs|openapi\.json)/,
           /^\/pr(?:\/|$)/,
         ],
         // APIはキャッシュせず必ずサーバーへ（データの正はサーバーとIndexedDB）
         runtimeCaching: [
           {
-            urlPattern: /^\/(auth|sync|users|ocr|health)/,
+            urlPattern: ({ url }) => /^\/(auth|sync|users|ocr|health|integrations)(?:\/|$)/.test(url.pathname),
             handler: 'NetworkOnly',
           },
         ],
@@ -116,6 +117,7 @@ export default defineConfig({
       '/users': 'http://localhost:8000',
       '/ocr': 'http://localhost:8000',
       '/health': 'http://localhost:8000',
+      '/integrations': 'http://localhost:8000',
     },
   },
 })

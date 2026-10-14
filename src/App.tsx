@@ -9,6 +9,7 @@ import SavingsRoundedIcon from '@mui/icons-material/SavingsRounded'
 import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded'
 import {
   AppBar,
+  Alert,
   BottomNavigation,
   BottomNavigationAction,
   Box,
@@ -20,6 +21,7 @@ import {
   Toolbar,
   Tooltip,
   Typography,
+  Button as MuiButton,
 } from '@mui/material'
 import { Toast } from './components/ui'
 import { AuthScreen } from './screens/AuthScreen'
@@ -30,6 +32,7 @@ import { TYPE_EXPENSE, TYPE_INCOME, now } from './types'
 import { glassSurface } from './glass'
 import { BACK_EXIT_WINDOW_MS, createBackNavigation } from './backNavigation'
 import { nativeNotificationCommand } from './native/notifications'
+import { createGmailCompletion, GMAIL_COMPLETION_KEY, gmailCandidateAction, gmailCompletionPending, gmailOpenReason, type GmailOpenReason } from './imports/gmail'
 
 const AddScreen = lazy(() => import('./screens/AddScreen').then((module) => ({ default: module.AddScreen })))
 const HomeScreen = lazy(() => import('./screens/HomeScreen').then((module) => ({ default: module.HomeScreen })))
@@ -76,6 +79,15 @@ export default function App() {
   const [addReturnTab, setAddReturnTab] = useState<MainTab>(lastTab)
   const [editDraft, setEditDraft] = useState<ExpenseDraft | null>(shortcutDraft)
   const [nativeImport, setNativeImport] = useState<{ id: string; source: string; owner: string } | null>(null)
+  const [gmailImport, setGmailImport] = useState<{ id: string; source: string; owner: string } | null>(null)
+  const [gmailPrompt, setGmailPrompt] = useState<GmailOpenReason | null>(() => { const reason = gmailOpenReason(window.location.search); return reason === 'complete' ? null : reason })
+  const [gmailCompletion, setGmailCompletion] = useState<'waiting' | 'working' | 'error' | null>(() => gmailCompletionPending(window.location.search, sessionStorage) ? 'waiting' : null)
+  const [gmailCompletionError, setGmailCompletionError] = useState('')
+  const [gmailCompletionAttempt, setGmailCompletionAttempt] = useState(0)
+  const gmailNeedsCompletion = useRef(gmailCompletion !== null)
+  const completeGmail = useRef<ReturnType<typeof createGmailCompletion> | null>(null)
+  if (!completeGmail.current) completeGmail.current = createGmailCompletion()
+  const [gmailAckError, setGmailAckError] = useState(false)
   const [nativeAckError, setNativeAckError] = useState(false)
   const [exitHint, setExitHint] = useState(false)
   const currentTab = useRef(tab)
@@ -87,6 +99,7 @@ export default function App() {
     previousOwner.current = s.account?.uid
     setEditDraft(null)
     setNativeImport(null)
+    setGmailImport(null)
     setTab(readLastTab())
   }, [s.account?.uid])
 
@@ -94,6 +107,41 @@ export default function App() {
     if (tab !== 'settings') setSettingsReturnTab(tab)
     setTab('settings')
   }
+
+  const clearGmailCompletion = () => {
+    gmailNeedsCompletion.current = false
+    try { sessionStorage.removeItem(GMAIL_COMPLETION_KEY) } catch { /* Completion contains no credentials. */ }
+    const url = new URL(window.location.href)
+    if (url.searchParams.get('gmail') === 'complete') {
+      url.searchParams.delete('gmail')
+      window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`)
+    }
+    setGmailCompletion(null)
+  }
+  useEffect(() => {
+    if (!gmailNeedsCompletion.current) return
+    if (!s.account?.uid || !s.account.token) { setGmailCompletion('waiting'); return }
+    let active = true
+    setGmailCompletion('working'); setGmailCompletionError('')
+    // The server binds the staged Google token to the initiating account/session.
+    void completeGmail.current!(s.account.uid, s.account.token, gmailCompletionAttempt).then(() => {
+      if (!active) return
+      clearGmailCompletion()
+      setGmailPrompt('connected')
+      window.dispatchEvent(new Event('kakeibo:gmail-connected'))
+    }).catch((error) => {
+      if (!active) return
+      setGmailCompletion('error')
+      setGmailCompletionError(error instanceof Error ? error.message : 'Gmail接続を完了できませんでした')
+    })
+    return () => { active = false }
+  }, [s.account?.uid, s.account?.token, gmailCompletionAttempt])
+
+  const gmailCompletionBanner = gmailCompletion && <Alert severity={gmailCompletion === 'error' ? 'warning' : 'info'} sx={{ m: 2 }}>
+    {gmailCompletion === 'waiting' ? 'Gmail接続の本人確認が残っています。連携を開始した家計簿アカウントでログインしてください。' : gmailCompletion === 'working' ? '本人確認を行い、Gmail接続を完了しています…' : `${gmailCompletionError} 連携を開始した家計簿アカウントか確認してください。期限切れの場合は設定から接続をやり直してください。`}
+    {gmailCompletion === 'error' && <MuiButton color="inherit" onClick={() => setGmailCompletionAttempt((value) => value + 1)}>再試行</MuiButton>}
+    {gmailCompletion !== 'working' && <MuiButton color="inherit" onClick={clearGmailCompletion}>後で設定からやり直す</MuiButton>}
+  </Alert>
 
   useEffect(() => {
     if (!s.message) return
@@ -103,6 +151,16 @@ export default function App() {
 
   useEffect(() => {
     clearAppShortcutFromUrl()
+    const url = new URL(window.location.href)
+    if (url.searchParams.has('gmail') && url.searchParams.get('gmail') !== 'complete') {
+      url.searchParams.delete('gmail')
+      window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`)
+    }
+    const receive = (event: MessageEvent) => {
+      if (event.data?.type === 'GMAIL_CANDIDATES') setGmailPrompt('candidates')
+    }
+    navigator.serviceWorker?.addEventListener('message', receive)
+    return () => navigator.serviceWorker?.removeEventListener('message', receive)
   }, [])
 
   useEffect(() => {
@@ -124,6 +182,8 @@ export default function App() {
       goHome: () => {
         currentTab.current = 'home'
         setEditDraft(null)
+        setNativeImport(null)
+        setGmailImport(null)
         setTab('home')
       },
       showExitHint: setExitHint,
@@ -155,6 +215,7 @@ export default function App() {
   if (!s.hasEntered) {
     return (
       <>
+        {gmailCompletionBanner}
         <AuthScreen />
         {s.message && (
           <Toast
@@ -212,17 +273,22 @@ export default function App() {
       </AppBar>
 
       <Container component="main" maxWidth="sm" disableGutters>
+        {gmailCompletionBanner}
         <Suspense fallback={<Box sx={{ p: 4, textAlign: 'center' }}><Typography color="text.secondary">画面を読み込み中…</Typography></Box>}>
           {tab === 'home' && <HomeScreen />}
           {tab === 'planning' && <PlanningScreen />}
           {tab === 'list' && (
             <ListScreen
               onEdit={(draft) => {
+                setNativeImport(null)
+                setGmailImport(null)
                 setEditDraft(draft)
                 setAddReturnTab('list')
                 setTab('add')
               }}
               onDuplicate={(draft) => {
+                setNativeImport(null)
+                setGmailImport(null)
                 setEditDraft(draft)
                 setAddReturnTab('list')
                 setTab('add')
@@ -238,7 +304,11 @@ export default function App() {
                   // Remove a pending notification only after an expense was actually saved.
                   void nativeNotificationCommand('ack', { ids: [nativeImport.id] }).catch(() => setNativeAckError(true))
                 }
+                if (gmailImport && gmailImport.source === source && gmailImport.owner === s.account?.uid && s.account?.token) {
+                  void gmailCandidateAction(s.account.token, gmailImport.id, 'imported').catch(() => setGmailAckError(true))
+                }
                 setNativeImport(null)
+                setGmailImport(null)
                 setEditDraft(null)
                 setTab(addReturnTab)
               }}
@@ -246,9 +316,10 @@ export default function App() {
           )}
           {tab === 'payments' && <PaymentsScreen />}
           {tab === 'split' && <SplitScreen />}
-          {tab === 'settings' && <SettingsScreen onImport={(draft, eventId) => {
+          {tab === 'settings' && <SettingsScreen onImport={(draft, eventId, gmailCandidateId) => {
             setEditDraft(draft)
             setNativeImport(eventId ? { id: eventId, source: draft.source, owner: s.account?.uid ?? 'offline' } : null)
+            setGmailImport(gmailCandidateId && s.account?.uid ? { id: gmailCandidateId, source: draft.source, owner: s.account.uid } : null)
             setAddReturnTab(settingsReturnTab === 'add' ? lastTab : settingsReturnTab)
             setTab('add')
           }} />}
@@ -300,6 +371,8 @@ export default function App() {
             size="medium"
             aria-label="収入・支出を追加"
             onClick={() => {
+              setNativeImport(null)
+              setGmailImport(null)
               setEditDraft(null)
               setAddReturnTab(tab as MainTab)
               setTab('add')
@@ -314,6 +387,21 @@ export default function App() {
       {s.message && (
         <Toast text={s.message.text} kind={s.message.kind} action={s.message.action} onDone={s.clearMessage} />
       )}
+      <Snackbar
+        open={!!gmailPrompt}
+        message={gmailPrompt === 'connected' ? 'Gmailを接続しました。設定で自動確認を確認できます。' : gmailPrompt === 'error' ? 'Gmailの接続を完了できませんでした。設定で確認してください。' : 'Gmailの明細候補があります。入力中の内容はそのままに、後で設定から確認できます。'}
+        action={<MuiButton color="inherit" disabled={tab === 'add'} onClick={() => { openSettings(); setGmailPrompt(null); window.setTimeout(() => document.getElementById('gmail-integration')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 200) }}>{tab === 'add' ? '入力完了後に設定へ' : '確認'}</MuiButton>}
+        autoHideDuration={12000}
+        onClose={() => setGmailPrompt(null)}
+        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+      />
+      <Snackbar
+        open={gmailAckError}
+        message="記録は保存しました。Gmail候補の処理済み更新だけに失敗したため、設定で候補を除外してください。"
+        autoHideDuration={10000}
+        onClose={() => setGmailAckError(false)}
+        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+      />
       <Snackbar
         open={nativeAckError}
         message="記録は保存しました。保留通知の除外だけに失敗したため、設定で確認してください。"

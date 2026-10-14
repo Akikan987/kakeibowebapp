@@ -4,6 +4,8 @@
 
 ## 現在の基準
 
+2026-10-14追記: Gmail専用Google OAuth・三井住友メールの定期確認・暗号化された候補・同意付きAI補助・Web Pushを追加。ログイン用Google認証とは分離し、アカウントを選んで接続する。サーバー側に連携用5表を追加するが、既存の同期13表・端末DB・JSON形式は変えない。初期OFFで実メール／実Pushは設定・本人許可待ち。[サーバー側設定](https://github.com/Akikan987/kakeibo/blob/main/server/docs/GMAIL_IMPORT.md)を参照。
+
 2026-10-14に三井住友カードのメール本文解析と確認入力を追加。`native/android`のJava製ラッパーから、同意・OS許可後の三井住友銀行/Vpass通知を明示操作で受け取る。WebのUI・同一Origin API・同期13表は共用し、DBのスキーマは変更しない。Gmail自動取得・iOSアプリ・銀行API接続は行わない。[取り込み仕様と試験版の制約](FINANCIAL_IMPORT.md)を参照。
 
 2026-10-12にメール確認登録・HttpOnly Cookieへの移行・ブラウザ防御ヘッダーとAPI/OCRのセキュリティ対策を本番反映。管理画面・Adminerは停止。詳細は[サーバーのセキュリティ運用](https://github.com/Akikan987/kakeibo/blob/main/server/docs/SECURITY.md)を参照。
@@ -14,8 +16,10 @@
 |---|---|
 | データ形式 | Dexie version4 / 同期13テーブル / JSONバックアップversion6 |
 | 共有権限 | サーバーの招待・承認で管理。既存共有を維持し、新規のみ承認必須 |
-| 自動テスト | Web99件（2026-10-14） / API99件・管理4件・OCR6件（2026-10-12。今回サーバーコードは変更なし） |
-| PWA事前キャッシュ | 27件 / 875.85 KiB（2026-10-14のメール・通知取り込み追加後の本番Dockerビルド） |
+| 自動テスト | Web106件・API135件（2026-10-14、Gmail・Push外部通信はモック）。管理4件・OCR6件は2026-10-12の記録 |
+| PWA事前キャッシュ | 28件 / 896.46 KiB（2026-10-14のGmail候補・Web Push追加後の本番Dockerビルド） |
+
+Gmail追加の本番確認: Web/APIを更新し、公開HTML・`/assets/index-CPQYxSr1.js`・設定画面JS・通知スクリプト・Service Worker・healthはHTTP 200。未認証のGmail／Push設定は401。DBバックアップ後に新規5表を作り、既存データ件数とDB/OCRの起動日時を維持した。Gmail／AI／Pushは設定不足でOFF、既存ログインの認証情報は変更しない。詳しくはサーバー側のGmail手順を参照。
 
 ## 2026-10-12: 認証・ブラウザ防御の強化
 

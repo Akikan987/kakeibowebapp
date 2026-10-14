@@ -123,7 +123,7 @@ export function FinancialImport({ onImport }: { onImport: (draft: ExpenseDraft, 
     <Card><CardContent><Stack spacing={1.5}>
       <Typography variant="body2">三井住友カードの利用通知から日時・利用先・金額を読み取り、確認して記録できます。</Typography>
       <Button variant="outline" onClick={() => void show()}>メール・通知を取り込む</Button>
-      <Typography variant="caption" color="text.secondary">メール本文の貼り付けはWebでも利用可能です。通知読み取りはAndroidアプリ版で、別途許可が必要です。Gmailの自動取得はまだ行いません。</Typography>
+      <Typography variant="caption" color="text.secondary">本文の貼り付けはWebでも利用可能です。通知読み取りはAndroidアプリ版で別途許可が必要です。Gmailの自動確認は下のGmail連携から設定できます。</Typography>
     </Stack></CardContent></Card>
     {open && <Modal title="メール・通知から入力" onClose={close}>
       <Stack spacing={2.5}>
