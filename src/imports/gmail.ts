@@ -5,6 +5,19 @@ export interface GmailStatus {
   pendingCount: number; lastCheckedAt: number | null; lastError: string; intervalSeconds: number; aiAvailable?: boolean
 }
 export interface GmailCandidate { id: string; candidate: FinancialMessageCandidate; createdAt: number }
+export const GMAIL_CONNECTIONS_URL = 'https://myaccount.google.com/connections'
+export interface GmailDisconnectOutcome { disconnected: boolean; revoked: boolean; message: string }
+export function gmailDisconnectOutcome(value: unknown): GmailDisconnectOutcome {
+  const response = value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null
+  const disconnected = response?.ok === true
+  const revoked = disconnected && response?.revoked === true
+  if (!disconnected) {
+    return { disconnected: false, revoked: false, message: '家計簿側のGmail連携解除を確認できませんでした。保存済みの家計簿データは残っています。' }
+  }
+  return revoked
+    ? { disconnected: true, revoked: true, message: '家計簿側のGmail連携とGoogle側のアクセスを解除しました。保存済みの家計簿データは残っています。' }
+    : { disconnected: true, revoked: false, message: '家計簿側のGmail連携は解除しましたが、Google側のアクセスを取り消せたことを確認できませんでした。保存済みの家計簿データは残っています。' }
+}
 const record = (value: unknown): Record<string, unknown> => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Gmailの応答を確認できませんでした')
   return value as Record<string, unknown>

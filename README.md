@@ -4,6 +4,7 @@
 
 ## 最新の実装状況
 
+- 2026-10-15 16:22 JST本番反映: Gmail解除時にGoogle側の取消を確認できなければ警告と手動解除リンクを表示し、後続の状態更新失敗でも警告を保持。保存済み明細が残ることも明示。依存の既知警告4件を修正版へ更新しnpm監査は検出0件。API・Webのログ上限10MB×3世代を適用。Web107件・型検査・ビルドが成功。DB・端末の暗号化やGoogle審査の完了を意味しない。[詳細](docs/legal/OPERATIONS.md)を参照。
 - 2026-10-15追記: [Gmail安全管理点検](https://github.com/Akikan987/kakeibo/blob/main/server/docs/GMAIL_SECURITY_REVIEW.md)と[審査説明・動画手順](https://github.com/Akikan987/kakeibo/blob/main/server/docs/GMAIL_VERIFICATION_PREPARATION.md)を準備。APIモック33件・Web Gmail7件が成功、PostgreSQL専用3件は今回はスキップ。保存時保護・鍵管理・実認証・第三者評価等が残るため審査準備完了ではない。今回は文書のみ更新し、公開アプリ・API・DBは変更しない。
 - 2026-10-15 15:57 JST記録: Google Search Consoleで `kakeibodata.com` の所有権確認に成功。Cloudflareへ確認用TXTを1件追加し、既存のapex・appのCNAMEは維持。Google指定の24時間を待ち、10月16日15:57 JST以降にブランド検証を再試行する。ブランド公開・データアクセス審査は未完了。今回は運用文書のみ更新し、アプリ・API・DBは変更しない。[作業記録](docs/legal/OPERATIONS.md)を参照。
 - 2026-10-14 22:59 JST: Gmail接続機能と通知鍵の設定を本番APIへ反映し、AI補助はOFFを維持。反映直後の接続は0件で、本人のOAuth許可・実メール・実Pushは確認待ち。Gmail専用Googleプロジェクトは本人の承認後に本番環境へ切り替えたが、ブランド検証でホームページ所有権の未確認が指摘され、データアクセス審査は未提出。Search Consoleで所有権確認後24時間待って再検証が必要。[詳細と残る確認](docs/legal/OPERATIONS.md)を参照。

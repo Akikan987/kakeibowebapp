@@ -5,7 +5,7 @@ import { emptyDraft, useStore, type ExpenseDraft } from '../store'
 import { TYPE_EXPENSE } from '../types'
 import { matchSmbcPayment } from '../imports/smbc'
 import { financialMessageSource } from '../imports/source'
-import { gmailCandidateAction, gmailCandidates, gmailRequest, googleAuthorizationUrl, pushApplicationKey, pushDeviceId, type GmailCandidate, type GmailStatus } from '../imports/gmail'
+import { GMAIL_CONNECTIONS_URL, gmailCandidateAction, gmailCandidates, gmailDisconnectOutcome, gmailRequest, googleAuthorizationUrl, pushApplicationKey, pushDeviceId, type GmailCandidate, type GmailDisconnectOutcome, type GmailStatus } from '../imports/gmail'
 import { isAndroidNative } from '../native/notifications'
 
 export function GmailImport({ onImport }: { onImport: (draft: ExpenseDraft, eventId?: string, gmailCandidateId?: string) => void }) {
@@ -22,10 +22,12 @@ export function GmailImport({ onImport }: { onImport: (draft: ExpenseDraft, even
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [disconnectOutcome, setDisconnectOutcome] = useState<GmailDisconnectOutcome | null>(null)
   const [pushReady, setPushReady] = useState(false)
   const [pushSubscribed, setPushSubscribed] = useState(false)
   const generation = useRef(0)
   useEffect(() => () => { generation.current += 1 }, [])
+  useEffect(() => { generation.current += 1; setDisconnectOutcome(null) }, [token, s.account?.uid])
 
   const refresh = async (current = generation.current) => {
     if (!token) return
@@ -144,7 +146,19 @@ export function GmailImport({ onImport }: { onImport: (draft: ExpenseDraft, even
             {pushSubscribed && <Button variant="text" disabled={busy} onClick={() => void run(unsubscribe)}>この端末への通知を停止</Button>}
             <Typography variant="caption" color="text.secondary">ログアウト後や通知が届かない場合は、現在の家計簿アカウントで再登録してください。ブラウザーに許可が残っていても、サーバーへの登録が解除されている場合があります。</Typography>
           </> : <Typography variant="caption" color="text.secondary">通知には対応ブラウザー・PWAとサーバー側の通知設定が必要です。候補は通知なしでも下から確認できます。</Typography>}
-          <Button variant="text" disabled={busy} onClick={() => void run(async () => { if (!window.confirm('Gmail連携を解除し、保留中の候補を削除しますか？ 保存済みの家計簿は残ります。')) return; await gmailRequest(token, 'gmail/disconnect', {}); setSelected(null); setAiConsent(false); await refresh() })}>Gmail連携を解除する</Button>
+          <Button variant="text" disabled={busy} onClick={() => void run(async () => {
+            if (!window.confirm('Gmail連携を解除し、保留中の候補を削除しますか？ 保存済みの家計簿は残ります。')) return
+            const current = generation.current
+            const result = await gmailRequest<unknown>(token, 'gmail/disconnect', {})
+            if (current !== generation.current) return
+            const outcome = gmailDisconnectOutcome(result)
+            setDisconnectOutcome(outcome)
+            if (outcome.disconnected) {
+              setStatus((currentStatus) => currentStatus ? { ...currentStatus, connected: false, email: '', enabled: false, aiEnabled: false, pendingCount: 0, lastError: '' } : currentStatus)
+              setItems([]); setSelected(null); setAiConsent(false)
+            }
+            await refresh(current)
+          })}>Gmail連携を解除する</Button>
         </> : <>
           <Alert severity="info">Googleの許可画面ではGmail全体を読み取れる権限（gmail.readonly）が表示されます。このアプリのサーバー処理は三井住友の利用通知に検索を絞りますが、権限そのものはそのメールだけに限定できません。</Alert>
           <Typography variant="caption" color="text.secondary">Googleの接続トークンをサーバーで暗号化保存します。メール本文は取得・解析時のみ使用し永続保存しません。日時・店名・金額などの候補はサーバーに保存されます。AI補助は初期OFFです。</Typography>
@@ -163,6 +177,10 @@ export function GmailImport({ onImport }: { onImport: (draft: ExpenseDraft, even
         </Stack></CardContent></Card>)}
       </>}
       {notice && <Alert severity="success">{notice}</Alert>}
+      {disconnectOutcome && <Alert severity={disconnectOutcome.disconnected && disconnectOutcome.revoked ? 'success' : 'warning'}>
+        {disconnectOutcome.message}
+        {disconnectOutcome.disconnected && !disconnectOutcome.revoked && <> <a href={GMAIL_CONNECTIONS_URL} target="_blank" rel="noreferrer">Googleアカウント設定でアクセスを手動で削除</a></>}
+      </Alert>}
       {error && !selected && <Alert severity="error">{error}</Alert>}
     </Stack></CardContent></Card>
     {candidate && <Modal title="Gmailの明細候補（未保存）" onClose={() => { setSelected(null); setError('') }}><Stack spacing={2}>

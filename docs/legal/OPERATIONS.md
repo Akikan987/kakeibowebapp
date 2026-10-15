@@ -36,6 +36,15 @@
 
 ## 公開検証記録
 
+### 課題への追加対策と反映（2026-10-15 16:22 JST）
+
+- Gmail解除応答の `ok`・`revoked` を明示的に確認し、Google側の取消が失敗／不明なら警告と固定の手動解除URLを表示。家計簿側の解除も不明な応答では成功と断定しない。後続更新の失敗でも案内を保持し、別アカウントの古い応答は無視する。架空データのブラウザーで390px幅の表示を確認。
+- API・Webログを10MB×3世代へ制限。DB・OCR・管理サービスはComposeへ追加しただけで再作成していない。容量制限は日数による削除期限ではないため、公開ポリシーの固定期限未設定という説明は変えない。
+- ビルドで判明した依存の既知警告4件を許容範囲内の更新で解消し、全依存・本番依存のnpm監査は0件。Web107件、Gmail27件、Push9件が成功し、PostgreSQL専用3件はスキップ。型検査・ビルド・Compose・Nginx検査成功。実Google／メール／Push／OpenAIの試験ではない。
+- Web反映版 `kakeibowebapp-web:gmail-security-20261015`、直前復旧用 `kakeibowebapp-web:before-gmail-security-20261015` を保持。公開 `/assets/index-qjeyB7r7.js`・`SettingsScreen-CIEvZsAa.js`・Service Worker・healthはHTTP 200で、主JSに新案内が含まれる。PWA事前キャッシュ28件／897.84 KiB。セキュリティヘッダー維持、未認証Gmail状態は401・no-store。
+- APIは同一イメージでログ設定だけ反映し、環境設定全体のハッシュも不変。DB・OCRの起動日時を維持。再作成前のAPI・WebログはGit除外領域へWindows CurrentUser DPAPIで退避し、復号一致を確認した。プロファイル喪失時の復旧保証はなく、DBバックアップ暗号化とは別。
+- 反映前DBバックアップ `D:\kakeibo_db_backup\kakeibo-gmail-security-20261015.dump`（145364 bytes、SHA256 `789873da2f1add80050c5b0fd1eac7f987a1425be9616f79de594660ee6f0e99`）を形式確認。旧バックアップは削除せず、OS設定・暗号鍵・Google権限も変更していない。本人もデバイス暗号化状態を確認できておらず、保存時保護・鍵管理・実連携・第三者評価は残課題。審査は未提出。
+
 ### 安全管理点検と審査説明の準備（2026-10-15、未提出）
 
 - [安全管理点検](https://github.com/Akikan987/kakeibo/blob/main/server/docs/GMAIL_SECURITY_REVIEW.md)と[審査説明・実演手順](https://github.com/Akikan987/kakeibo/blob/main/server/docs/GMAIL_VERIFICATION_PREPARATION.md)を作成。根拠・確認済み・未確認を分け、英語説明は未提出の下書きとして用意した。実演動画は未撮影・未アップロード。

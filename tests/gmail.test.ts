@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFile } from 'node:fs/promises'
 import vm from 'node:vm'
-import { createGmailCompletion, GMAIL_COMPLETION_KEY, gmailCandidates, gmailCompletionPending, gmailOpenReason, gmailRequest, googleAuthorizationUrl, pushApplicationKey, pushDeviceId } from '../src/imports/gmail.ts'
+import { createGmailCompletion, GMAIL_COMPLETION_KEY, GMAIL_CONNECTIONS_URL, gmailCandidates, gmailCompletionPending, gmailDisconnectOutcome, gmailOpenReason, gmailRequest, googleAuthorizationUrl, pushApplicationKey, pushDeviceId } from '../src/imports/gmail.ts'
 
 const candidate = { kind: 'card_usage', provider: 'smbc_card', paymentType: 'debit', merchant: '<script>not executed</script>', amountYen: 980, purchasedAtMillis: 1790825696000, cardLastFour: '', warnings: [] }
 test('Gmail candidates validate bounded transaction-only shapes and identifiers', () => {
@@ -24,6 +24,32 @@ test('Gmail callback only recognizes fixed local intents and Google OAuth destin
   assert.equal(googleAuthorizationUrl('https://accounts.google.com/o/oauth2/v2/auth?state=test'), 'https://accounts.google.com/o/oauth2/v2/auth?state=test')
   assert.throws(() => googleAuthorizationUrl('https://accounts.google.com.evil.example/o/oauth2/auth'))
   assert.throws(() => googleAuthorizationUrl('https://user@accounts.google.com/o/oauth2/auth'))
+})
+test('Gmail disconnect reports remote revocation only when explicitly confirmed', () => {
+  const revoked = gmailDisconnectOutcome({ ok: true, revoked: true })
+  assert.equal(revoked.disconnected, true)
+  assert.equal(revoked.revoked, true)
+  assert.match(revoked.message, /家計簿側/u)
+  assert.match(revoked.message, /Google側/u)
+  assert.match(revoked.message, /保存済み/u)
+
+  for (const value of [{ ok: true, revoked: false }, { ok: true }, { ok: true, revoked: 'true' }]) {
+    const outcome = gmailDisconnectOutcome(value)
+    assert.equal(outcome.disconnected, true)
+    assert.equal(outcome.revoked, false)
+    assert.match(outcome.message, /取り消せたことを確認できません/u)
+    assert.match(outcome.message, /家計簿側/u)
+    assert.match(outcome.message, /保存済み/u)
+  }
+  for (const value of [{ ok: false, revoked: true }, { revoked: true }, null, []]) {
+    const outcome = gmailDisconnectOutcome(value)
+    assert.equal(outcome.disconnected, false)
+    assert.equal(outcome.revoked, false)
+    assert.match(outcome.message, /解除を確認できません/u)
+    assert.doesNotMatch(outcome.message, /解除しました/u)
+    assert.match(outcome.message, /保存済み/u)
+  }
+  assert.equal(GMAIL_CONNECTIONS_URL, 'https://myaccount.google.com/connections')
 })
 test('Staged Gmail completion is authenticated POST and StrictMode replay shares one attempt; errors remain retryable', async () => {
   const original = globalThis.fetch
