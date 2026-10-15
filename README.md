@@ -4,6 +4,7 @@
 
 ## 最新の実装状況
 
+- 2026-10-15追記: [Gmail安全管理点検](https://github.com/Akikan987/kakeibo/blob/main/server/docs/GMAIL_SECURITY_REVIEW.md)と[審査説明・動画手順](https://github.com/Akikan987/kakeibo/blob/main/server/docs/GMAIL_VERIFICATION_PREPARATION.md)を準備。APIモック33件・Web Gmail7件が成功、PostgreSQL専用3件は今回はスキップ。保存時保護・鍵管理・実認証・第三者評価等が残るため審査準備完了ではない。今回は文書のみ更新し、公開アプリ・API・DBは変更しない。
 - 2026-10-15 15:57 JST記録: Google Search Consoleで `kakeibodata.com` の所有権確認に成功。Cloudflareへ確認用TXTを1件追加し、既存のapex・appのCNAMEは維持。Google指定の24時間を待ち、10月16日15:57 JST以降にブランド検証を再試行する。ブランド公開・データアクセス審査は未完了。今回は運用文書のみ更新し、アプリ・API・DBは変更しない。[作業記録](docs/legal/OPERATIONS.md)を参照。
 - 2026-10-14 22:59 JST: Gmail接続機能と通知鍵の設定を本番APIへ反映し、AI補助はOFFを維持。反映直後の接続は0件で、本人のOAuth許可・実メール・実Pushは確認待ち。Gmail専用Googleプロジェクトは本人の承認後に本番環境へ切り替えたが、ブランド検証でホームページ所有権の未確認が指摘され、データアクセス審査は未提出。Search Consoleで所有権確認後24時間待って再検証が必要。[詳細と残る確認](docs/legal/OPERATIONS.md)を参照。
 - 2026-10-14公開: [プライバシーポリシー](https://app.kakeibodata.com/pr/privacy.html)・[利用規約](https://app.kakeibodata.com/pr/terms.html)を公開し、紹介ページのフッターとGmail専用GoogleプロジェクトのブランディングにURLを登録。表示名は「あきかん」、氏名・住所は本人からの請求に遅滞なく回答する運用。現在無料・AI費用は運営負担。[文書の正本と運用・公開記録](docs/legal/OPERATIONS.md)を参照。Webの文書4ファイルのみ更新し、アプリ本体・Service Worker・API・DBは維持。Gmailの一般公開・審査・実メール取得は未実施。

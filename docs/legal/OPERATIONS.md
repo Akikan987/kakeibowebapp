@@ -36,6 +36,13 @@
 
 ## 公開検証記録
 
+### 安全管理点検と審査説明の準備（2026-10-15、未提出）
+
+- [安全管理点検](https://github.com/Akikan987/kakeibo/blob/main/server/docs/GMAIL_SECURITY_REVIEW.md)と[審査説明・実演手順](https://github.com/Akikan987/kakeibo/blob/main/server/docs/GMAIL_VERIFICATION_PREPARATION.md)を作成。根拠・確認済み・未確認を分け、英語説明は未提出の下書きとして用意した。実演動画は未撮影・未アップロード。
+- API・DBの公開ポートとログ設定、管理画面の停止を必要項目だけで確認。API・DBログの追加ローテーション設定はなく、通常明細・端末・バックアップの保存時暗号化と鍵保管の証跡も不足。Googleの保存時保護・CASA等の要件を確認し、ブランド検証待ちだけで準備完了とはしない。
+- 外部通信できない一時コンテナ・SQLite・架空データでGmail24件／Push9件が成功。PostgreSQL専用3件はスキップ。Web Gmail7件も成功。実OAuth・実メール・OS通知・Google取消の到達は未検証で、本番DBに試験データを作成していない。
+- 今回は文書だけを更新。公開HTML・アプリ・Service Worker・API・DB・鍵・Google権限は変更せず、ログやバックアップの削除も行わない。英語説明・撮影手順の整理は、本人の同意、実演成功、審査承認を代替しない。
+
 ### ドメイン所有権の確認（2026-10-15）
 
 - 本人が承認した `kakeibodata.com` の確認用TXT追加・所有権確認を実施。前回の保存操作は承認処理の停止で未実行だったため、今回の公開DNSとCloudflare一覧で未登録を確認し、Googleの現行TXT値と照合してから1件だけ保存した。
