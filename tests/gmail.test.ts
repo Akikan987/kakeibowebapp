@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFile } from 'node:fs/promises'
 import vm from 'node:vm'
-import { createGmailCompletion, GMAIL_COMPLETION_KEY, GMAIL_CONNECTIONS_URL, gmailCandidates, gmailCompletionPending, gmailDisconnectOutcome, gmailOpenReason, gmailRequest, googleAuthorizationUrl, pushApplicationKey, pushDeviceId } from '../src/imports/gmail.ts'
+import { createGmailCompletion, GMAIL_COMPLETION_KEY, GMAIL_CONNECTIONS_URL, gmailAiStatusSummary, gmailCandidates, gmailCompletionPending, gmailDisconnectOutcome, gmailOpenReason, gmailRequest, googleAuthorizationUrl, pushApplicationKey, pushDeviceId } from '../src/imports/gmail.ts'
 
 const candidate = { kind: 'card_usage', provider: 'smbc_card', paymentType: 'debit', merchant: '<script>not executed</script>', amountYen: 980, purchasedAtMillis: 1790825696000, cardLastFour: '', warnings: [] }
 test('Gmail candidates validate bounded transaction-only shapes and identifiers', () => {
@@ -24,6 +24,30 @@ test('Gmail callback only recognizes fixed local intents and Google OAuth destin
   assert.equal(googleAuthorizationUrl('https://accounts.google.com/o/oauth2/v2/auth?state=test'), 'https://accounts.google.com/o/oauth2/v2/auth?state=test')
   assert.throws(() => googleAuthorizationUrl('https://accounts.google.com.evil.example/o/oauth2/auth'))
   assert.throws(() => googleAuthorizationUrl('https://user@accounts.google.com/o/oauth2/auth'))
+})
+test('Gmail AI status separates connection, server setup, consent, and enabled states', () => {
+  const base = { configured: true, connected: true, email: 'mail@example.com', enabled: false, aiEnabled: false, pendingCount: 0, lastCheckedAt: null, lastError: '', intervalSeconds: 300 }
+  const disconnected = gmailAiStatusSummary({ ...base, connected: false })
+  assert.equal(disconnected.kind, 'not-connected')
+  assert.equal(disconnected.label, 'Gmail未接続')
+
+  for (const aiAvailable of [false, undefined]) {
+    const serverSetup = gmailAiStatusSummary({ ...base, aiAvailable })
+    assert.equal(serverSetup.kind, 'server-setup')
+    assert.equal(serverSetup.label, 'AIサーバー設定待ち')
+    assert.match(serverSetup.description, /定型解析/u)
+    assert.match(serverSetup.description, /決済モードが不明/u)
+  }
+
+  const consent = gmailAiStatusSummary({ ...base, aiAvailable: true })
+  assert.equal(consent.kind, 'consent-required')
+  assert.equal(consent.label, '本人のAI同意待ち')
+  assert.match(consent.description, /定型解析は引き続き使えます/u)
+
+  const enabled = gmailAiStatusSummary({ ...base, aiAvailable: true, aiEnabled: true })
+  assert.equal(enabled.kind, 'enabled')
+  assert.equal(enabled.label, 'AI補助ON')
+  assert.match(enabled.description, /判定できない候補だけ/u)
 })
 test('Gmail disconnect reports remote revocation only when explicitly confirmed', () => {
   const revoked = gmailDisconnectOutcome({ ok: true, revoked: true })

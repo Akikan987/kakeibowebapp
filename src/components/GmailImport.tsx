@@ -5,7 +5,7 @@ import { emptyDraft, useStore, type ExpenseDraft } from '../store'
 import { TYPE_EXPENSE } from '../types'
 import { matchSmbcPayment } from '../imports/smbc'
 import { financialMessageSource } from '../imports/source'
-import { GMAIL_CONNECTIONS_URL, gmailCandidateAction, gmailCandidates, gmailDisconnectOutcome, gmailRequest, googleAuthorizationUrl, pushApplicationKey, pushDeviceId, type GmailCandidate, type GmailDisconnectOutcome, type GmailStatus } from '../imports/gmail'
+import { GMAIL_CONNECTIONS_URL, gmailAiStatusSummary, gmailCandidateAction, gmailCandidates, gmailDisconnectOutcome, gmailRequest, googleAuthorizationUrl, pushApplicationKey, pushDeviceId, type GmailCandidate, type GmailDisconnectOutcome, type GmailStatus } from '../imports/gmail'
 import { isAndroidNative } from '../native/notifications'
 
 export function GmailImport({ onImport }: { onImport: (draft: ExpenseDraft, eventId?: string, gmailCandidateId?: string) => void }) {
@@ -13,6 +13,8 @@ export function GmailImport({ onImport }: { onImport: (draft: ExpenseDraft, even
   const token = s.account?.token
   const native = isAndroidNative()
   const [status, setStatus] = useState<GmailStatus | null>(null)
+  const [statusLoading, setStatusLoading] = useState(!!token)
+  const [statusError, setStatusError] = useState(false)
   const [items, setItems] = useState<GmailCandidate[]>([])
   const [selected, setSelected] = useState<GmailCandidate | null>(null)
   const [methodId, setMethodId] = useState('')
@@ -27,21 +29,34 @@ export function GmailImport({ onImport }: { onImport: (draft: ExpenseDraft, even
   const [pushSubscribed, setPushSubscribed] = useState(false)
   const generation = useRef(0)
   useEffect(() => () => { generation.current += 1 }, [])
-  useEffect(() => { generation.current += 1; setDisconnectOutcome(null) }, [token, s.account?.uid])
+  useEffect(() => {
+    generation.current += 1
+    setStatus(null); setItems([]); setSelected(null); setDisconnectOutcome(null)
+    setStatusError(false); setStatusLoading(!!token); setError(''); setNotice(''); setBusy(false)
+    setConnectConsent(false); setAiConsent(false); setPushReady(false); setPushSubscribed(false)
+  }, [token, s.account?.uid])
 
   const refresh = async (current = generation.current) => {
     if (!token) return
-    const value = await gmailRequest<GmailStatus>(token, 'gmail/status')
-    const rows = value.connected ? gmailCandidates(await gmailRequest(token, 'gmail/candidates')) : []
-    if (current !== generation.current) return
-    setStatus(value); setItems(rows)
+    if (current === generation.current) { setStatusLoading(true); setStatusError(false) }
+    try {
+      const value = await gmailRequest<GmailStatus>(token, 'gmail/status')
+      const rows = value.connected ? gmailCandidates(await gmailRequest(token, 'gmail/candidates')) : []
+      if (current !== generation.current) return
+      setStatus(value); setItems(rows)
+    } catch (err) {
+      if (current === generation.current) setStatusError(true)
+      throw err
+    } finally {
+      if (current === generation.current) setStatusLoading(false)
+    }
   }
   useEffect(() => {
     if (token) void refresh().catch(() => { /* An explicit refresh surfaces connection errors. */ })
     const connected = () => { if (token) void refresh().catch(() => { /* Manual refresh remains available. */ }) }
     window.addEventListener('kakeibo:gmail-connected', connected)
     return () => window.removeEventListener('kakeibo:gmail-connected', connected)
-  }, [token])
+  }, [token, s.account?.uid])
   useEffect(() => {
     if (!token || native || !('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window) || !window.isSecureContext) return
     const current = generation.current
@@ -113,6 +128,7 @@ export function GmailImport({ onImport }: { onImport: (draft: ExpenseDraft, even
   }
   const candidate = selected?.candidate
   const methods = s.paymentMethods.filter((row) => !row.deleted && ['credit', 'debit'].includes(row.type) && (!candidate || candidate.paymentType === 'unknown' || candidate.paymentType === row.type))
+  const aiStatus = gmailAiStatusSummary(status)
 
   return <>
     <SectionHeader>Gmailの利用通知を自動確認</SectionHeader>
@@ -120,11 +136,14 @@ export function GmailImport({ onImport }: { onImport: (draft: ExpenseDraft, even
       <Typography variant="body2">三井住友の利用通知から明細候補を作り、追加するか確認できます。確認・保存するまで家計簿には追加しません。</Typography>
       {!token ? <Alert severity="info">Gmail連携には家計簿アカウントへのログインが必要です。</Alert> : <>
         {native && <Alert severity="info">Gmailの接続・通知設定はChrome／Safariなどのブラウザー版・PWAで行ってください。Androidアプリ内ではGoogle認証を開きません。</Alert>}
+        {statusLoading && <Alert severity="info">{status ? 'Gmailの接続状態を更新しています。' : 'Gmailの接続状態を読み込み中です。'}</Alert>}
+        {statusError && <Alert severity="error">最新のGmail接続状態を取得できませんでした。通信を確認し、「接続状態・候補を更新する」から再試行してください。</Alert>}
         {status?.connected ? <>
           <Typography variant="body2">接続先：{status.email}</Typography>
-          <Stack direction="row" spacing={1} flexWrap="wrap"><Chip size="small" label={status.enabled ? '自動確認ON' : '自動確認OFF'} /><Chip size="small" label={`未確認 ${status.pendingCount}件`} /><Chip size="small" label={status.aiEnabled ? 'AI補助ON' : 'AI補助OFF'} /></Stack>
+          <Stack direction="row" spacing={1} flexWrap="wrap"><Chip size="small" label="Gmail接続済み" /><Chip size="small" label={status.enabled ? '自動確認ON' : '自動確認OFF'} /><Chip size="small" label={`未確認 ${status.pendingCount}件`} /></Stack>
+          <Alert severity={aiStatus.severity}><strong>{aiStatus.label}：</strong>{aiStatus.description}</Alert>
           <Typography variant="caption" color="text.secondary">約{Math.max(1, Math.round((status.intervalSeconds || 300) / 60))}分間隔でサーバーが確認します。即時ではなく、PC・サーバーが停止中は確認できません。初回接続より前のメールは取り込みません。</Typography>
-          {status.lastCheckedAt && <Typography variant="caption" color="text.secondary">最終確認：{new Date(status.lastCheckedAt < 1e12 ? status.lastCheckedAt * 1000 : status.lastCheckedAt).toLocaleString('ja-JP')}</Typography>}
+          {!!status.lastCheckedAt && <Typography variant="caption" color="text.secondary">最終確認：{new Date(status.lastCheckedAt < 1e12 ? status.lastCheckedAt * 1000 : status.lastCheckedAt).toLocaleString('ja-JP')}</Typography>}
           {status.lastError && <Alert severity="warning">{status.lastError}</Alert>}
           {status.lastError && !native && <Button variant="outline" disabled={busy} onClick={() => void run(async () => {
             if (!window.confirm('Gmailの読み取り権限をGoogle画面で確認して、接続し直します。Gmail全体を読み取れる権限ですが、サーバーでは三井住友の利用通知に検索を絞ります。続けますか？')) return
@@ -136,7 +155,6 @@ export function GmailImport({ onImport }: { onImport: (draft: ExpenseDraft, even
           <Typography variant="subtitle2">AIによる補助解析（任意）</Typography>
           <Typography variant="caption" color="text.secondary">定型解析で日時・金額・利用先を特定できても決済モードが不明な場合だけ、取引部分をOpenAIへ送って明細らしさを補助判定します。欠けた金額や日付は推測しません。</Typography>
           <Typography variant="caption" color="text.secondary">氏名・リンク・承認番号などを除去しますが、店名・日時・金額自体も個人情報になり得ます。完全な匿名化や解析の正確性は保証できず、API利用料が発生します。メール全文をAIに渡す方式ではありません。</Typography>
-          {status.aiAvailable === false && <Typography variant="caption" color="text.secondary">AI補助を有効にするには、サーバー側のAI設定が必要です。通常の定型解析はそのまま使えます。</Typography>}
           {!status.aiEnabled && <FormControlLabel control={<Checkbox checked={aiConsent} disabled={busy || status.aiAvailable === false} onChange={(_, checked) => setAiConsent(checked)} />} label="取引部分の外部AI送信と費用について理解し、AI補助に同意する" />}
           <Button variant="outline" disabled={busy || (!status.aiEnabled && (!aiConsent || status.aiAvailable === false))} onClick={() => void run(() => settings(status.enabled, !status.aiEnabled))}>{status.aiEnabled ? 'AI補助を停止する' : '同意してAI補助を有効にする'}</Button>
           <Typography variant="subtitle2">この端末への通知</Typography>
@@ -159,15 +177,16 @@ export function GmailImport({ onImport }: { onImport: (draft: ExpenseDraft, even
             }
             await refresh(current)
           })}>Gmail連携を解除する</Button>
-        </> : <>
+        </> : status ? <>
+          <Alert severity={aiStatus.severity}><strong>{aiStatus.label}：</strong>{aiStatus.description}</Alert>
           <Alert severity="info">Googleの許可画面ではGmail全体を読み取れる権限（gmail.readonly）が表示されます。このアプリのサーバー処理は三井住友の利用通知に検索を絞りますが、権限そのものはそのメールだけに限定できません。</Alert>
           <Typography variant="caption" color="text.secondary">Googleの接続トークンをサーバーで暗号化保存します。メール本文は取得・解析時のみ使用し永続保存しません。日時・店名・金額などの候補はサーバーに保存されます。AI補助は初期OFFです。</Typography>
           <Typography variant="caption" color="text.secondary">家計簿へのログイン用Googleアカウントとは別のGmailも選べます。次のGoogle画面で、利用通知を受信しているアカウントを選んでください。</Typography>
           <FormControlLabel control={<Checkbox checked={connectConsent} disabled={busy || native} onChange={(_, checked) => setConnectConsent(checked)} />} label="権限・データの取り扱いを理解し、Gmail連携に同意する" />
           <Button disabled={busy || native || !status?.configured || !connectConsent} onClick={() => void run(async () => { const result = await gmailRequest<{ url: string }>(token, 'gmail/start', { consent: true }); window.location.assign(googleAuthorizationUrl(result.url)) })}>GoogleでGmailを接続する</Button>
           {status && !status.configured && <Typography variant="caption" color="text.secondary">サーバー側のGmail連携設定が必要です。</Typography>}
-        </>}
-        <Button variant="text" disabled={busy} onClick={() => void run(() => refresh())}>接続状態・候補を更新する</Button>
+        </> : null}
+        <Button variant="text" disabled={busy || statusLoading} onClick={() => void refresh().catch(() => { /* The refresh error is shown above. */ })}>接続状態・候補を更新する</Button>
         {items.length > 0 && <Typography variant="subtitle2">追加するか確認する</Typography>}
         {items.map((item) => <Card key={item.id} variant="outlined"><CardContent><Stack spacing={1.5}>
           <Typography>{item.candidate.merchant || '要確認の利用通知'}</Typography>

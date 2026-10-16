@@ -4,6 +4,31 @@ export interface GmailStatus {
   configured: boolean; connected: boolean; email: string; enabled: boolean; aiEnabled: boolean
   pendingCount: number; lastCheckedAt: number | null; lastError: string; intervalSeconds: number; aiAvailable?: boolean
 }
+export type GmailAiStatusKind = 'not-connected' | 'server-setup' | 'consent-required' | 'enabled'
+export interface GmailAiStatusSummary {
+  kind: GmailAiStatusKind
+  label: string
+  description: string
+  severity: 'info' | 'warning' | 'success'
+}
+export function gmailAiStatusSummary(status: GmailStatus | null): GmailAiStatusSummary {
+  if (!status?.connected) return {
+    kind: 'not-connected', label: 'Gmail未接続', severity: 'info',
+    description: 'Gmailを接続すると利用通知から候補を作ります。AI補助を使わなくても定型解析で明細を判定できます。',
+  }
+  if (status.aiAvailable !== true) return {
+    kind: 'server-setup', label: 'AIサーバー設定待ち', severity: 'warning',
+    description: 'Gmailは接続済みです。AI補助のサーバー設定待ちですが、定型解析は使えます。AIは決済モードが不明な候補だけを補助します。',
+  }
+  if (status.aiEnabled) return {
+    kind: 'enabled', label: 'AI補助ON', severity: 'success',
+    description: '定型解析で決済モードが判定できない候補だけAI補助を使います。通常の定型解析を先に行います。',
+  }
+  return {
+    kind: 'consent-required', label: '本人のAI同意待ち', severity: 'info',
+    description: 'AI補助はまだ有効ではありません。定型解析は引き続き使えます。利用する場合は内容を確認し、同意してください。',
+  }
+}
 export interface GmailCandidate { id: string; candidate: FinancialMessageCandidate; createdAt: number }
 export const GMAIL_CONNECTIONS_URL = 'https://myaccount.google.com/connections'
 export interface GmailDisconnectOutcome { disconnected: boolean; revoked: boolean; message: string }

@@ -1,8 +1,10 @@
 # 家計簿 Webアプリ
 
-ドキュメント更新日: 2026-10-15
+ドキュメント更新日: 2026-10-16
 
 ## 最新の実装状況
+
+- 2026-10-16本番反映: Gmailの接続状態とAI状態（サーバー設定待ち／本人の同意待ち／ON）を分離し、状態取得失敗時の案内・再試行を追加。AIサーバー設定はON、本人同意はOFFを維持。架空データのOpenAI接続成功、本番Gmail接続1件・定期確認エラーなし。Web108件・型検査・ビルド・法務／PR検査成功。暗号化バックアップとUSB復旧鍵による25表の隔離DB復元も確認。[完了事項と残作業](https://github.com/Akikan987/kakeibo/blob/main/server/docs/GMAIL_REMAINING_TASKS.md)。実メールAI処理・実Push・Google審査の完了を意味しない。
 
 - 2026-10-15 16:22 JST本番反映: Gmail解除時にGoogle側の取消を確認できなければ警告と手動解除リンクを表示し、後続の状態更新失敗でも警告を保持。保存済み明細が残ることも明示。依存の既知警告4件を修正版へ更新しnpm監査は検出0件。API・Webのログ上限10MB×3世代を適用。Web107件・型検査・ビルドが成功。DB・端末の暗号化やGoogle審査の完了を意味しない。[詳細](docs/legal/OPERATIONS.md)を参照。
 - 2026-10-15追記: [Gmail安全管理点検](https://github.com/Akikan987/kakeibo/blob/main/server/docs/GMAIL_SECURITY_REVIEW.md)と[審査説明・動画手順](https://github.com/Akikan987/kakeibo/blob/main/server/docs/GMAIL_VERIFICATION_PREPARATION.md)を準備。APIモック33件・Web Gmail7件が成功、PostgreSQL専用3件は今回はスキップ。保存時保護・鍵管理・実認証・第三者評価等が残るため審査準備完了ではない。今回は文書のみ更新し、公開アプリ・API・DBは変更しない。

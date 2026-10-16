@@ -1,5 +1,7 @@
 # 三井住友のメール・Android通知取り込み
 
+2026-10-16最新: Gmail接続1件・定期確認エラーなし、AIサーバー設定ONを本番確認。利用者のAI同意はOFFを維持し、画面で接続とAIの状態を区別する。架空取引のOpenAI実接続は成功したが、実メールのAI処理・実端末の通知到達は未確認。通常の定型解析を優先し、AIは必須項目が揃い決済モードが不明な取引部分だけを補助判定する。[残作業](https://github.com/Akikan987/kakeibo/blob/main/server/docs/GMAIL_REMAINING_TASKS.md)。
+
 更新日: 2026-10-14
 
 ## Gmail自動確認の追加
