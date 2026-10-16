@@ -14,6 +14,13 @@ test('Gmail candidates validate bounded transaction-only shapes and identifiers'
   assert.throws(() => gmailCandidates({ items: [{ ...item, candidate: { ...candidate, merchant: 'x'.repeat(301) } }] }))
   assert.throws(() => gmailCandidates({ items: [{ ...item, candidate: { ...candidate, cardLastFour: '123456' } }] }))
   assert.throws(() => gmailCandidates({ items: Array.from({ length: 201 }, () => item) }))
+  const reviewOnly = ['bank_notice', 'card_bill', 'prepaid_charge', 'refund', 'unsupported'].map((kind) => ({
+    id: `review-${kind}`, createdAt: 1,
+    candidate: { ...candidate, kind, provider: 'unknown', paymentType: 'prepaid', merchant: '', amountYen: null, purchasedAtMillis: null },
+  }))
+  assert.equal(gmailCandidates({ items: reviewOnly }).length, 5)
+  assert.throws(() => gmailCandidates({ items: [{ ...item, candidate: { ...candidate, kind: 'cash_withdrawal' } }] }))
+  assert.throws(() => gmailCandidates({ items: [{ ...item, candidate: { ...candidate, paymentType: 'cash' } }] }))
 })
 test('Gmail callback only recognizes fixed local intents and Google OAuth destination', () => {
   assert.equal(gmailOpenReason('?gmail=connected'), 'connected')
@@ -25,29 +32,34 @@ test('Gmail callback only recognizes fixed local intents and Google OAuth destin
   assert.throws(() => googleAuthorizationUrl('https://accounts.google.com.evil.example/o/oauth2/auth'))
   assert.throws(() => googleAuthorizationUrl('https://user@accounts.google.com/o/oauth2/auth'))
 })
-test('Gmail AI status separates connection, server setup, consent, and enabled states', () => {
+test('Gmail AI status separates connection, discovery setup, new consent, and active states', () => {
   const base = { configured: true, connected: true, email: 'mail@example.com', enabled: false, aiEnabled: false, pendingCount: 0, lastCheckedAt: null, lastError: '', intervalSeconds: 300 }
   const disconnected = gmailAiStatusSummary({ ...base, connected: false })
   assert.equal(disconnected.kind, 'not-connected')
   assert.equal(disconnected.label, 'Gmail未接続')
 
-  for (const aiAvailable of [false, undefined]) {
-    const serverSetup = gmailAiStatusSummary({ ...base, aiAvailable })
+  for (const discoveryAvailable of [false, undefined]) {
+    const serverSetup = gmailAiStatusSummary({ ...base, discoveryAvailable })
     assert.equal(serverSetup.kind, 'server-setup')
-    assert.equal(serverSetup.label, 'AIサーバー設定待ち')
-    assert.match(serverSetup.description, /定型解析/u)
-    assert.match(serverSetup.description, /決済モードが不明/u)
+    assert.equal(serverSetup.label, 'AI明細検出の設定待ち')
   }
 
-  const consent = gmailAiStatusSummary({ ...base, aiAvailable: true })
+  const consent = gmailAiStatusSummary({ ...base, discoveryAvailable: true })
   assert.equal(consent.kind, 'consent-required')
-  assert.equal(consent.label, '本人のAI同意待ち')
-  assert.match(consent.description, /定型解析は引き続き使えます/u)
+  assert.match(consent.label, /同意待ち/u)
+  assert.match(consent.description, /自動確認待機中/u)
 
-  const enabled = gmailAiStatusSummary({ ...base, aiAvailable: true, aiEnabled: true })
-  assert.equal(enabled.kind, 'enabled')
-  assert.equal(enabled.label, 'AI補助ON')
-  assert.match(enabled.description, /判定できない候補だけ/u)
+  const legacyEnabled = gmailAiStatusSummary({ ...base, discoveryAvailable: true, aiEnabled: true })
+  assert.equal(legacyEnabled.kind, 'consent-required')
+  assert.match(legacyEnabled.description, /以前のAI設定がONでも/u)
+
+  const discovery = gmailAiStatusSummary({ ...base, discoveryAvailable: true, aiAvailable: false, aiEnabled: true, discoveryEnabled: true })
+  assert.equal(discovery.kind, 'discovery-enabled')
+  assert.match(discovery.description, /OpenAI/u)
+  assert.match(discovery.description, /過去メールの一括解析/u)
+  assert.match(discovery.label, /AI明細検出ON/u)
+  assert.match(discovery.description, /三井住友を含む/u)
+  assert.equal(gmailAiStatusSummary({ ...base, aiEnabled: true, discoveryEnabled: true, discoveryAvailable: false }).kind, 'server-setup')
 })
 test('Gmail disconnect reports remote revocation only when explicitly confirmed', () => {
   const revoked = gmailDisconnectOutcome({ ok: true, revoked: true })

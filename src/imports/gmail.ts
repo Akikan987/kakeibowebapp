@@ -3,8 +3,10 @@ import type { FinancialMessageCandidate } from './smbc.ts'
 export interface GmailStatus {
   configured: boolean; connected: boolean; email: string; enabled: boolean; aiEnabled: boolean
   pendingCount: number; lastCheckedAt: number | null; lastError: string; intervalSeconds: number; aiAvailable?: boolean
+  discoveryEnabled?: boolean; discoveryAvailable?: boolean; discoveryConsentedAt?: number | null; discoverySince?: number | null
+  aiDailyLimit?: number; aiUsedToday?: number; discoveryFailedCount?: number
 }
-export type GmailAiStatusKind = 'not-connected' | 'server-setup' | 'consent-required' | 'enabled'
+export type GmailAiStatusKind = 'not-connected' | 'server-setup' | 'consent-required' | 'discovery-enabled'
 export interface GmailAiStatusSummary {
   kind: GmailAiStatusKind
   label: string
@@ -14,19 +16,19 @@ export interface GmailAiStatusSummary {
 export function gmailAiStatusSummary(status: GmailStatus | null): GmailAiStatusSummary {
   if (!status?.connected) return {
     kind: 'not-connected', label: 'Gmail未接続', severity: 'info',
-    description: 'Gmailを接続すると利用通知から候補を作ります。AI補助を使わなくても定型解析で明細を判定できます。',
+    description: 'Gmailを接続した後、明細メールのAI検出に同意すると新着メールから候補を作ります。',
   }
-  if (status.aiAvailable !== true) return {
-    kind: 'server-setup', label: 'AIサーバー設定待ち', severity: 'warning',
-    description: 'Gmailは接続済みです。AI補助のサーバー設定待ちですが、定型解析は使えます。AIは決済モードが不明な候補だけを補助します。',
+  if (status.discoveryEnabled && status.discoveryAvailable === true && status.aiEnabled) return {
+    kind: 'discovery-enabled', label: 'AI明細検出ON', severity: 'success',
+    description: '三井住友を含むカード・銀行・電子マネーの明細メールをAIで確認します。件名と必要部分を加工してOpenAIへ送信し、有効化後に届いた新着メールだけを対象にします。過去メールの一括解析はしません。',
   }
-  if (status.aiEnabled) return {
-    kind: 'enabled', label: 'AI補助ON', severity: 'success',
-    description: '定型解析で決済モードが判定できない候補だけAI補助を使います。通常の定型解析を先に行います。',
+  if (status.discoveryAvailable !== true) return {
+    kind: 'server-setup', label: 'AI明細検出の設定待ち', severity: 'warning',
+    description: 'AI明細検出はサーバー設定待ちです。設定が完了してから、内容を確認して有効化できます。',
   }
   return {
-    kind: 'consent-required', label: '本人のAI同意待ち', severity: 'info',
-    description: 'AI補助はまだ有効ではありません。定型解析は引き続き使えます。利用する場合は内容を確認し、同意してください。',
+    kind: 'consent-required', label: 'AI明細検出の同意待ち', severity: 'info',
+    description: 'AI明細検出は同意待ち・自動確認待機中です。以前のAI設定がONでも、新しい同意をいただくまでメールをAI処理しません。',
   }
 }
 export interface GmailCandidate { id: string; candidate: FinancialMessageCandidate; createdAt: number }
@@ -53,9 +55,9 @@ export function gmailCandidates(value: unknown): GmailCandidate[] {
   return items.map((item) => {
     const row = record(item), candidate = record(row.candidate)
     if (typeof row.id !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(row.id) ||
-        !['card_usage', 'bank_notice', 'card_bill', 'unsupported'].includes(String(candidate.kind)) ||
+        !['card_usage', 'bank_notice', 'card_bill', 'prepaid_charge', 'refund', 'unsupported'].includes(String(candidate.kind)) ||
         !['smbc_card', 'smbc_bank', 'unknown'].includes(String(candidate.provider)) ||
-        !['debit', 'credit', 'unknown'].includes(String(candidate.paymentType)) ||
+        !['prepaid', 'debit', 'credit', 'unknown'].includes(String(candidate.paymentType)) ||
         typeof candidate.merchant !== 'string' || candidate.merchant.length > 300 ||
         (candidate.amountYen !== null && (!Number.isSafeInteger(candidate.amountYen) || Number(candidate.amountYen) < 1 || Number(candidate.amountYen) > 2_000_000_000)) ||
         (candidate.purchasedAtMillis !== null && (typeof candidate.purchasedAtMillis !== 'number' || !Number.isFinite(candidate.purchasedAtMillis) || candidate.purchasedAtMillis <= 0 || !Number.isFinite(new Date(candidate.purchasedAtMillis).getTime()))) ||

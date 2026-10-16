@@ -10,9 +10,9 @@ export interface FinancialMessageInput {
 }
 
 export interface FinancialMessageCandidate {
-  kind: 'card_usage' | 'bank_notice' | 'card_bill' | 'unsupported'
+  kind: 'card_usage' | 'bank_notice' | 'card_bill' | 'prepaid_charge' | 'refund' | 'unsupported'
   provider: 'smbc_card' | 'smbc_bank' | 'unknown'
-  paymentType: 'debit' | 'credit' | 'unknown'
+  paymentType: 'prepaid' | 'debit' | 'credit' | 'unknown'
   merchant: string
   amountYen: number | null
   purchasedAtMillis: number | null
