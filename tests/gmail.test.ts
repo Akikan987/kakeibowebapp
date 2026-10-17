@@ -2,7 +2,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFile } from 'node:fs/promises'
 import vm from 'node:vm'
-import { createGmailCompletion, GMAIL_COMPLETION_KEY, GMAIL_CONNECTIONS_URL, gmailAiStatusSummary, gmailCandidates, gmailDateToInput, gmailCompletionPending, gmailDisconnectOutcome, gmailOpenReason, gmailRequest, gmailReviewTimestamp, googleAuthorizationUrl, pushApplicationKey, pushDeviceId, reviewGmailCandidate, sendPushTest } from '../src/imports/gmail.ts'
+import { createGmailCompletion, GMAIL_COMPLETION_KEY, GMAIL_CONNECTIONS_URL, gmailAiStatusSummary, gmailCandidates, gmailDateToInput, gmailCompletionPending, gmailDisconnectOutcome, gmailOpenReason, gmailPaymentOptions, gmailPaymentTypeMismatch, gmailRequest, gmailReviewTimestamp, googleAuthorizationUrl, pushApplicationKey, pushDeviceId, reviewGmailCandidate, sendPushTest } from '../src/imports/gmail.ts'
+import type { PaymentMethod } from '../src/types.ts'
 
 test('Gmail review uses JST, preserves unchanged seconds, and rejects missing or impossible dates', () => {
   const original = Date.parse('2026-10-17T18:08:46+09:00')
@@ -16,6 +17,24 @@ test('Gmail review uses JST, preserves unchanged seconds, and rejects missing or
 })
 
 const candidate = { kind: 'card_usage', provider: 'smbc_card', paymentType: 'debit', merchant: '<script>not executed</script>', amountYen: 980, purchasedAtMillis: 1790825696000, cardLastFour: '', warnings: [] }
+const paymentMethod = (id: string, type: PaymentMethod['type'], deleted = false): PaymentMethod => ({ id, type, deleted, updatedAt: 1, name: id, closingDay: 0, paymentDay: 0 })
+test('Gmail payment options include each active card type and exclude cash, other, and deleted methods', () => {
+  const methods = [paymentMethod('credit', 'credit'), paymentMethod('debit', 'debit'), paymentMethod('prepaid', 'prepaid'), paymentMethod('cash', 'cash'), paymentMethod('other', 'other'), paymentMethod('deleted-credit', 'credit', true)]
+  assert.deepEqual(gmailPaymentOptions(methods).map(({ id }) => id), ['credit', 'debit', 'prepaid'])
+})
+test('Gmail payment mismatch flags credit candidate assigned to debit method', () => {
+  assert.equal(gmailPaymentTypeMismatch({ ...candidate, paymentType: 'credit' }, paymentMethod('debit', 'debit')), true)
+})
+test('Gmail payment mismatch accepts matching card method types', () => {
+  assert.equal(gmailPaymentTypeMismatch(candidate, paymentMethod('debit', 'debit')), false)
+})
+test('Gmail payment mismatch ignores missing methods and unknown candidate type', () => {
+  assert.equal(gmailPaymentTypeMismatch(candidate, undefined), false)
+  assert.equal(gmailPaymentTypeMismatch({ ...candidate, paymentType: 'unknown' }, paymentMethod('credit', 'credit')), false)
+})
+test('Gmail payment mismatch applies only to card usage candidates', () => {
+  assert.equal(gmailPaymentTypeMismatch({ ...candidate, kind: 'prepaid_charge', paymentType: 'credit' }, paymentMethod('debit', 'debit')), false)
+})
 test('Gmail candidates validate bounded transaction-only shapes and identifiers', () => {
   const item = { id: 'candidate-1', candidate, createdAt: 1 }
   assert.deepEqual(gmailCandidates({ items: [item] }), [item])

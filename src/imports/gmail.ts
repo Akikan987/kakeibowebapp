@@ -1,4 +1,13 @@
 import type { FinancialMessageCandidate } from './smbc.ts'
+import type { PaymentMethod } from '../types.ts'
+
+/** AI mode limits automatic matching, never the user's available corrections. */
+export function gmailPaymentOptions(methods: PaymentMethod[]): PaymentMethod[] {
+  return methods.filter((method) => !method.deleted && ['credit', 'debit', 'prepaid'].includes(method.type))
+}
+export function gmailPaymentTypeMismatch(candidate: FinancialMessageCandidate, method: PaymentMethod | undefined): boolean {
+  return candidate.kind === 'card_usage' && !!method && candidate.paymentType !== 'unknown' && candidate.paymentType !== method.type
+}
 
 export interface GmailStatus {
   configured: boolean; connected: boolean; email: string; enabled: boolean; aiEnabled: boolean
