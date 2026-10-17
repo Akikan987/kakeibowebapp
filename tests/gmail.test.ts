@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFile } from 'node:fs/promises'
 import vm from 'node:vm'
-import { createGmailCompletion, GMAIL_COMPLETION_KEY, GMAIL_CONNECTIONS_URL, gmailAiStatusSummary, gmailCandidates, gmailCompletionPending, gmailDisconnectOutcome, gmailOpenReason, gmailRequest, googleAuthorizationUrl, pushApplicationKey, pushDeviceId } from '../src/imports/gmail.ts'
+import { createGmailCompletion, GMAIL_COMPLETION_KEY, GMAIL_CONNECTIONS_URL, gmailAiStatusSummary, gmailCandidates, gmailCompletionPending, gmailDisconnectOutcome, gmailOpenReason, gmailRequest, googleAuthorizationUrl, pushApplicationKey, pushDeviceId, sendPushTest } from '../src/imports/gmail.ts'
 
 const candidate = { kind: 'card_usage', provider: 'smbc_card', paymentType: 'debit', merchant: '<script>not executed</script>', amountYen: 980, purchasedAtMillis: 1790825696000, cardLastFour: '', warnings: [] }
 test('Gmail candidates validate bounded transaction-only shapes and identifiers', () => {
@@ -146,6 +146,23 @@ test('Integration API is uncached same-origin authenticated and exposes only bou
     await assert.rejects(gmailRequest('cookie', 'gmail/status'), /Gmail連携の操作に失敗しました/u)
   } finally { globalThis.fetch = original }
 })
+test('Push test API requires exact accepted response and maps stale subscription to re-registration guidance', async () => {
+  const original = globalThis.fetch
+  let init: RequestInit | undefined
+  try {
+    globalThis.fetch = async (input, options) => {
+      assert.equal(input, '/integrations/push/test')
+      init = options
+      return new Response(JSON.stringify({ ok: true, accepted: true }), { status: 200 })
+    }
+    await sendPushTest('session', 'https://push.example/subscription', 'device-id')
+    assert.deepEqual(JSON.parse(String(init?.body)), { endpoint: 'https://push.example/subscription', deviceId: 'device-id' })
+    globalThis.fetch = async () => new Response(JSON.stringify({ ok: true, accepted: false }), { status: 200 })
+    await assert.rejects(sendPushTest('session', 'https://push.example/subscription', 'device-id'), /受付を確認/u)
+    globalThis.fetch = async () => new Response('{}', { status: 409 })
+    await assert.rejects(sendPushTest('session', 'https://push.example/subscription', 'device-id'), /登録・再登録/u)
+  } finally { globalThis.fetch = original }
+})
 test('Push ignores untrusted payload and fixed click opens candidate prompt without navigating existing draft', async () => {
   const listeners: Record<string, (event: Record<string, unknown>) => void> = {}
   let notification: { title: string; options: Record<string, unknown> } | undefined
@@ -166,6 +183,16 @@ test('Push ignores untrusted payload and fixed click opens candidate prompt with
   await pending
   assert.equal(notification?.title, '家計簿')
   assert.ok(!JSON.stringify(notification).includes('PRIVATE'))
+  listeners.push({ data: { json: () => ({ type: 'push-test', body: 'PRIVATE', url: 'https://evil.example' }) }, waitUntil })
+  await pending
+  assert.equal(notification?.title, '家計簿 テスト通知')
+  assert.equal(notification?.options.body, 'テスト通知です。家計簿から送信できました。')
+  assert.equal(notification?.options.tag, 'kakeibo-push-test')
+  assert.ok(!JSON.stringify(notification).includes('PRIVATE'))
+  listeners.push({ data: { json: () => { throw new SyntaxError('bad json') } }, waitUntil })
+  await pending
+  assert.equal(notification?.title, '家計簿')
+  assert.equal(notification?.options.body, '確認できる明細候補があります。アプリを開いて確認してください。')
   listeners.notificationclick({ notification: { close() {} }, waitUntil })
   await pending
   assert.equal(focused, true)

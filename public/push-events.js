@@ -1,8 +1,14 @@
 /* Notifications never display bank, email, merchant or amount data on a lock screen. */
 self.addEventListener('push', (event) => {
-  event.waitUntil(self.registration.showNotification('家計簿', {
-    body: '確認できる明細候補があります。アプリを開いて確認してください。',
-    icon: '/icon-192.png', badge: '/icon-192.png', tag: 'kakeibo-gmail-candidates',
+  let type = ''
+  try {
+    const value = event.data?.json()
+    if (value && typeof value === 'object' && !Array.isArray(value) && value.type === 'push-test') type = 'push-test'
+  } catch { /* Malformed payloads use the existing generic candidate notice. */ }
+  const isTest = type === 'push-test'
+  event.waitUntil(self.registration.showNotification(isTest ? '家計簿 テスト通知' : '家計簿', {
+    body: isTest ? 'テスト通知です。家計簿から送信できました。' : '確認できる明細候補があります。アプリを開いて確認してください。',
+    icon: '/icon-192.png', badge: '/icon-192.png', tag: isTest ? 'kakeibo-push-test' : 'kakeibo-gmail-candidates',
     data: { type: 'GMAIL_CANDIDATES' },
   }))
 })

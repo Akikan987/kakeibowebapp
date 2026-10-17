@@ -5,7 +5,7 @@ import { emptyDraft, useStore, type ExpenseDraft } from '../store'
 import { TYPE_EXPENSE } from '../types'
 import { matchSmbcPayment } from '../imports/smbc'
 import { financialMessageSource } from '../imports/source'
-import { GMAIL_CONNECTIONS_URL, gmailAiStatusSummary, gmailCandidateAction, gmailCandidates, gmailDisconnectOutcome, gmailRequest, googleAuthorizationUrl, pushApplicationKey, pushDeviceId, type GmailCandidate, type GmailDisconnectOutcome, type GmailStatus } from '../imports/gmail'
+import { GMAIL_CONNECTIONS_URL, gmailAiStatusSummary, gmailCandidateAction, gmailCandidates, gmailDisconnectOutcome, gmailRequest, googleAuthorizationUrl, pushApplicationKey, pushDeviceId, sendPushTest, type GmailCandidate, type GmailDisconnectOutcome, type GmailStatus } from '../imports/gmail'
 import { isAndroidNative } from '../native/notifications'
 
 export function GmailImport({ onImport }: { onImport: (draft: ExpenseDraft, eventId?: string, gmailCandidateId?: string) => void }) {
@@ -113,6 +113,23 @@ export function GmailImport({ onImport }: { onImport: (draft: ExpenseDraft, even
     }
     setPushSubscribed(false)
   }
+  const testPush = async () => {
+    if (!token || native) return
+    const current = generation.current
+    if (Notification.permission !== 'granted') {
+      setPushSubscribed(false)
+      throw new Error('通知の許可がありません。この端末の通知を登録・再登録してください')
+    }
+    const registration = await navigator.serviceWorker.getRegistration('/')
+    const subscription = await registration?.pushManager.getSubscription()
+    if (current !== generation.current) return
+    if (!registration?.active || !subscription) {
+      setPushSubscribed(false)
+      throw new Error('この端末の通知登録を確認できません。通知を登録・再登録してください')
+    }
+    await sendPushTest(token, subscription.endpoint, pushDeviceId(localStorage))
+    if (current === generation.current) setNotice('通知サービスにテスト通知を送信しました。端末に表示されるか確認してください。')
+  }
   const review = (item: GmailCandidate) => {
     const matched = item.candidate.kind === 'card_usage' ? matchSmbcPayment(item.candidate, s.paymentMethods) : { id: '', message: '' }
     setSelected(item); setMethodId(matched.id); setMatchNotice(matched.message); setError('')
@@ -187,7 +204,9 @@ export function GmailImport({ onImport }: { onImport: (draft: ExpenseDraft, even
           <Typography variant="caption" color="text.secondary">通知には明細候補があることだけを表示します。端末・OSにより届かない場合があります。iPhoneはホーム画面へ追加したPWAから設定してください。</Typography>
           {!native && pushReady ? <>
             <Button variant="outline" disabled={busy} onClick={() => void run(subscribe)}>この端末の通知を登録・再登録する</Button>
+            <Button variant="text" disabled={busy || !pushSubscribed} onClick={() => void run(testPush)}>テスト通知を送る</Button>
             {pushSubscribed && <Button variant="text" disabled={busy} onClick={() => void run(unsubscribe)}>この端末への通知を停止</Button>}
+            <Typography variant="caption" color="text.secondary">テスト通知にメールや金額は含まれません。送信成功の表示は端末での表示を保証しません。</Typography>
             <Typography variant="caption" color="text.secondary">ログアウト後や通知が届かない場合は、現在の家計簿アカウントで再登録してください。ブラウザーに許可が残っていても、サーバーへの登録が解除されている場合があります。</Typography>
           </> : <Typography variant="caption" color="text.secondary">通知には対応ブラウザー・PWAとサーバー側の通知設定が必要です。候補は通知なしでも下から確認できます。</Typography>}
           <Button variant="text" disabled={busy} onClick={() => void run(async () => {

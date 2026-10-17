@@ -77,13 +77,22 @@ export async function gmailRequest<T>(token: string, path: string, body?: unknow
   })
   if (!response.ok) {
     let message = 'Gmail連携の操作に失敗しました'
-    try { const value = await response.json(); if (typeof value.detail === 'string') message = value.detail.slice(0, 500) } catch { /* Do not render arbitrary HTML responses. */ }
+    if (path === 'push/test' && response.status === 409) message = 'この端末の通知登録を確認できません。現在のアカウントで通知を登録・再登録してください'
+    else if (path === 'push/test' && response.status === 502) message = '通知サービスがテスト通知を送信できませんでした。時間をおいて再試行してください'
+    else try { const value = await response.json(); if (typeof value.detail === 'string') message = value.detail.slice(0, 500) } catch { /* Do not render arbitrary HTML responses. */ }
     throw new Error(message)
   }
   return response.json() as Promise<T>
 }
 export const gmailCandidateAction = (token: string, id: string, action: 'dismiss' | 'imported') =>
   gmailRequest(token, `gmail/candidates/${encodeURIComponent(id)}/action`, { action })
+
+export async function sendPushTest(token: string, endpoint: string, deviceId: string): Promise<void> {
+  const value = await gmailRequest<unknown>(token, 'push/test', { endpoint, deviceId })
+  if (!value || typeof value !== 'object' || (value as { ok?: unknown }).ok !== true || (value as { accepted?: unknown }).accepted !== true) {
+    throw new Error('テスト通知の受付を確認できませんでした')
+  }
+}
 
 export type GmailOpenReason = 'candidates' | 'connected' | 'error' | 'complete'
 export function gmailOpenReason(search: string): GmailOpenReason | null {
