@@ -2,7 +2,18 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFile } from 'node:fs/promises'
 import vm from 'node:vm'
-import { createGmailCompletion, GMAIL_COMPLETION_KEY, GMAIL_CONNECTIONS_URL, gmailAiStatusSummary, gmailCandidates, gmailCompletionPending, gmailDisconnectOutcome, gmailOpenReason, gmailRequest, googleAuthorizationUrl, pushApplicationKey, pushDeviceId, sendPushTest } from '../src/imports/gmail.ts'
+import { createGmailCompletion, GMAIL_COMPLETION_KEY, GMAIL_CONNECTIONS_URL, gmailAiStatusSummary, gmailCandidates, gmailDateToInput, gmailCompletionPending, gmailDisconnectOutcome, gmailOpenReason, gmailRequest, gmailReviewTimestamp, googleAuthorizationUrl, pushApplicationKey, pushDeviceId, reviewGmailCandidate, sendPushTest } from '../src/imports/gmail.ts'
+
+test('Gmail review uses JST, preserves unchanged seconds, and rejects missing or impossible dates', () => {
+  const original = Date.parse('2026-10-17T18:08:46+09:00')
+  assert.equal(gmailDateToInput(original), '2026-10-17T18:08')
+  assert.equal(gmailReviewTimestamp(original, '2026-10-17T18:08'), original)
+  assert.equal(gmailReviewTimestamp(null, '2026-10-17T18:09'), Date.parse('2026-10-17T18:09:00+09:00'))
+  assert.equal(gmailDateToInput(null), '')
+  for (const input of ['', '2026-02-31T12:00', '2026-10-17T25:00', '2026-10-17T18:00Z']) {
+    assert.ok(Number.isNaN(gmailReviewTimestamp(null, input)))
+  }
+})
 
 const candidate = { kind: 'card_usage', provider: 'smbc_card', paymentType: 'debit', merchant: '<script>not executed</script>', amountYen: 980, purchasedAtMillis: 1790825696000, cardLastFour: '', warnings: [] }
 test('Gmail candidates validate bounded transaction-only shapes and identifiers', () => {
@@ -144,6 +155,29 @@ test('Integration API is uncached same-origin authenticated and exposes only bou
     assert.equal((init?.headers as Record<string, string>).Authorization, undefined)
     globalThis.fetch = async () => new Response('<h1>server error</h1>', { status: 500 })
     await assert.rejects(gmailRequest('cookie', 'gmail/status'), /Gmail連携の操作に失敗しました/u)
+  } finally { globalThis.fetch = original }
+})
+test('Gmail candidate review posts an explicit date and validates the returned candidate and source', async () => {
+  const original = globalThis.fetch
+  const expectedSource = `financial-message:v1:${'c'.repeat(64)}`
+  let input = '', init: RequestInit | undefined
+  try {
+    globalThis.fetch = async (url, options) => {
+      input = String(url); init = options
+      return new Response(JSON.stringify({ id: 'candidate-1', createdAt: 12, candidate: { ...candidate, purchasedAtMillis: 1790825696000 }, source: `financial-message:v1:${'a'.repeat(64)}` }), { status: 200 })
+    }
+    const reviewed = await reviewGmailCandidate('session', 'candidate-1', 1790825696000, expectedSource)
+    assert.equal(input, '/integrations/gmail/candidates/candidate-1/review')
+    assert.deepEqual(JSON.parse(String(init?.body)), { purchasedAtMillis: 1790825696000, expectedSource })
+    assert.equal(reviewed.candidate.purchasedAtMillis, 1790825696000)
+    assert.equal(reviewed.source, `financial-message:v1:${'a'.repeat(64)}`)
+    await assert.rejects(reviewGmailCandidate('session', 'candidate-1', NaN, expectedSource), /日時/u)
+    globalThis.fetch = async () => new Response(JSON.stringify({ id: 'candidate-1', createdAt: 12, candidate, source: 'not-a-source' }), { status: 200 })
+    await assert.rejects(reviewGmailCandidate('session', 'candidate-1', 1790825696000, expectedSource), /更新後/u)
+    globalThis.fetch = async () => new Response(JSON.stringify({ id: 'candidate-1', createdAt: 12, candidate: { ...candidate, purchasedAtMillis: 1790825695000 }, source: `financial-message:v1:${'a'.repeat(64)}` }), { status: 200 })
+    await assert.rejects(reviewGmailCandidate('session', 'candidate-1', 1790825696000, expectedSource), /更新後/u)
+    globalThis.fetch = async () => new Response('{}', { status: 409 })
+    await assert.rejects(reviewGmailCandidate('session', 'candidate-1', 1790825696000, expectedSource), /候補一覧を更新/u)
   } finally { globalThis.fetch = original }
 })
 test('Push test API requires exact accepted response and maps stale subscription to re-registration guidance', async () => {

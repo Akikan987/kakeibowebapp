@@ -22,7 +22,7 @@ import { GmailImport } from '../components/GmailImport'
 import type { ExpenseDraft } from '../entries/draft'
 import { useAppTheme, type AppThemeMode } from '../theme'
 
-export function SettingsScreen({ onImport }: { onImport: (draft: ExpenseDraft, eventId?: string, gmailCandidateId?: string) => void }) {
+export function SettingsScreen({ onImport, onOpenGmailCandidates }: { onImport: (draft: ExpenseDraft, eventId?: string, gmailCandidateId?: string) => void; onOpenGmailCandidates: () => void }) {
   const s = useStore()
   const appTheme = useAppTheme()
   const [newCategory, setNewCategory] = useState('')
@@ -189,7 +189,7 @@ export function SettingsScreen({ onImport }: { onImport: (draft: ExpenseDraft, e
       </CardContent></Card>
 
       <FinancialImport key={s.account?.uid ?? 'offline'} onImport={onImport} />
-      <GmailImport key={`gmail:${s.account?.uid ?? 'offline'}`} onImport={onImport} />
+      <GmailImport key={`gmail:${s.account?.uid ?? 'offline'}`} mode="settings" onImport={onImport} onOpenCandidates={onOpenGmailCandidates} />
 
       <SectionHeader>データ（収入・支出のバックアップ）</SectionHeader>
       <Card><MuiButton fullWidth sx={{ justifyContent: 'flex-start', px: 3, py: 2 }} onClick={s.exportCsv}>CSVファイルにエクスポート</MuiButton><Divider /><MuiButton fullWidth sx={{ justifyContent: 'flex-start', px: 3, py: 2 }} onClick={s.exportJson}>JSONバックアップをエクスポート</MuiButton><Divider /><MuiButton fullWidth sx={{ justifyContent: 'flex-start', px: 3, py: 2 }} onClick={() => { replaceRef.current = false; fileRef.current?.click() }}>JSONをインポート（追加）</MuiButton><Divider /><MuiButton fullWidth sx={{ justifyContent: 'flex-start', px: 3, py: 2 }} onClick={() => { replaceRef.current = true; fileRef.current?.click() }}>JSONをインポート（全置換）</MuiButton></Card>

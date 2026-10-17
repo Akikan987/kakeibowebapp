@@ -78,6 +78,7 @@ export default function App() {
   const [settingsReturnTab, setSettingsReturnTab] = useState<Exclude<Tab, 'settings'>>(shortcutDraft ? lastTab : initialTab)
   const [addReturnTab, setAddReturnTab] = useState<MainTab>(lastTab)
   const [editDraft, setEditDraft] = useState<ExpenseDraft | null>(shortcutDraft)
+  const [addDraftRevision, setAddDraftRevision] = useState(0)
   const [nativeImport, setNativeImport] = useState<{ id: string; source: string; owner: string } | null>(null)
   const [gmailImport, setGmailImport] = useState<{ id: string; source: string; owner: string } | null>(null)
   const [gmailPrompt, setGmailPrompt] = useState<GmailOpenReason | null>(() => { const reason = gmailOpenReason(window.location.search); return reason === 'complete' ? null : reason })
@@ -88,6 +89,7 @@ export default function App() {
   const completeGmail = useRef<ReturnType<typeof createGmailCompletion> | null>(null)
   if (!completeGmail.current) completeGmail.current = createGmailCompletion()
   const [gmailAckError, setGmailAckError] = useState(false)
+  const [gmailCandidateEditHint, setGmailCandidateEditHint] = useState(false)
   const [nativeAckError, setNativeAckError] = useState(false)
   const [exitHint, setExitHint] = useState(false)
   const currentTab = useRef(tab)
@@ -106,6 +108,19 @@ export default function App() {
   const openSettings = () => {
     if (tab !== 'settings') setSettingsReturnTab(tab)
     setTab('settings')
+  }
+
+  const openGmailCandidates = () => {
+    setGmailPrompt(null)
+    if (editDraft?.editingId) {
+      setGmailCandidateEditHint(true)
+      return
+    }
+    if (tab !== 'add') {
+      setAddReturnTab(tab === 'settings' ? (settingsReturnTab === 'add' ? lastTab : settingsReturnTab) : tab)
+      setTab('add')
+    }
+    window.setTimeout(() => document.getElementById('gmail-candidates')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 200)
   }
 
   const clearGmailCompletion = () => {
@@ -297,8 +312,14 @@ export default function App() {
           )}
           {tab === 'add' && (
             <AddScreen
-              key={`${s.account?.uid ?? 'offline'}:${editDraft?.editingId ?? 'new'}`}
+              key={`${s.account?.uid ?? 'offline'}:${editDraft?.editingId ?? 'new'}:${addDraftRevision}`}
               initial={editDraft}
+              onGmailImport={(draft, gmailCandidateId) => {
+                setEditDraft(draft)
+                setNativeImport(null)
+                setGmailImport(s.account?.uid ? { id: gmailCandidateId, source: draft.source, owner: s.account.uid } : null)
+                setAddDraftRevision((revision) => revision + 1)
+              }}
               onDone={(source) => {
                 if (nativeImport && nativeImport.source === source && nativeImport.owner === (s.account?.uid ?? 'offline')) {
                   // Remove a pending notification only after an expense was actually saved.
@@ -320,9 +341,10 @@ export default function App() {
             setEditDraft(draft)
             setNativeImport(eventId ? { id: eventId, source: draft.source, owner: s.account?.uid ?? 'offline' } : null)
             setGmailImport(gmailCandidateId && s.account?.uid ? { id: gmailCandidateId, source: draft.source, owner: s.account.uid } : null)
+            setAddDraftRevision((revision) => revision + 1)
             setAddReturnTab(settingsReturnTab === 'add' ? lastTab : settingsReturnTab)
             setTab('add')
-          }} />}
+          }} onOpenGmailCandidates={openGmailCandidates} />}
         </Suspense>
       </Container>
 
@@ -389,17 +411,25 @@ export default function App() {
       )}
       <Snackbar
         open={!!gmailPrompt}
-        message={gmailPrompt === 'connected' ? 'Gmailを接続しました。設定で自動確認を確認できます。' : gmailPrompt === 'error' ? 'Gmailの接続を完了できませんでした。設定で確認してください。' : 'Gmailの明細候補があります。入力中の内容はそのままに、後で設定から確認できます。'}
-        action={<MuiButton color="inherit" disabled={tab === 'add'} onClick={() => { openSettings(); setGmailPrompt(null); window.setTimeout(() => document.getElementById('gmail-integration')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 200) }}>{tab === 'add' ? '入力完了後に設定へ' : '確認'}</MuiButton>}
+        message={gmailPrompt === 'connected' ? 'Gmailを接続しました。設定で自動確認を確認できます。' : gmailPrompt === 'error' ? 'Gmailの接続を完了できませんでした。設定で確認してください。' : 'Gmailの明細候補があります。追加画面で確認できます。'}
+        action={<MuiButton color="inherit" onClick={gmailPrompt === 'candidates' ? openGmailCandidates : () => { openSettings(); setGmailPrompt(null); window.setTimeout(() => document.getElementById('gmail-integration')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 200) }}>{gmailPrompt === 'candidates' ? tab === 'add' ? '候補まで移動' : '追加画面で確認' : '設定を確認'}</MuiButton>}
         autoHideDuration={12000}
         onClose={() => setGmailPrompt(null)}
         anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
       />
       <Snackbar
         open={gmailAckError}
-        message="記録は保存しました。Gmail候補の処理済み更新だけに失敗したため、設定で候補を除外してください。"
+        message="記録は保存しました。Gmail候補の処理済み更新だけに失敗しました。追加画面で候補を更新してください。"
+        action={<MuiButton color="inherit" onClick={openGmailCandidates}>候補を確認</MuiButton>}
         autoHideDuration={10000}
         onClose={() => setGmailAckError(false)}
+        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+      />
+      <Snackbar
+        open={gmailCandidateEditHint}
+        message="編集中の明細を保存するか閉じてから、＋で新しい記録を開いて候補を確認してください。"
+        autoHideDuration={9000}
+        onClose={() => setGmailCandidateEditHint(false)}
         anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
       />
       <Snackbar

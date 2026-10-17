@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { Alert, CardContent, Checkbox, Chip, FormControlLabel, MenuItem, Stack, TextField, Typography } from '@mui/material'
-import { Button, Card, Modal, SectionHeader, yen } from './ui'
+import { Button, Card, Field, Modal, SectionHeader, yen } from './ui'
 import { emptyDraft, useStore, type ExpenseDraft } from '../store'
 import { TYPE_EXPENSE } from '../types'
 import { matchSmbcPayment } from '../imports/smbc'
 import { financialMessageSource } from '../imports/source'
-import { GMAIL_CONNECTIONS_URL, gmailAiStatusSummary, gmailCandidateAction, gmailCandidates, gmailDisconnectOutcome, gmailRequest, googleAuthorizationUrl, pushApplicationKey, pushDeviceId, sendPushTest, type GmailCandidate, type GmailDisconnectOutcome, type GmailStatus } from '../imports/gmail'
+import { GMAIL_CONNECTIONS_URL, gmailAiStatusSummary, gmailCandidateAction, gmailCandidates, gmailDateToInput, gmailDisconnectOutcome, gmailRequest, gmailReviewTimestamp, googleAuthorizationUrl, pushApplicationKey, pushDeviceId, reviewGmailCandidate, sendPushTest, type GmailCandidate, type GmailDisconnectOutcome, type GmailStatus } from '../imports/gmail'
 import { isAndroidNative } from '../native/notifications'
 
-export function GmailImport({ onImport }: { onImport: (draft: ExpenseDraft, eventId?: string, gmailCandidateId?: string) => void }) {
+export function GmailImport({ onImport, mode = 'settings', onOpenCandidates }: { onImport: (draft: ExpenseDraft, eventId?: string, gmailCandidateId?: string) => void; mode?: 'settings' | 'candidates'; onOpenCandidates?: () => void }) {
   const s = useStore()
   const token = s.account?.token
   const native = isAndroidNative()
@@ -17,6 +17,7 @@ export function GmailImport({ onImport }: { onImport: (draft: ExpenseDraft, even
   const [statusError, setStatusError] = useState(false)
   const [items, setItems] = useState<GmailCandidate[]>([])
   const [selected, setSelected] = useState<GmailCandidate | null>(null)
+  const [reviewDate, setReviewDate] = useState('')
   const [methodId, setMethodId] = useState('')
   const [matchNotice, setMatchNotice] = useState('')
   const [connectConsent, setConnectConsent] = useState(false)
@@ -41,7 +42,7 @@ export function GmailImport({ onImport }: { onImport: (draft: ExpenseDraft, even
     if (current === generation.current) { setStatusLoading(true); setStatusError(false) }
     try {
       const value = await gmailRequest<GmailStatus>(token, 'gmail/status')
-      const rows = value.connected ? gmailCandidates(await gmailRequest(token, 'gmail/candidates')) : []
+      const rows = mode === 'candidates' && value.connected ? gmailCandidates(await gmailRequest(token, 'gmail/candidates')) : []
       if (current !== generation.current) return
       setStatus(value); setItems(rows)
     } catch (err) {
@@ -58,7 +59,19 @@ export function GmailImport({ onImport }: { onImport: (draft: ExpenseDraft, even
     return () => window.removeEventListener('kakeibo:gmail-connected', connected)
   }, [token, s.account?.uid])
   useEffect(() => {
-    if (!token || native || !('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window) || !window.isSecureContext) return
+    if (mode !== 'candidates' || !token) return
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') void refresh().catch(() => { /* The candidate screen shows refresh errors. */ })
+    }
+    window.addEventListener('focus', refreshWhenVisible)
+    document.addEventListener('visibilitychange', refreshWhenVisible)
+    return () => {
+      window.removeEventListener('focus', refreshWhenVisible)
+      document.removeEventListener('visibilitychange', refreshWhenVisible)
+    }
+  }, [mode, token, s.account?.uid])
+  useEffect(() => {
+    if (mode !== 'settings' || !token || native || !('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window) || !window.isSecureContext) return
     const current = generation.current
     void navigator.serviceWorker.ready.then(async (registration) => {
       if (!registration?.active) return
@@ -66,7 +79,7 @@ export function GmailImport({ onImport }: { onImport: (draft: ExpenseDraft, even
       const subscription = await registration.pushManager.getSubscription()
       if (current === generation.current) { setPushReady(config.configured); setPushSubscribed(!!subscription) }
     }).catch(() => { /* Permission is never requested by mounting settings. */ })
-  }, [token, native])
+  }, [mode, token, native])
 
   const run = async (operation: () => Promise<void>) => {
     const current = generation.current
@@ -132,19 +145,36 @@ export function GmailImport({ onImport }: { onImport: (draft: ExpenseDraft, even
   }
   const review = (item: GmailCandidate) => {
     const matched = item.candidate.kind === 'card_usage' ? matchSmbcPayment(item.candidate, s.paymentMethods) : { id: '', message: '' }
-    setSelected(item); setMethodId(matched.id); setMatchNotice(matched.message); setError('')
+    setSelected(item); setReviewDate(gmailDateToInput(item.candidate.purchasedAtMillis)); setMethodId(matched.id); setMatchNotice(matched.message); setError('')
   }
   const continueToEntry = async () => {
     if (!selected) return
     const current = generation.current
-    const candidate = selected.candidate
+    let reviewed = selected
+    let reviewedSource: string | null = null
+    const candidateBeforeReview = selected.candidate
+    const purchasedAtMillis = gmailReviewTimestamp(candidateBeforeReview.purchasedAtMillis, reviewDate)
+    if (purchasedAtMillis === null || !Number.isSafeInteger(purchasedAtMillis) || purchasedAtMillis <= 0 || !Number.isFinite(new Date(purchasedAtMillis).getTime())) throw new Error('日時を入力してください。メールと照合して日付を確認してください')
+    if (purchasedAtMillis !== candidateBeforeReview.purchasedAtMillis) {
+      if (!token) throw new Error('Gmailにログインしてください')
+      const expectedSource = await financialMessageSource(candidateBeforeReview)
+      if (current !== generation.current) return
+      const response = await reviewGmailCandidate(token, selected.id, purchasedAtMillis, expectedSource)
+      if (current !== generation.current) return
+      reviewed = response
+      reviewedSource = response.source
+      setItems((rows) => rows.map((row) => row.id === reviewed.id ? reviewed : row))
+      setSelected(reviewed)
+    }
+    const candidate = reviewed.candidate
     const method = s.paymentMethods.find((row) => !row.deleted && row.id === methodId)
     if (candidate.kind !== 'card_usage' || !candidate.merchant || candidate.amountYen === null || candidate.amountYen < 1 || !candidate.purchasedAtMillis ||
         !method || !['credit', 'debit', 'prepaid'].includes(method.type) || (candidate.paymentType !== 'unknown' && method.type !== candidate.paymentType)) throw new Error('日時・金額・利用先と、対応する決済方法を確認してください')
     const source = await financialMessageSource(candidate)
     if (current !== generation.current) return
+    if (reviewedSource && reviewedSource !== source) throw new Error('更新後の候補と記録元を確認できませんでした。候補一覧を更新してください')
     if (s.expenses.some((row) => !row.deleted && row.source === source)) throw new Error('同じ内容は登録済みです。履歴を確認し、この候補を除外してください')
-    onImport({ ...emptyDraft(), type: TYPE_EXPENSE, title: candidate.merchant, amountYen: String(candidate.amountYen), purchasedAtMillis: candidate.purchasedAtMillis, paymentMethodId: method.id, cashAccountId: method.cashAccountId ?? '', source }, undefined, selected.id)
+    onImport({ ...emptyDraft(), type: TYPE_EXPENSE, title: candidate.merchant, amountYen: String(candidate.amountYen), purchasedAtMillis: candidate.purchasedAtMillis, paymentMethodId: method.id, cashAccountId: method.cashAccountId ?? '', source }, undefined, reviewed.id)
   }
   const candidate = selected?.candidate
   const methods = s.paymentMethods.filter((row) => !row.deleted && ['credit', 'debit', 'prepaid'].includes(row.type) && (!candidate || candidate.paymentType === 'unknown' || candidate.paymentType === row.type))
@@ -163,10 +193,10 @@ export function GmailImport({ onImport }: { onImport: (draft: ExpenseDraft, even
   }
 
   return <>
-    <SectionHeader>Gmailの利用通知を自動確認</SectionHeader>
-    <Card id="gmail-integration"><CardContent><Stack spacing={2}>
-      <Typography variant="body2">カード・銀行・電子マネーの明細メールから候補を作り、内容を確認してから家計簿に追加できます。</Typography>
-      {!token ? <Alert severity="info">Gmail連携には家計簿アカウントへのログインが必要です。</Alert> : <>
+    <SectionHeader>{mode === 'settings' ? 'Gmailの利用通知を自動確認' : 'Gmailの明細候補'}</SectionHeader>
+    <Card id={mode === 'settings' ? 'gmail-integration' : 'gmail-candidates'}><CardContent><Stack spacing={2}>
+      {mode === 'settings' && <Typography variant="body2">カード・銀行・電子マネーの明細メールから候補を作り、内容を確認してから家計簿に追加できます。</Typography>}
+      {mode === 'settings' && (!token ? <Alert severity="info">Gmail連携には家計簿アカウントへのログインが必要です。</Alert> : <>
         {native && <Alert severity="info">Gmailの接続・通知設定はChrome／Safariなどのブラウザー版・PWAで行ってください。Androidアプリ内ではGoogle認証を開きません。</Alert>}
         {statusLoading && <Alert severity="info">{status ? 'Gmailの接続状態を更新しています。' : 'Gmailの接続状態を読み込み中です。'}</Alert>}
         {statusError && <Alert severity="error">最新のGmail接続状態を取得できませんでした。通信を確認し、「接続状態・候補を更新する」から再試行してください。</Alert>}
@@ -231,28 +261,43 @@ export function GmailImport({ onImport }: { onImport: (draft: ExpenseDraft, even
           <Button disabled={busy || native || !status?.configured || !connectConsent} onClick={() => void run(async () => { const result = await gmailRequest<{ url: string }>(token, 'gmail/start', { consent: true }); window.location.assign(googleAuthorizationUrl(result.url)) })}>GoogleでGmailを接続する</Button>
           {status && !status.configured && <Typography variant="caption" color="text.secondary">サーバー側のGmail連携設定が必要です。</Typography>}
         </> : null}
-        <Button variant="text" disabled={busy || statusLoading} onClick={() => void refresh().catch(() => { /* The refresh error is shown above. */ })}>接続状態・候補を更新する</Button>
-        {items.length > 0 && <Typography variant="subtitle2">追加するか確認する</Typography>}
-        {items.map((item) => <Card key={item.id} variant="outlined"><CardContent><Stack spacing={1.5}>
-          <Chip size="small" label={candidateKindLabels[item.candidate.kind]} sx={{ alignSelf: 'flex-start' }} />
-          <Typography>{item.candidate.merchant || candidateKindLabels[item.candidate.kind]}</Typography>
-          <Typography variant="body2">{item.candidate.amountYen === null ? '金額を確認してください' : yen(item.candidate.amountYen)}{item.candidate.purchasedAtMillis ? ` ・ ${new Intl.DateTimeFormat('ja-JP', { timeZone: 'Asia/Tokyo', dateStyle: 'short' }).format(item.candidate.purchasedAtMillis)}` : ''}</Typography>
-          <Button variant="outline" disabled={busy} onClick={() => review(item)}>内容を確認する</Button>
-          <Button variant="text" disabled={busy} onClick={() => void run(async () => { await gmailCandidateAction(token, item.id, 'dismiss'); await refresh() })}>この候補を除外する</Button>
-        </Stack></CardContent></Card>)}
-      </>}
-      {notice && <Alert severity="success">{notice}</Alert>}
-      {disconnectOutcome && <Alert severity={disconnectOutcome.disconnected && disconnectOutcome.revoked ? 'success' : 'warning'}>
+      </>)}
+      {mode === 'settings' && <>
+        {notice && <Alert severity="success">{notice}</Alert>}
+        {disconnectOutcome && <Alert severity={disconnectOutcome.disconnected && disconnectOutcome.revoked ? 'success' : 'warning'}>
         {disconnectOutcome.message}
         {disconnectOutcome.disconnected && !disconnectOutcome.revoked && <> <a href={GMAIL_CONNECTIONS_URL} target="_blank" rel="noreferrer">Googleアカウント設定でアクセスを手動で削除</a></>}
-      </Alert>}
-      {error && !selected && <Alert severity="error">{error}</Alert>}
+        </Alert>}
+        <Button variant="outline" disabled={!token} onClick={onOpenCandidates}>追加画面で候補を確認する</Button>
+      </>}
+      {mode === 'candidates' && <>
+        {!token ? <Alert severity="info">Gmail候補の確認には家計簿アカウントへのログインが必要です。</Alert> : <>
+          {statusLoading && <Alert severity="info">Gmailの候補を読み込み中です。</Alert>}
+          {statusError && <Alert severity="error">候補を更新できませんでした。通信を確認して、もう一度更新してください。</Alert>}
+          {status && !status.connected && <Alert severity="info">Gmailが接続されていません。設定から接続できます。</Alert>}
+          <Button variant="text" disabled={busy || statusLoading} onClick={() => void refresh().catch(() => { /* The refresh error is shown above. */ })}>候補を更新する</Button>
+          {items.length > 0 && <Typography variant="subtitle2">内容を確認してから追加できます</Typography>}
+          {!statusLoading && !items.length && status?.connected && !statusError && <Typography variant="body2" color="text.secondary">未確認の候補はありません。</Typography>}
+          {items.map((item) => <Card key={item.id} variant="outlined"><CardContent><Stack spacing={1.5}>
+            <Chip size="small" label={candidateKindLabels[item.candidate.kind]} sx={{ alignSelf: 'flex-start' }} />
+            <Typography>{item.candidate.merchant || candidateKindLabels[item.candidate.kind]}</Typography>
+            <Typography variant="body2">{item.candidate.amountYen === null ? '金額を確認してください' : yen(item.candidate.amountYen)}{item.candidate.purchasedAtMillis ? ` ・ ${new Intl.DateTimeFormat('ja-JP', { timeZone: 'Asia/Tokyo', dateStyle: 'short' }).format(item.candidate.purchasedAtMillis)}` : ' ・ 日時不明'}</Typography>
+            <Button variant="outline" disabled={busy} onClick={() => review(item)}>内容を確認する</Button>
+            <Button variant="text" disabled={busy} onClick={() => void run(async () => { await gmailCandidateAction(token, item.id, 'dismiss'); await refresh() })}>この候補を除外する</Button>
+          </Stack></CardContent></Card>)}
+        </>}
+        {notice && <Alert severity="success">{notice}</Alert>}
+        {error && !selected && <Alert severity="error">{error}</Alert>}
+      </>}
     </Stack></CardContent></Card>
     {candidate && <Modal title="Gmailの明細候補（未保存）" onClose={() => { setSelected(null); setError('') }}><Stack spacing={2}>
       <Chip size="small" label={candidateKindLabels[candidate.kind]} sx={{ alignSelf: 'flex-start' }} />
       <Typography>利用先：{candidate.merchant || '不明'}</Typography>
       <Typography>金額：{candidate.amountYen === null ? '不明' : yen(candidate.amountYen)}</Typography>
-      <Typography>日時：{candidate.purchasedAtMillis ? new Intl.DateTimeFormat('ja-JP', { timeZone: 'Asia/Tokyo', dateStyle: 'short', timeStyle: 'medium' }).format(candidate.purchasedAtMillis) : '不明'}（日本時間）</Typography>
+      {candidate.kind === 'card_usage' ? <>
+        <Field label="利用日時（日本時間）" type="datetime-local" value={reviewDate} onChange={(event) => setReviewDate(event.target.value)} />
+        <Typography variant="caption" color="text.secondary">メールの日付が不明な場合は空欄のままです。元メールと照合して、正しい日時を入力してください。入力した日時は候補にも保存されます。</Typography>
+      </> : <Typography>日時：{candidate.purchasedAtMillis ? new Intl.DateTimeFormat('ja-JP', { timeZone: 'Asia/Tokyo', dateStyle: 'short', timeStyle: 'medium' }).format(candidate.purchasedAtMillis) : '不明'}（日本時間）</Typography>}
       <Typography variant="body2">{candidate.paymentType === 'prepaid' ? 'プリペイド' : candidate.paymentType === 'debit' ? 'デビット' : candidate.paymentType === 'credit' ? 'クレジット' : '決済モードを要確認'}</Typography>
       {candidate.cardLastFour && <Typography variant="body2">カード末尾：{candidate.cardLastFour}</Typography>}
       {candidate.kind !== 'card_usage' && <Alert severity="info">{candidateKindNotes[candidate.kind]}</Alert>}
@@ -262,7 +307,7 @@ export function GmailImport({ onImport }: { onImport: (draft: ExpenseDraft, even
       {candidate.kind === 'card_usage' && !methods.length && <Alert severity="warning">先に決済タブで対応するカード・デビット・プリペイドを登録してください。</Alert>}
       {candidate.kind === 'card_usage' && <Alert severity="info">元のメール・実際の支払いと照合してください。次の入力画面で確認してから保存できます。</Alert>}
       {error && <Alert severity="error">{error}</Alert>}
-      {candidate.kind === 'card_usage' ? <Button disabled={busy || !methodId || candidate.amountYen === null || candidate.amountYen < 1 || !candidate.purchasedAtMillis || !candidate.merchant} onClick={() => void run(continueToEntry)}>入力画面で確認する</Button> : <Typography variant="caption" color="text.secondary">この候補は確認専用で、支出入力には進めません。</Typography>}
+      {candidate.kind === 'card_usage' ? <Button disabled={busy || !methodId || candidate.amountYen === null || candidate.amountYen < 1 || !candidate.merchant || !reviewDate || !Number.isFinite(gmailReviewTimestamp(candidate.purchasedAtMillis, reviewDate))} onClick={() => void run(continueToEntry)}>入力画面で確認する</Button> : <Typography variant="caption" color="text.secondary">この候補は確認専用で、支出入力には進めません。</Typography>}
       <Button variant="text" onClick={() => { setSelected(null); setError('') }}>閉じる</Button>
     </Stack></Modal>}
   </>

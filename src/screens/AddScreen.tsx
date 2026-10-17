@@ -22,11 +22,12 @@ import { matchReceiptPayment, receiptDateMillis } from '../receipt'
 import { expectedWithdrawalDate } from '../payments'
 import { equalSplitAmounts } from '../splits'
 import { CashAccountSelect } from '../components/CashAccountSelect'
+import { GmailImport } from '../components/GmailImport'
 import { emptyDraft, useStore, type ExpenseDraft } from '../store'
 import { draftStorageKey, findDuplicateExpenses, hasDraftContent, merchantSuggestions, readDraft, writeDraft } from '../entries/draft'
 import { PAYMENT_TYPES, PAYMENT_TYPE_LABELS, TYPE_EXPENSE, TYPE_INCOME, now } from '../types'
 
-export function AddScreen({ initial, onDone }: { initial?: ExpenseDraft | null; onDone: (source: string) => void }) {
+export function AddScreen({ initial, onDone, onGmailImport }: { initial?: ExpenseDraft | null; onDone: (source: string) => void; onGmailImport: (draft: ExpenseDraft, gmailCandidateId: string) => void }) {
   const s = useStore()
   const [draft, setDraft] = useState<ExpenseDraft>(() => initial ?? emptyDraft())
   const storageKey = draftStorageKey(s.account?.uid ?? 'offline', initial?.editingId ?? null)
@@ -78,6 +79,17 @@ export function AddScreen({ initial, onDone }: { initial?: ExpenseDraft | null; 
     setDuplicateConfirmedDraft(null)
     setDraft((current) => ({ ...current, ...value }))
   }
+  const importGmailDraft = (gmailDraft: ExpenseDraft, _eventId?: string, candidateId?: string) => {
+    if (!candidateId) return
+    if (hasDraftContent(draft)) {
+      const saved = writeDraft(localStorage, storageKey, draft, baseUpdatedAt.current)
+      const message = saved
+        ? '入力中の内容をこの端末の下書きに保存しました。Gmail候補に置き換えますか？'
+        : '入力中の内容をこの端末の下書きに保存できませんでした。それでもGmail候補に置き換えますか？'
+      if (!window.confirm(message)) return
+    }
+    onGmailImport(gmailDraft, candidateId)
+  }
   const save = async (confirmed = false) => {
     if (savingRef.current) return
     if (!confirmed && duplicates.length > 0) { setDuplicateConfirmedDraft(draft); return }
@@ -110,6 +122,7 @@ export function AddScreen({ initial, onDone }: { initial?: ExpenseDraft | null; 
           <Button color="#2E7D32" sx={{ minHeight: 68, fontSize: 18 }} onClick={() => patch({ type: TYPE_INCOME, purchasedAtMillis: now() })}>収入を入力</Button>
           <Button color="#D32F2F" sx={{ minHeight: 68, fontSize: 18 }} onClick={() => patch({ type: TYPE_EXPENSE, purchasedAtMillis: now() })}>支出を入力</Button>
         </Stack>
+        <GmailImport mode="candidates" onImport={importGmailDraft} />
       </Screen>
     )
   }
@@ -155,6 +168,7 @@ export function AddScreen({ initial, onDone }: { initial?: ExpenseDraft | null; 
 
   return (
     <Screen>
+      {!draft.editingId && !isIncome && <GmailImport mode="candidates" onImport={importGmailDraft} />}
       <Stack direction="row" alignItems="center" justifyContent="space-between">
         <LargeTitle>{draft.editingId ? '編集' : isIncome ? '収入を入力' : '支出を入力'}</LargeTitle>
         {!draft.editingId && <Button variant="text" onClick={() => patch({ type: '' })} sx={{ width: 'auto' }}>種類を変更</Button>}

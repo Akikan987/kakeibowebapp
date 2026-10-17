@@ -32,6 +32,20 @@ export function gmailAiStatusSummary(status: GmailStatus | null): GmailAiStatusS
   }
 }
 export interface GmailCandidate { id: string; candidate: FinancialMessageCandidate; createdAt: number }
+export interface ReviewedGmailCandidate extends GmailCandidate { source: string }
+const JST_OFFSET = 9 * 60 * 60 * 1000
+export function gmailDateToInput(millis: number | null): string {
+  if (millis === null || !Number.isFinite(millis) || !Number.isFinite(new Date(millis + JST_OFFSET).getTime())) return ''
+  return new Date(millis + JST_OFFSET).toISOString().slice(0, 16)
+}
+export function gmailReviewTimestamp(original: number | null, input: string): number {
+  if (original !== null && input === gmailDateToInput(original)) return original
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?$/u.test(input)) return Number.NaN
+  const millis = Date.parse(`${input}+09:00`)
+  const expanded = input.length === 16 ? `${input}:00` : input
+  if (!Number.isFinite(millis) || new Date(millis + JST_OFFSET).toISOString().slice(0, 19) !== expanded) return Number.NaN
+  return millis
+}
 export const GMAIL_CONNECTIONS_URL = 'https://myaccount.google.com/connections'
 export interface GmailDisconnectOutcome { disconnected: boolean; revoked: boolean; message: string }
 export function gmailDisconnectOutcome(value: unknown): GmailDisconnectOutcome {
@@ -78,6 +92,7 @@ export async function gmailRequest<T>(token: string, path: string, body?: unknow
   if (!response.ok) {
     let message = 'Gmail連携の操作に失敗しました'
     if (path === 'push/test' && response.status === 409) message = 'この端末の通知登録を確認できません。現在のアカウントで通知を登録・再登録してください'
+    else if (/^gmail\/candidates\/[^/]+\/review$/u.test(path) && response.status === 409) message = 'この候補は別の画面で更新されました。候補一覧を更新して、もう一度確認してください'
     else if (path === 'push/test' && response.status === 502) message = '通知サービスがテスト通知を送信できませんでした。時間をおいて再試行してください'
     else try { const value = await response.json(); if (typeof value.detail === 'string') message = value.detail.slice(0, 500) } catch { /* Do not render arbitrary HTML responses. */ }
     throw new Error(message)
@@ -86,6 +101,21 @@ export async function gmailRequest<T>(token: string, path: string, body?: unknow
 }
 export const gmailCandidateAction = (token: string, id: string, action: 'dismiss' | 'imported') =>
   gmailRequest(token, `gmail/candidates/${encodeURIComponent(id)}/action`, { action })
+
+export async function reviewGmailCandidate(token: string, id: string, purchasedAtMillis: number, expectedSource: string): Promise<ReviewedGmailCandidate> {
+  if (!Number.isSafeInteger(purchasedAtMillis) || purchasedAtMillis <= 0 || !Number.isFinite(new Date(purchasedAtMillis).getTime()) || !/^financial-message:v1:[a-f0-9]{64}$/u.test(expectedSource)) {
+    throw new Error('日時を確認してください')
+  }
+  const value = record(await gmailRequest<unknown>(token, `gmail/candidates/${encodeURIComponent(id)}/review`, { purchasedAtMillis, expectedSource }))
+  if (value.id !== id || typeof value.source !== 'string' || !/^financial-message:v1:[a-f0-9]{64}$/u.test(value.source) || typeof value.createdAt !== 'number' || !Number.isFinite(value.createdAt)) {
+    throw new Error('更新後のGmail候補を確認できませんでした。候補一覧を更新してください')
+  }
+  const [validated] = gmailCandidates({ items: [{ id: value.id, createdAt: value.createdAt, candidate: value.candidate }] })
+  if (!validated || validated.candidate.kind !== 'card_usage' || validated.candidate.purchasedAtMillis !== purchasedAtMillis) {
+    throw new Error('更新後のGmail候補を確認できませんでした。候補一覧を更新してください')
+  }
+  return { ...validated, source: value.source }
+}
 
 export async function sendPushTest(token: string, endpoint: string, deviceId: string): Promise<void> {
   const value = await gmailRequest<unknown>(token, 'push/test', { endpoint, deviceId })
