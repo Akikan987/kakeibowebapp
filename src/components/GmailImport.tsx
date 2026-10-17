@@ -235,6 +235,7 @@ export function GmailImport({ onImport }: { onImport: (draft: ExpenseDraft, even
       <Typography>金額：{candidate.amountYen === null ? '不明' : yen(candidate.amountYen)}</Typography>
       <Typography>日時：{candidate.purchasedAtMillis ? new Intl.DateTimeFormat('ja-JP', { timeZone: 'Asia/Tokyo', dateStyle: 'short', timeStyle: 'medium' }).format(candidate.purchasedAtMillis) : '不明'}（日本時間）</Typography>
       <Typography variant="body2">{candidate.paymentType === 'prepaid' ? 'プリペイド' : candidate.paymentType === 'debit' ? 'デビット' : candidate.paymentType === 'credit' ? 'クレジット' : '決済モードを要確認'}</Typography>
+      {candidate.cardLastFour && <Typography variant="body2">カード末尾：{candidate.cardLastFour}</Typography>}
       {candidate.kind !== 'card_usage' && <Alert severity="info">{candidateKindNotes[candidate.kind]}</Alert>}
       {candidate.warnings.map((warning, index) => <Typography key={index} variant="caption" color="text.secondary">・{warning}</Typography>)}
       {matchNotice && <Typography variant="caption" color="text.secondary">{matchNotice}</Typography>}

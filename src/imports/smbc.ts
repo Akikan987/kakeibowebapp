@@ -203,17 +203,22 @@ export function parseSmbcMessage(input: FinancialMessageInput): FinancialMessage
 
 /** Select only from a unique exact last-four and payment-type match. */
 export function matchSmbcPayment(candidate: FinancialMessageCandidate, methods: PaymentMethod[]): { id: string; message: string } {
-  if (candidate.kind !== 'card_usage' || candidate.paymentType === 'unknown' || !/^\d{4}$/u.test(candidate.cardLastFour)) {
-    return { id: '', message: '決済方法を特定できません。手動で選択してください。' }
+  if (candidate.kind !== 'card_usage') {
+    return { id: '', message: 'カード利用明細ではないため、決済方法を手動で選択してください。' }
+  }
+  if (!/^\d{4}$/u.test(candidate.cardLastFour)) {
+    return { id: '', message: 'カード末尾4桁を確認できないため、決済方法を手動で選択してください。' }
   }
   const matches = methods.filter((method) =>
-    !method.deleted && method.type === candidate.paymentType && method.cardLastFour === candidate.cardLastFour,
+    !method.deleted && ['credit', 'debit', 'prepaid'].includes(method.type) &&
+    method.cardLastFour === candidate.cardLastFour &&
+    (candidate.paymentType === 'unknown' || method.type === candidate.paymentType),
   )
   if (matches.length === 1) {
-    return { id: matches[0].id, message: `末尾 ${candidate.cardLastFour} と支払モードが一致しました。保存前に確認してください。` }
+    return { id: matches[0].id, message: `カード末尾 ${candidate.cardLastFour} が一致しました。実際の支払方法を確認してください。` }
   }
   return {
     id: '',
-    message: matches.length > 1 ? '一致するカードが複数あります。手動で選択してください。' : '一致するカードがありません。手動で選択してください。',
+    message: matches.length > 1 ? '末尾が一致する決済方法が複数あります。手動で選択してください。' : '末尾が一致する決済方法がありません。手動で選択してください。',
   }
 }

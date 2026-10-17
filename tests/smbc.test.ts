@@ -82,6 +82,39 @@ test('only a unique exact last-four and type match selects a payment method', ()
   assert.equal(matchSmbcPayment(parsed, [{ ...paymentMethod('deleted', 'debit', '0123'), deleted: true }]).id, '')
 })
 
+test('unknown payment mode selects a unique exact last-four match, including prepaid', () => {
+  const unknown = { ...parseSmbcMessage(email(usageBody({ mode: 'Oliveフレキシブルペイをご利用', extra: '◇カード末尾：0123' }))), paymentType: 'unknown' as const }
+  for (const type of ['prepaid', 'credit'] as const) {
+    const match = matchSmbcPayment(unknown, [paymentMethod(type, type, '0123')])
+    assert.equal(match.id, type)
+    assert.match(match.message, /実際の支払方法/u)
+  }
+})
+
+test('unknown payment mode refuses ambiguous last-four matches across payment types', () => {
+  const unknown = { ...parseSmbcMessage(email(usageBody({ mode: 'Oliveフレキシブルペイをご利用', extra: '◇カード末尾：0123' }))), paymentType: 'unknown' as const }
+  const match = matchSmbcPayment(unknown, [paymentMethod('debit', 'debit', '0123'), paymentMethod('credit', 'credit', '0123')])
+  assert.equal(match.id, '')
+  assert.match(match.message, /複数/u)
+})
+
+test('known payment mode rejects a matching last-four on another payment type', () => {
+  const credit = { ...parseSmbcMessage(email(usageBody({ mode: 'クレジットモード', extra: '◇カード末尾：0123' }))), paymentType: 'credit' as const }
+  const match = matchSmbcPayment(credit, [paymentMethod('debit', 'debit', '0123')])
+  assert.equal(match.id, '')
+  assert.match(match.message, /ありません/u)
+})
+
+test('only active credit, debit, and prepaid methods can match', () => {
+  const unknown = { ...parseSmbcMessage(email(usageBody({ mode: 'Oliveフレキシブルペイをご利用', extra: '◇カード末尾：0123' }))), paymentType: 'unknown' as const }
+  const methods = [
+    { ...paymentMethod('deleted', 'debit', '0123'), deleted: true },
+    { ...paymentMethod('cash', 'cash', '0123') },
+    { ...paymentMethod('other', 'other', '0123') },
+  ]
+  assert.equal(matchSmbcPayment(unknown, methods).id, '')
+})
+
 test('date parsing applies JST offset and rejects invalid or duplicate dates', () => {
   const leap = parseSmbcMessage(email(usageBody({ date: '2024年2月29日 00:05:09' })))
   const badLeap = parseSmbcMessage(email(usageBody({ date: '2025/02/29 00:05:09' })))
