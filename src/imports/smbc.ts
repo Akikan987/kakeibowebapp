@@ -17,6 +17,8 @@ export interface FinancialMessageCandidate {
   amountYen: number | null
   purchasedAtMillis: number | null
   cardLastFour: string
+  cardNameHint?: string
+  subjectHint?: string
   warnings: string[]
 }
 
@@ -201,24 +203,53 @@ export function parseSmbcMessage(input: FinancialMessageInput): FinancialMessage
   }
 }
 
-/** Select only from a unique exact last-four and payment-type match. */
+function paymentNameKey(value: string): string {
+  return value.normalize('NFKC').toLowerCase().replace(/[\p{P}\p{S}\p{Z}\s]/gu, '')
+}
+
+function subjectContainsName(subject: string, name: string): boolean {
+  let start = subject.indexOf(name)
+  while (start >= 0) {
+    const before = subject[start - 1] ?? ''
+    const after = subject[start + name.length] ?? ''
+    if (!(/[a-z0-9]/u.test(name[0]) && /[a-z0-9]/u.test(before)) &&
+        !(/[a-z0-9]/u.test(name[name.length - 1] ?? '') && /[a-z0-9]/u.test(after))) return true
+    start = subject.indexOf(name, start + 1)
+  }
+  return false
+}
+
+/** Use names as review suggestions, never override explicit contradictory card digits. */
 export function matchSmbcPayment(candidate: FinancialMessageCandidate, methods: PaymentMethod[]): { id: string; message: string } {
   if (candidate.kind !== 'card_usage') {
     return { id: '', message: 'カード利用明細ではないため、決済方法を手動で選択してください。' }
   }
-  if (!/^\d{4}$/u.test(candidate.cardLastFour)) {
-    return { id: '', message: 'カード末尾4桁を確認できないため、決済方法を手動で選択してください。' }
-  }
-  const matches = methods.filter((method) =>
+  const active = methods.filter((method) =>
     !method.deleted && ['credit', 'debit', 'prepaid'].includes(method.type) &&
-    method.cardLastFour === candidate.cardLastFour &&
     (candidate.paymentType === 'unknown' || method.type === candidate.paymentType),
   )
+  const nameHint = paymentNameKey(candidate.cardNameHint ?? '')
+  const subjectHint = paymentNameKey(candidate.subjectHint ?? '')
+  const named = active.filter((method) => {
+    const name = paymentNameKey(method.name)
+    // A network/issuer alone is not a specific registered card name.
+    return name.length >= 4 && !['visa', 'mastercard', 'amex', 'americanexpress', '三井住友カード', 'クレジットカード', 'プリペイドカード', 'デビットカード'].includes(name) &&
+      (nameHint === name || subjectContainsName(subjectHint, name))
+  })
+  const hasDigits = /^\d{4}$/u.test(candidate.cardLastFour)
+  if (candidate.cardLastFour && !hasDigits) return { id: '', message: 'カード末尾を確認できません。手動で選択してください。' }
+  const digits = active.filter((method) => method.cardLastFour === candidate.cardLastFour)
+  if (hasDigits && named.some((method) => !digits.some((digit) => digit.id === method.id))) {
+    return { id: '', message: 'カード末尾とカード名・件名が一致しません。手動で選択してください。' }
+  }
+  const matches = hasDigits ? (digits.length > 1 && named.length ? digits.filter((method) => named.some((name) => name.id === method.id)) : digits) : named
   if (matches.length === 1) {
-    return { id: matches[0].id, message: `カード末尾 ${candidate.cardLastFour} が一致しました。実際の支払方法を確認してください。` }
+    return { id: matches[0].id, message: hasDigits
+      ? `カード末尾 ${candidate.cardLastFour} が一致しました。実際の支払方法を確認してください。`
+      : 'カード名・メール件名から決済方法を推定しました。実際の支払方法を確認してください。' }
   }
   return {
     id: '',
-    message: matches.length > 1 ? '末尾が一致する決済方法が複数あります。手動で選択してください。' : '末尾が一致する決済方法がありません。手動で選択してください。',
+    message: matches.length > 1 ? '一致する決済方法が複数あります。手動で選択してください。' : '一致する決済方法がありません。カード末尾・カード名・件名を確認して手動で選択してください。',
   }
 }

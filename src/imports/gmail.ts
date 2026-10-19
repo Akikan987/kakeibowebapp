@@ -85,6 +85,8 @@ export function gmailCandidates(value: unknown): GmailCandidate[] {
         (candidate.amountYen !== null && (!Number.isSafeInteger(candidate.amountYen) || Number(candidate.amountYen) < 1 || Number(candidate.amountYen) > 2_000_000_000)) ||
         (candidate.purchasedAtMillis !== null && (typeof candidate.purchasedAtMillis !== 'number' || !Number.isFinite(candidate.purchasedAtMillis) || candidate.purchasedAtMillis <= 0 || !Number.isFinite(new Date(candidate.purchasedAtMillis).getTime()))) ||
         typeof candidate.cardLastFour !== 'string' || !/^(?:[0-9]{4})?$/.test(candidate.cardLastFour) ||
+        (candidate.cardNameHint !== undefined && (typeof candidate.cardNameHint !== 'string' || candidate.cardNameHint.length > 100)) ||
+        (candidate.subjectHint !== undefined && (typeof candidate.subjectHint !== 'string' || candidate.subjectHint.length > 300)) ||
         !Array.isArray(candidate.warnings) || candidate.warnings.length > 20 || !candidate.warnings.every((warning) => typeof warning === 'string' && warning.length <= 500) ||
         typeof row.createdAt !== 'number' || !Number.isFinite(row.createdAt)) throw new Error('Gmailの入力候補を確認できませんでした')
     return { id: row.id, createdAt: row.createdAt, candidate: candidate as unknown as FinancialMessageCandidate }

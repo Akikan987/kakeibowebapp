@@ -43,6 +43,11 @@ test('Gmail candidates validate bounded transaction-only shapes and identifiers'
   assert.throws(() => gmailCandidates({ items: [{ ...item, candidate: { ...candidate, purchasedAtMillis: Infinity } }] }))
   assert.throws(() => gmailCandidates({ items: [{ ...item, candidate: { ...candidate, merchant: 'x'.repeat(301) } }] }))
   assert.throws(() => gmailCandidates({ items: [{ ...item, candidate: { ...candidate, cardLastFour: '123456' } }] }))
+  const hinted = { ...item, candidate: { ...candidate, cardNameHint: 'ANA PAY', subjectHint: 'ANA PAY ご利用' } }
+  assert.deepEqual(gmailCandidates({ items: [hinted] }), [hinted])
+  for (const hint of [{ cardNameHint: 42 }, { subjectHint: null }, { cardNameHint: 'a'.repeat(101) }, { subjectHint: 'a'.repeat(301) }]) {
+    assert.throws(() => gmailCandidates({ items: [{ ...item, candidate: { ...candidate, ...hint } }] }))
+  }
   assert.throws(() => gmailCandidates({ items: Array.from({ length: 201 }, () => item) }))
   const reviewOnly = ['bank_notice', 'card_bill', 'prepaid_charge', 'refund', 'unsupported'].map((kind) => ({
     id: `review-${kind}`, createdAt: 1,
