@@ -12,6 +12,7 @@ import PhotoCameraRoundedIcon from '@mui/icons-material/PhotoCameraRounded'
 import SettingsBrightnessRoundedIcon from '@mui/icons-material/SettingsBrightnessRounded'
 import { Avatar, Box, Button as MuiButton, CardContent, Chip, IconButton, Stack, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material'
 import { Button, Card, Divider, Field, LargeTitle, Modal, Screen, SectionHeader, formatDateTime } from '../components/ui'
+import { NavigationRow, SectionPageHeader, useSectionNavigation } from '../components/SectionNavigation'
 import { refreshAppShell, storageStatus } from '../offline'
 import { useStore } from '../store'
 import type { Category } from '../types'
@@ -22,9 +23,12 @@ import { GmailImport } from '../components/GmailImport'
 import type { ExpenseDraft } from '../entries/draft'
 import { useAppTheme, type AppThemeMode } from '../theme'
 
-export function SettingsScreen({ onImport, onOpenGmailCandidates }: { onImport: (draft: ExpenseDraft, eventId?: string, gmailCandidateId?: string) => void; onOpenGmailCandidates: () => void }) {
+type SettingsSection = 'index' | 'account' | 'appearance' | 'categories' | 'integrations' | 'data' | 'danger'
+
+export function SettingsScreen({ onImport, onOpenGmailCandidates, requestedSection, requestRevision }: { onImport: (draft: ExpenseDraft, eventId?: string, gmailCandidateId?: string) => void; onOpenGmailCandidates: () => void; requestedSection?: 'index' | 'integrations'; requestRevision?: number }) {
   const s = useStore()
   const appTheme = useAppTheme()
+  const { section, openSection, goBack } = useSectionNavigation<SettingsSection>('index')
   const [newCategory, setNewCategory] = useState('')
   const [renameTarget, setRenameTarget] = useState<Category | null>(null)
   const [renameText, setRenameText] = useState('')
@@ -49,10 +53,32 @@ export function SettingsScreen({ onImport, onOpenGmailCandidates }: { onImport: 
   const [appUpdateBusy, setAppUpdateBusy] = useState(false)
   const [appUpdateError, setAppUpdateError] = useState('')
 
-  useEffect(() => { void storageStatus().then(setStorage) }, [])
+  useEffect(() => {
+    if (section === 'data') void storageStatus().then(setStorage)
+  }, [section])
   useEffect(() => {
     if (s.account?.token) void s.refreshAccountProfile()
   }, [s.account?.uid, s.account?.token, s.refreshAccountProfile])
+  useEffect(() => {
+    openSection(requestedSection ?? 'index')
+  }, [requestedSection, requestRevision, openSection])
+  useEffect(() => {
+    setRenameTarget(null)
+    setRenameText('')
+    setNewCategory('')
+    setNameDialogOpen(false)
+    setNicknameDraft('')
+    setEmailDialogOpen(false)
+    setEmailStep('request')
+    setEmailDraft('')
+    setCurrentPassword('')
+    setEmailCode('')
+    setDeleteDialogOpen(false)
+    setDeletePassword('')
+    setDeleteConfirmation('')
+    setAppUpdateError('')
+  }, [section])
+
   const move = (from: number, to: number) => {
     if (from === to || to < 0 || to >= s.categories.length) return
     const next = [...s.categories]
@@ -63,144 +89,197 @@ export function SettingsScreen({ onImport, onOpenGmailCandidates }: { onImport: 
 
   return (
     <Screen>
-      <LargeTitle>設定</LargeTitle>
-
-      <SectionHeader>表示テーマ</SectionHeader>
-      <Card><CardContent>
-        <ToggleButtonGroup
-          exclusive
-          fullWidth
-          value={appTheme.mode}
-          onChange={(_, value: AppThemeMode | null) => {
-            if (value) appTheme.setMode(value)
-          }}
-          aria-label="表示テーマ"
-        >
-          <ToggleButton value="system" aria-label="端末に合わせる">
-            <Stack alignItems="center" spacing={0.5}>
-              <SettingsBrightnessRoundedIcon />
-              <Typography variant="caption">自動</Typography>
-            </Stack>
-          </ToggleButton>
-          <ToggleButton value="light" aria-label="ライト">
-            <Stack alignItems="center" spacing={0.5}>
-              <LightModeRoundedIcon />
-              <Typography variant="caption">ライト</Typography>
-            </Stack>
-          </ToggleButton>
-          <ToggleButton value="dark" aria-label="ダーク">
-            <Stack alignItems="center" spacing={0.5}>
-              <DarkModeRoundedIcon />
-              <Typography variant="caption">ダーク</Typography>
-            </Stack>
-          </ToggleButton>
-        </ToggleButtonGroup>
-        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5 }}>
-          現在は{appTheme.resolvedMode === 'dark' ? 'ダーク' : 'ライト'}表示です。上部のステータスバーにも反映されます。
-        </Typography>
-      </CardContent></Card>
-
-      <SectionHeader>アカウント・同期</SectionHeader>
-      <Card><CardContent>
-        {s.loggedIn && s.account ? <Stack spacing={2}>
-          <Stack direction="row" spacing={2} alignItems="center">
-            <Avatar src={s.account.avatarDataUrl || undefined} alt={`${s.account.nickname}のプロフィール画像`} sx={{ width: 72, height: 72, bgcolor: 'action.selected', color: 'primary.main' }}><PersonRoundedIcon sx={{ fontSize: 38 }} /></Avatar>
+      {section === 'index' ? <>
+        <LargeTitle>設定</LargeTitle>
+        <Card sx={{ mb: 2 }}><CardContent>
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <Avatar src={s.account?.avatarDataUrl || undefined} alt={s.account ? `${s.account.nickname}のプロフィール画像` : undefined} sx={{ width: 48, height: 48, bgcolor: 'action.selected', color: 'primary.main' }}><PersonRoundedIcon /></Avatar>
             <Box sx={{ minWidth: 0, flex: 1 }}>
-              <Typography variant="h6" noWrap>{s.account.nickname}</Typography>
-              <Typography variant="caption" color="text.secondary">UID: {s.account.uid}</Typography>
-              <Stack direction="row" spacing={0.5} sx={{ mt: 0.75, flexWrap: 'wrap' }}>
-                <MuiButton size="small" variant="outlined" startIcon={<PhotoCameraRoundedIcon />} disabled={avatarBusy} onClick={() => avatarRef.current?.click()}>{avatarBusy ? '変更中…' : '画像を変更'}</MuiButton>
-                {s.account.avatarDataUrl && <MuiButton size="small" color="error" disabled={avatarBusy} onClick={async () => { setAvatarBusy(true); try { await s.updateAvatar(null) } finally { setAvatarBusy(false) } }}>画像を削除</MuiButton>}
-              </Stack>
+              <Typography fontWeight={700} noWrap>{s.loggedIn && s.account ? s.account.nickname : 'ゲスト利用'}</Typography>
+              <Typography variant="body2" color="text.secondary">{s.loggedIn && s.account ? s.syncing ? '同期中…' : s.hasPendingChanges ? '未同期の変更があります' : '変更は自動で同期されます' : 'この端末のみでオフライン利用中'}</Typography>
             </Box>
           </Stack>
-          <input
-            ref={avatarRef}
-            type="file"
-            accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
-            hidden
-            onChange={async (event) => {
-              const file = event.target.files?.[0]
-              event.target.value = ''
-              if (!file) return
-              setAvatarBusy(true)
-              try { await s.updateAvatar(file) } finally { setAvatarBusy(false) }
-            }}
-          />
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
-            <MuiButton variant="outlined" startIcon={<EditRoundedIcon />} onClick={() => { setNicknameDraft(s.account?.nickname ?? ''); setNameDialogOpen(true) }}>名前を変更</MuiButton>
-            <MuiButton variant="outlined" startIcon={<EmailRoundedIcon />} onClick={() => { setEmailDraft(s.account?.email ?? ''); setCurrentPassword(''); setEmailCode(''); setEmailStep('request'); setEmailDialogOpen(true) }}>メールを変更</MuiButton>
-          </Stack>
-          <EmailVerification
-            key={`${s.account.uid}:${s.account.email}:${s.account.token}`}
-            email={s.account.email}
-            emailVerified={s.account.emailVerified}
-            refreshProfile={s.refreshAccountProfile}
-            requestVerification={s.requestCurrentEmailVerification}
-            confirmVerification={s.confirmCurrentEmailVerification}
-          />
-          <Box>{s.account.email && <Typography variant="body2" color="text.secondary">{s.account.email}</Typography>}{s.account.phone && <Typography variant="body2" color="text.secondary">電話: {s.account.phone}</Typography>}<Typography variant="body2" color="text.secondary">最終同期: {formatDateTime(s.lastSync)}</Typography>{s.hasPendingChanges && <Chip size="small" color={s.syncError ? 'error' : 'warning'} label={s.syncError ? '未同期の変更があります（接続を確認してください）' : '未同期の変更があります'} sx={{ mt: 1 }} />}<Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>記録の変更はオンライン時に自動で同期されます。</Typography></Box>
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}><Button variant="text" onClick={() => void s.logout()} sx={{ color: 'error.main' }}>ログアウト</Button><Button variant="text" onClick={() => void s.logoutAll()} sx={{ color: 'error.main' }}>すべての端末からログアウト</Button></Stack>
-          <SocialLogin token={s.account.token} />
-        </Stack> : <Stack spacing={2}><Typography variant="body2" color="text.secondary">この端末のみでオフライン利用中です。</Typography><Button onClick={s.backToAuth}>ログイン / 新規登録</Button><Typography variant="caption" color="text.secondary">登録すると、今のデータもサーバーに同期され、他の端末からも使えます。</Typography></Stack>}
-      </CardContent></Card>
+          {s.loggedIn && s.account && <Box sx={{ mt: 1.5 }}>
+            <Typography variant="caption" color="text.secondary">最終同期: {formatDateTime(s.lastSync)}</Typography>
+            {s.hasPendingChanges && <Chip size="small" color={s.syncError ? 'error' : 'warning'} label={s.syncError ? '未同期の変更があります（接続を確認してください）' : '未同期の変更があります'} sx={{ display: 'flex', width: 'fit-content', mt: 1 }} />}
+          </Box>}
+        </CardContent></Card>
+        <Card sx={{ overflow: 'hidden' }}>
+          <NavigationRow title="アカウント" description="プロフィール、ログイン、同期" onClick={() => openSection('account')} />
+          <Divider />
+          <NavigationRow title="表示テーマ" description="自動・ライト・ダーク" onClick={() => openSection('appearance')} />
+          <Divider />
+          <NavigationRow title="品目" description={`${s.categories.length}件・並び替えや編集`} onClick={() => openSection('categories')} />
+          <Divider />
+          <NavigationRow title="連携・通知" description="Gmail・AI・この端末への通知" onClick={() => openSection('integrations')} />
+          <Divider />
+          <NavigationRow title="データ管理" description="端末保存・更新・バックアップ" onClick={() => openSection('data')} />
+        </Card>
+      </> : <>
+        <SectionPageHeader title={{ account: 'アカウント', appearance: '表示テーマ', categories: '品目', integrations: '連携・通知', data: 'データ管理', danger: 'アカウントの削除' }[section]} parentLabel={section === 'danger' ? 'アカウント' : '設定'} onBack={goBack} />
 
-      <SectionHeader>品目（ドラッグで並び替え）</SectionHeader>
-      <Card>{s.categories.map((category, index) => <Box key={category.id} draggable onDragStart={() => setDragIndex(index)} onDragOver={(event) => event.preventDefault()} onDrop={() => { if (dragIndex !== null) move(dragIndex, index); setDragIndex(null) }} sx={{ opacity: dragIndex === index ? 0.5 : 1 }}>
-        {index > 0 && <Divider />}
-        <Stack spacing={0.5} sx={{ px: 3, py: 2 }}>
-          <Stack direction="row" alignItems="center" spacing={1}><DragIndicatorRoundedIcon color="disabled" sx={{ cursor: 'grab' }} /><Typography fontWeight={600} sx={{ minWidth: 0 }}>{category.name}</Typography></Stack>
-          <Stack direction="row" justifyContent="flex-end">
-            <IconButton size="small" color="primary" disabled={index === 0} onClick={() => move(index, index - 1)} aria-label="上へ"><ArrowUpwardRoundedIcon fontSize="small" /></IconButton>
-            <IconButton size="small" color="primary" disabled={index === s.categories.length - 1} onClick={() => move(index, index + 1)} aria-label="下へ"><ArrowDownwardRoundedIcon fontSize="small" /></IconButton>
-            <IconButton size="small" color="primary" onClick={() => { setRenameTarget(category); setRenameText(category.name) }} aria-label="編集"><EditRoundedIcon fontSize="small" /></IconButton>
-            <IconButton size="small" onClick={() => s.deleteCategory(category)} aria-label="削除"><DeleteOutlineRoundedIcon fontSize="small" /></IconButton>
+        {section === 'account' && <>
+          <SectionHeader>プロフィール・同期</SectionHeader>
+          <Card><CardContent>
+            {s.loggedIn && s.account ? <Stack spacing={2}>
+              <Stack direction="row" spacing={2} alignItems="center">
+                <Avatar src={s.account.avatarDataUrl || undefined} alt={`${s.account.nickname}のプロフィール画像`} sx={{ width: 72, height: 72, bgcolor: 'action.selected', color: 'primary.main' }}><PersonRoundedIcon sx={{ fontSize: 38 }} /></Avatar>
+                <Box sx={{ minWidth: 0, flex: 1 }}>
+                  <Typography variant="h6" noWrap>{s.account.nickname}</Typography>
+                  <Typography variant="caption" color="text.secondary">UID: {s.account.uid}</Typography>
+                  <Stack direction="row" spacing={0.5} sx={{ mt: 0.75, flexWrap: 'wrap' }}>
+                    <MuiButton size="small" variant="outlined" startIcon={<PhotoCameraRoundedIcon />} disabled={avatarBusy} onClick={() => avatarRef.current?.click()}>{avatarBusy ? '変更中…' : '画像を変更'}</MuiButton>
+                    {s.account.avatarDataUrl && <MuiButton size="small" color="error" disabled={avatarBusy} onClick={async () => { setAvatarBusy(true); try { await s.updateAvatar(null) } finally { setAvatarBusy(false) } }}>画像を削除</MuiButton>}
+                  </Stack>
+                </Box>
+              </Stack>
+              <input ref={avatarRef} type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" hidden onChange={async (event) => {
+                const file = event.target.files?.[0]
+                event.target.value = ''
+                if (!file) return
+                setAvatarBusy(true)
+                try { await s.updateAvatar(file) } finally { setAvatarBusy(false) }
+              }} />
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+                <MuiButton variant="outlined" startIcon={<EditRoundedIcon />} onClick={() => { setNicknameDraft(s.account?.nickname ?? ''); setNameDialogOpen(true) }}>名前を変更</MuiButton>
+                <MuiButton variant="outlined" startIcon={<EmailRoundedIcon />} onClick={() => { setEmailDraft(s.account?.email ?? ''); setCurrentPassword(''); setEmailCode(''); setEmailStep('request'); setEmailDialogOpen(true) }}>メールを変更</MuiButton>
+              </Stack>
+              <EmailVerification
+                key={`${s.account.uid}:${s.account.email}:${s.account.token}`}
+                email={s.account.email}
+                emailVerified={s.account.emailVerified}
+                refreshProfile={s.refreshAccountProfile}
+                requestVerification={s.requestCurrentEmailVerification}
+                confirmVerification={s.confirmCurrentEmailVerification}
+              />
+              <Box>{s.account.email && <Typography variant="body2" color="text.secondary">{s.account.email}</Typography>}{s.account.phone && <Typography variant="body2" color="text.secondary">電話: {s.account.phone}</Typography>}<Typography variant="body2" color="text.secondary">最終同期: {formatDateTime(s.lastSync)}</Typography>{s.hasPendingChanges && <Chip size="small" color={s.syncError ? 'error' : 'warning'} label={s.syncError ? '未同期の変更があります（接続を確認してください）' : '未同期の変更があります'} sx={{ mt: 1 }} />}<Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>記録の変更はオンライン時に自動で同期されます。</Typography></Box>
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}><Button variant="text" onClick={() => void s.logout()} sx={{ color: 'error.main' }}>ログアウト</Button><Button variant="text" onClick={() => void s.logoutAll()} sx={{ color: 'error.main' }}>すべての端末からログアウト</Button></Stack>
+              <SocialLogin token={s.account.token} />
+            </Stack> : <Stack spacing={2}><Typography variant="body2" color="text.secondary">この端末のみでオフライン利用中です。</Typography><Button onClick={s.backToAuth}>ログイン / 新規登録</Button><Typography variant="caption" color="text.secondary">登録すると、今のデータもサーバーに同期され、他の端末からも使えます。</Typography></Stack>}
+          </CardContent></Card>
+          {s.loggedIn && <Card sx={{ mt: 1.5, overflow: 'hidden' }}><NavigationRow title="アカウントと全データを削除" description="取り消せない操作" badge="注意" onClick={() => openSection('danger')} /></Card>}
+        </>}
+
+        {section === 'appearance' && <>
+          <SectionHeader>表示テーマ</SectionHeader>
+          <Card><CardContent>
+            <ToggleButtonGroup exclusive fullWidth value={appTheme.mode} onChange={(_, value: AppThemeMode | null) => { if (value) appTheme.setMode(value) }} aria-label="表示テーマ">
+              <ToggleButton value="system" aria-label="端末に合わせる"><Stack alignItems="center" spacing={0.5}><SettingsBrightnessRoundedIcon /><Typography variant="caption">自動</Typography></Stack></ToggleButton>
+              <ToggleButton value="light" aria-label="ライト"><Stack alignItems="center" spacing={0.5}><LightModeRoundedIcon /><Typography variant="caption">ライト</Typography></Stack></ToggleButton>
+              <ToggleButton value="dark" aria-label="ダーク"><Stack alignItems="center" spacing={0.5}><DarkModeRoundedIcon /><Typography variant="caption">ダーク</Typography></Stack></ToggleButton>
+            </ToggleButtonGroup>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5 }}>現在は{appTheme.resolvedMode === 'dark' ? 'ダーク' : 'ライト'}表示です。上部のステータスバーにも反映されます。</Typography>
+          </CardContent></Card>
+        </>}
+
+        {section === 'categories' && <>
+          <SectionHeader>品目（ドラッグで並び替え）</SectionHeader>
+          <Card>{s.categories.map((category, index) => <Box key={category.id} draggable onDragStart={() => setDragIndex(index)} onDragOver={(event) => event.preventDefault()} onDrop={() => { if (dragIndex !== null) move(dragIndex, index); setDragIndex(null) }} sx={{ opacity: dragIndex === index ? 0.5 : 1 }}>
+            {index > 0 && <Divider />}
+            <Stack spacing={0.5} sx={{ px: 3, py: 2 }}>
+              <Stack direction="row" alignItems="center" spacing={1}><DragIndicatorRoundedIcon color="disabled" sx={{ cursor: 'grab' }} /><Typography fontWeight={600} sx={{ minWidth: 0 }}>{category.name}</Typography></Stack>
+              <Stack direction="row" justifyContent="flex-end">
+                <IconButton size="small" color="primary" disabled={index === 0} onClick={() => move(index, index - 1)} aria-label="上へ"><ArrowUpwardRoundedIcon fontSize="small" /></IconButton>
+                <IconButton size="small" color="primary" disabled={index === s.categories.length - 1} onClick={() => move(index, index + 1)} aria-label="下へ"><ArrowDownwardRoundedIcon fontSize="small" /></IconButton>
+                <IconButton size="small" color="primary" onClick={() => { setRenameTarget(category); setRenameText(category.name) }} aria-label="編集"><EditRoundedIcon fontSize="small" /></IconButton>
+                <IconButton size="small" onClick={() => s.deleteCategory(category)} aria-label="削除"><DeleteOutlineRoundedIcon fontSize="small" /></IconButton>
+              </Stack>
+            </Stack>
+          </Box>)}</Card>
+          <Card sx={{ mt: 1.5 }}><CardContent><Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems={{ sm: 'center' }}><Field label="品目を追加" value={newCategory} onChange={(event) => setNewCategory(event.target.value)} /><Button onClick={async () => { await s.addCategory(newCategory); setNewCategory('') }} sx={{ width: { sm: 'auto' }, flexShrink: 0 }}>追加</Button></Stack></CardContent></Card>
+        </>}
+
+        {section === 'integrations' && <>
+          <SectionHeader>取り込み</SectionHeader>
+          <FinancialImport key={s.account?.uid ?? 'offline'} onImport={onImport} />
+          <GmailImport key={`gmail:${s.account?.uid ?? 'offline'}`} mode="settings" onImport={onImport} onOpenCandidates={onOpenGmailCandidates} />
+        </>}
+
+        {section === 'data' && <>
+          <SectionHeader>この端末の保存状態</SectionHeader>
+          <Card><CardContent>
+            <Typography variant="body2" color="text.secondary">記録はこの端末の中にも保存されるので、サーバーが止まっていても使えます。</Typography>
+            {storage && <Stack spacing={1} sx={{ mt: 2 }}><Stack direction="row" justifyContent="space-between" spacing={2}><Typography variant="body2" color="text.secondary">自動削除</Typography><Typography variant="body2" textAlign="right">{storage.persisted ? 'されません（永続）' : '空き容量が減るとあり得ます'}</Typography></Stack>{storage.usageMb != null && <Stack direction="row" justifyContent="space-between"><Typography variant="body2" color="text.secondary">使用容量</Typography><Typography variant="body2">{storage.usageMb} MB</Typography></Stack>}</Stack>}
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 2 }}>ホーム画面に追加しておくと、より確実に残り、アプリのように起動できます。</Typography>
+            <MuiButton variant="outlined" disabled={appUpdateBusy} sx={{ mt: 2 }} onClick={async () => {
+              setAppUpdateBusy(true)
+              setAppUpdateError('')
+              try { await refreshAppShell() } catch (error) {
+                setAppUpdateError(error instanceof Error ? error.message : '更新できませんでした')
+                setAppUpdateBusy(false)
+              }
+            }}>{appUpdateBusy ? '更新中…' : 'アプリを最新版に更新'}</MuiButton>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>画面が古い・表示がおかしいときに、アプリ本体だけを再取得します。ログイン情報と家計簿データは削除しません。</Typography>
+            {appUpdateError && <Typography variant="caption" color="error.main" sx={{ display: 'block', mt: 1 }}>{appUpdateError}</Typography>}
+          </CardContent></Card>
+          <SectionHeader>データ（収入・支出のバックアップ）</SectionHeader>
+          <Card><MuiButton fullWidth sx={{ justifyContent: 'flex-start', px: 3, py: 2 }} onClick={s.exportCsv}>CSVファイルにエクスポート</MuiButton><Divider /><MuiButton fullWidth sx={{ justifyContent: 'flex-start', px: 3, py: 2 }} onClick={s.exportJson}>JSONバックアップをエクスポート</MuiButton><Divider /><MuiButton fullWidth sx={{ justifyContent: 'flex-start', px: 3, py: 2 }} onClick={() => { replaceRef.current = false; fileRef.current?.click() }}>JSONをインポート（追加）</MuiButton><Divider /><MuiButton fullWidth sx={{ justifyContent: 'flex-start', px: 3, py: 2 }} onClick={() => { replaceRef.current = true; fileRef.current?.click() }}>JSONをインポート（全置換）</MuiButton></Card>
+          <input ref={fileRef} type="file" accept="application/json" hidden onChange={async (event) => { const file = event.target.files?.[0]; if (file) await s.importJson(file, replaceRef.current); event.target.value = '' }} />
+        </>}
+
+        {section === 'danger' && s.loggedIn && <>
+          <SectionHeader>アカウントの削除</SectionHeader>
+          <Card><CardContent><Typography variant="body2" color="text.secondary">アカウント、明細、決済方法、割り勘、予算など、サーバーとこの端末にある自分の全データを削除します。この操作は元に戻せません。</Typography><MuiButton color="error" sx={{ mt: 2 }} onClick={() => { setDeletePassword(''); setDeleteConfirmation(''); setDeleteDialogOpen(true) }}>アカウントと全データを削除</MuiButton></CardContent></Card>
+        </>}
+      </>}
+
+      {section === 'categories' && renameTarget && <Modal title="品目の名前を変更" onClose={() => setRenameTarget(null)}><Field label="名前" autoFocus value={renameText} onChange={(event) => setRenameText(event.target.value)} /><Stack direction="row" spacing={1.5} sx={{ mt: 3 }}><Button variant="outline" onClick={() => setRenameTarget(null)}>キャンセル</Button><Button onClick={async () => { await s.renameCategory(renameTarget, renameText); setRenameTarget(null) }}>保存</Button></Stack></Modal>}
+      {section === 'account' && nameDialogOpen && <Modal title="プロフィール名を変更" onClose={() => setNameDialogOpen(false)}>
+        <Stack spacing={2}>
+          <Field label="ニックネーム" autoFocus value={nicknameDraft} onChange={(event) => setNicknameDraft(event.target.value)} />
+          <Typography variant="caption" color="text.secondary">割り勘で相手が検索するときにも使われる名前です。</Typography>
+          <Stack direction="row" spacing={1.5}>
+            <Button variant="outline" onClick={() => setNameDialogOpen(false)}>キャンセル</Button>
+            <Button disabled={profileBusy} onClick={async () => {
+              setProfileBusy(true)
+              try { if (await s.updateNickname(nicknameDraft)) setNameDialogOpen(false) }
+              finally { setProfileBusy(false) }
+            }}>変更</Button>
           </Stack>
         </Stack>
-      </Box>)}</Card>
-      <Card sx={{ mt: 1.5 }}><CardContent><Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems={{ sm: 'center' }}><Field label="品目を追加" value={newCategory} onChange={(event) => setNewCategory(event.target.value)} /><Button onClick={async () => { await s.addCategory(newCategory); setNewCategory('') }} sx={{ width: { sm: 'auto' }, flexShrink: 0 }}>追加</Button></Stack></CardContent></Card>
-
-      <SectionHeader>この端末の保存状態</SectionHeader>
-      <Card><CardContent>
-        <Typography variant="body2" color="text.secondary">記録はこの端末の中にも保存されるので、サーバーが止まっていても使えます。</Typography>
-        {storage && <Stack spacing={1} sx={{ mt: 2 }}><Stack direction="row" justifyContent="space-between" spacing={2}><Typography variant="body2" color="text.secondary">自動削除</Typography><Typography variant="body2" textAlign="right">{storage.persisted ? 'されません（永続）' : '空き容量が減るとあり得ます'}</Typography></Stack>{storage.usageMb != null && <Stack direction="row" justifyContent="space-between"><Typography variant="body2" color="text.secondary">使用容量</Typography><Typography variant="body2">{storage.usageMb} MB</Typography></Stack>}</Stack>}
-        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 2 }}>ホーム画面に追加しておくと、より確実に残り、アプリのように起動できます。</Typography>
-        <MuiButton
-          variant="outlined"
-          disabled={appUpdateBusy}
-          sx={{ mt: 2 }}
-          onClick={async () => {
-            setAppUpdateBusy(true)
-            setAppUpdateError('')
-            try {
-              await refreshAppShell()
-            } catch (error) {
-              setAppUpdateError(error instanceof Error ? error.message : '更新できませんでした')
-              setAppUpdateBusy(false)
-            }
-          }}
-        >
-          {appUpdateBusy ? '更新中…' : 'アプリを最新版に更新'}
-        </MuiButton>
-        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-          画面が古い・表示がおかしいときに、アプリ本体だけを再取得します。ログイン情報と家計簿データは削除しません。
-        </Typography>
-        {appUpdateError && <Typography variant="caption" color="error.main" sx={{ display: 'block', mt: 1 }}>{appUpdateError}</Typography>}
-      </CardContent></Card>
-
-      <FinancialImport key={s.account?.uid ?? 'offline'} onImport={onImport} />
-      <GmailImport key={`gmail:${s.account?.uid ?? 'offline'}`} mode="settings" onImport={onImport} onOpenCandidates={onOpenGmailCandidates} />
-
-      <SectionHeader>データ（収入・支出のバックアップ）</SectionHeader>
-      <Card><MuiButton fullWidth sx={{ justifyContent: 'flex-start', px: 3, py: 2 }} onClick={s.exportCsv}>CSVファイルにエクスポート</MuiButton><Divider /><MuiButton fullWidth sx={{ justifyContent: 'flex-start', px: 3, py: 2 }} onClick={s.exportJson}>JSONバックアップをエクスポート</MuiButton><Divider /><MuiButton fullWidth sx={{ justifyContent: 'flex-start', px: 3, py: 2 }} onClick={() => { replaceRef.current = false; fileRef.current?.click() }}>JSONをインポート（追加）</MuiButton><Divider /><MuiButton fullWidth sx={{ justifyContent: 'flex-start', px: 3, py: 2 }} onClick={() => { replaceRef.current = true; fileRef.current?.click() }}>JSONをインポート（全置換）</MuiButton></Card>
-      <input ref={fileRef} type="file" accept="application/json" hidden onChange={async (event) => { const file = event.target.files?.[0]; if (file) await s.importJson(file, replaceRef.current); event.target.value = '' }} />
-
-      {s.loggedIn && <><SectionHeader>アカウントの削除</SectionHeader><Card><CardContent><Typography variant="body2" color="text.secondary">アカウント、明細、決済方法、割り勘、予算など、サーバーとこの端末にある自分の全データを削除します。この操作は元に戻せません。</Typography><MuiButton color="error" sx={{ mt: 2 }} onClick={() => { setDeletePassword(''); setDeleteConfirmation(''); setDeleteDialogOpen(true) }}>アカウントと全データを削除</MuiButton></CardContent></Card></>}
-
-      {renameTarget && <Modal title="品目の名前を変更" onClose={() => setRenameTarget(null)}><Field label="名前" autoFocus value={renameText} onChange={(event) => setRenameText(event.target.value)} /><Stack direction="row" spacing={1.5} sx={{ mt: 3 }}><Button variant="outline" onClick={() => setRenameTarget(null)}>キャンセル</Button><Button onClick={async () => { await s.renameCategory(renameTarget, renameText); setRenameTarget(null) }}>保存</Button></Stack></Modal>}
-      {nameDialogOpen && <Modal title="プロフィール名を変更" onClose={() => setNameDialogOpen(false)}><Stack spacing={2}><Field label="ニックネーム" autoFocus value={nicknameDraft} onChange={(event) => setNicknameDraft(event.target.value)} /><Typography variant="caption" color="text.secondary">割り勘で相手が検索するときにも使われる名前です。</Typography><Stack direction="row" spacing={1.5}><Button variant="outline" onClick={() => setNameDialogOpen(false)}>キャンセル</Button><Button disabled={profileBusy} onClick={async () => { setProfileBusy(true); try { if (await s.updateNickname(nicknameDraft)) setNameDialogOpen(false) } finally { setProfileBusy(false) } }}>変更</Button></Stack></Stack></Modal>}
-      {emailDialogOpen && <Modal title="メールアドレスを変更" onClose={() => setEmailDialogOpen(false)}><Stack spacing={2}>{emailStep === 'request' ? <><Typography variant="body2" color="text.secondary">本人確認のため現在のパスワードを確認し、新しいメールアドレスへ6桁コードを送ります。</Typography><Field label="新しいメールアドレス" type="email" value={emailDraft} onChange={(event) => setEmailDraft(event.target.value)} /><Field label="現在のパスワード" type="password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} /><Stack direction="row" spacing={1.5}><Button variant="outline" onClick={() => setEmailDialogOpen(false)}>キャンセル</Button><Button disabled={profileBusy} onClick={async () => { setProfileBusy(true); try { if (await s.requestEmailChange(emailDraft, currentPassword)) setEmailStep('confirm') } finally { setProfileBusy(false) } }}>コードを送る</Button></Stack></> : <><Typography variant="body2" color="text.secondary">{emailDraft} に送った6桁コードを入力してください。確認が完了するまで現在のメールアドレスは変わりません。</Typography><Field label="確認コード" inputMode="numeric" autoFocus value={emailCode} onChange={(event) => setEmailCode(event.target.value.replace(/[^0-9]/g, '').slice(0, 6))} /><Stack direction="row" spacing={1.5}><Button variant="outline" onClick={() => setEmailStep('request')}>戻る</Button><Button disabled={profileBusy || emailCode.length !== 6} onClick={async () => { setProfileBusy(true); try { if (await s.confirmEmailChange(emailCode)) setEmailDialogOpen(false) } finally { setProfileBusy(false) } }}>変更を確定</Button></Stack></>}</Stack></Modal>}
-      {deleteDialogOpen && <Modal title="アカウントを完全に削除" onClose={() => { if (!deleteBusy) setDeleteDialogOpen(false) }}><Stack spacing={2}><Typography color="error.main" fontWeight={700}>すべての端末からログアウトされ、保存済みデータは復元できません。</Typography><Typography variant="body2" color="text.secondary">実行するには現在のパスワードと「削除」を入力してください。</Typography><Field label="現在のパスワード" type="password" value={deletePassword} onChange={(event) => setDeletePassword(event.target.value)} /><Field label="確認のため「削除」と入力" value={deleteConfirmation} onChange={(event) => setDeleteConfirmation(event.target.value)} /><Stack direction="row" spacing={1.5}><Button variant="outline" disabled={deleteBusy} onClick={() => setDeleteDialogOpen(false)}>キャンセル</Button><Button color="#D32F2F" disabled={deleteBusy || !deletePassword || deleteConfirmation !== '削除'} onClick={async () => { setDeleteBusy(true); try { if (await s.deleteAccount(deletePassword)) setDeleteDialogOpen(false) } finally { setDeleteBusy(false) } }}>{deleteBusy ? '削除中…' : '完全に削除'}</Button></Stack></Stack></Modal>}
+      </Modal>}
+      {section === 'account' && emailDialogOpen && <Modal title="メールアドレスを変更" onClose={() => setEmailDialogOpen(false)}>
+        <Stack spacing={2}>{emailStep === 'request' ? <>
+          <Typography variant="body2" color="text.secondary">本人確認のため現在のパスワードを確認し、新しいメールアドレスへ6桁コードを送ります。</Typography>
+          <Field label="新しいメールアドレス" type="email" value={emailDraft} onChange={(event) => setEmailDraft(event.target.value)} />
+          <Field label="現在のパスワード" type="password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} />
+          <Stack direction="row" spacing={1.5}>
+            <Button variant="outline" onClick={() => setEmailDialogOpen(false)}>キャンセル</Button>
+            <Button disabled={profileBusy} onClick={async () => {
+              setProfileBusy(true)
+              try { if (await s.requestEmailChange(emailDraft, currentPassword)) setEmailStep('confirm') }
+              finally { setProfileBusy(false) }
+            }}>コードを送る</Button>
+          </Stack>
+        </> : <>
+          <Typography variant="body2" color="text.secondary">{emailDraft} に送った6桁コードを入力してください。確認が完了するまで現在のメールアドレスは変わりません。</Typography>
+          <Field label="確認コード" inputMode="numeric" autoFocus value={emailCode} onChange={(event) => setEmailCode(event.target.value.replace(/[^0-9]/g, '').slice(0, 6))} />
+          <Stack direction="row" spacing={1.5}>
+            <Button variant="outline" onClick={() => setEmailStep('request')}>戻る</Button>
+            <Button disabled={profileBusy || emailCode.length !== 6} onClick={async () => {
+              setProfileBusy(true)
+              try { if (await s.confirmEmailChange(emailCode)) setEmailDialogOpen(false) }
+              finally { setProfileBusy(false) }
+            }}>変更を確定</Button>
+          </Stack>
+        </>}</Stack>
+      </Modal>}
+      {section === 'danger' && deleteDialogOpen && <Modal title="アカウントを完全に削除" onClose={() => { if (!deleteBusy) setDeleteDialogOpen(false) }}>
+        <Stack spacing={2}>
+          <Typography color="error.main" fontWeight={700}>すべての端末からログアウトされ、保存済みデータは復元できません。</Typography>
+          <Typography variant="body2" color="text.secondary">実行するには現在のパスワードと「削除」を入力してください。</Typography>
+          <Field label="現在のパスワード" type="password" value={deletePassword} onChange={(event) => setDeletePassword(event.target.value)} />
+          <Field label="確認のため「削除」と入力" value={deleteConfirmation} onChange={(event) => setDeleteConfirmation(event.target.value)} />
+          <Stack direction="row" spacing={1.5}>
+            <Button variant="outline" disabled={deleteBusy} onClick={() => setDeleteDialogOpen(false)}>キャンセル</Button>
+            <Button color="#D32F2F" disabled={deleteBusy || !deletePassword || deleteConfirmation !== '削除'} onClick={async () => {
+              setDeleteBusy(true)
+              try { if (await s.deleteAccount(deletePassword)) setDeleteDialogOpen(false) }
+              finally { setDeleteBusy(false) }
+            }}>{deleteBusy ? '削除中…' : '完全に削除'}</Button>
+          </Stack>
+        </Stack>
+      </Modal>}
     </Screen>
   )
 }

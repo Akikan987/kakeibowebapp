@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
+import AccountBalanceWalletRoundedIcon from '@mui/icons-material/AccountBalanceWalletRounded'
+import CalendarMonthRoundedIcon from '@mui/icons-material/CalendarMonthRounded'
 import ChevronLeftRoundedIcon from '@mui/icons-material/ChevronLeftRounded'
 import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded'
+import CreditCardRoundedIcon from '@mui/icons-material/CreditCardRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
-import EditRoundedIcon from '@mui/icons-material/EditRounded'
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded'
+import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded'
 import {
   Accordion,
   AccordionDetails,
@@ -22,6 +25,7 @@ import {
 } from '@mui/material'
 import { CARD_PRESETS, findCardPresets, type CardPreset } from '../cardPresets'
 import { Button, Card, Divider, Field, LargeTitle, Modal, Screen, SectionHeader, fromLocalInput, toLocalInput, yen } from '../components/ui'
+import { NavigationRow, SectionPageHeader, useSectionNavigation } from '../components/SectionNavigation'
 import { DEFAULT_CASH_METHOD_ID, DEFAULT_OTHER_METHOD_ID } from '../db'
 import { cardWithdrawalsByDay } from '../payments'
 import { buildWithdrawalSchedule, withdrawalKey } from '../domain/paymentOverview'
@@ -38,6 +42,7 @@ const fullDate = (millis: number) => new Date(millis).toLocaleDateString('ja-JP'
 
 export function PaymentsScreen() {
   const s = useStore()
+  const { section, openSection, goBack } = useSectionNavigation<'overview' | 'calendar' | 'methods' | 'accounts' | 'charges'>('overview')
   const [methodDraft, setMethodDraft] = useState<PaymentMethodDraft | null>(null)
   const [chargeDraft, setChargeDraft] = useState<PrepaidChargeDraft | null>(null)
   const [pendingMethodDelete, setPendingMethodDelete] = useState<PaymentMethod | null>(null)
@@ -79,92 +84,99 @@ export function PaymentsScreen() {
     })
   }
   const editMethod = (method: PaymentMethod) => setMethodDraft({ editingId: method.id, name: method.name, type: method.type, closingDay: method.closingDay || 31, paymentDay: method.paymentDay || 27, cardLastFour: method.cardLastFour ?? '', cashAccountId: method.cashAccountId ?? '' })
+  const closeTransientState = () => {
+    setMethodDraft(null)
+    setChargeDraft(null)
+    setPendingMethodDelete(null)
+    setPendingChargeDelete(null)
+    setStatementDraft(null)
+    setPendingStatementDelete(null)
+    setDetailKey(null)
+  }
+  const navigateTo = (next: 'calendar' | 'methods' | 'accounts' | 'charges') => {
+    closeTransientState()
+    openSection(next)
+  }
+  const backToOverview = () => {
+    closeTransientState()
+    goBack()
+  }
+  useEffect(() => { closeTransientState() }, [section])
 
   return (
     <Screen>
-      <LargeTitle>決済</LargeTitle>
+      {section === 'overview' ? <>
+        <LargeTitle>決済</LargeTitle>
+        <PaymentOverview schedule={displayWithdrawals} initialLimit={3} onSelect={(row) => setDetailKey(withdrawalKey(row.methodId, row.withdrawalAtMillis))} />
 
-      <PaymentOverview schedule={displayWithdrawals} onSelect={(row) => setDetailKey(withdrawalKey(row.methodId, row.withdrawalAtMillis))} />
-
-      <SectionHeader>引き落としカレンダー</SectionHeader>
-      <WithdrawalCalendar
-        year={calendarMonth.year}
-        month={calendarMonth.month}
-        withdrawals={calendarWithdrawals}
-        selectedDay={selectedCalendarDay}
-        onSelectDay={setSelectedCalendarDay}
-        onMoveMonth={moveCalendarMonth}
-      />
-      {selectedCalendarDay !== null && <Card sx={{ mt: 1.5 }}>
-        <Box sx={{ p: 3 }}>
-          <Typography fontWeight={700}>{calendarMonth.month + 1}月{selectedCalendarDay}日の引き落とし</Typography>
-          {selectedWithdrawals.length === 0 ? (
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>この日の引き落とし予定はありません</Typography>
-          ) : selectedWithdrawals.map((item, index) => (
-            <Box key={item.methodId}>
+        {s.prepaidBalances.length > 0 && <>
+          <SectionHeader>プリペイド残高</SectionHeader>
+          <Card>
+            {s.prepaidBalances.map((balance, index) => <Box key={balance.methodId}>
               {index > 0 && <Divider />}
-              <MuiButton fullWidth color="inherit" onClick={() => setDetailKey(withdrawalKey(item.methodId, item.withdrawalAtMillis))} sx={{ justifyContent: 'space-between', gap: 2, py: 1 }}>
-                <Typography sx={{ minWidth: 0, textAlign: 'left' }}>{item.methodName}</Typography>
-                <Stack alignItems="flex-end" spacing={0.5} sx={{ flexShrink: 0 }}><Typography fontWeight={600}>{yen(item.amountYen)}</Typography><WithdrawalStatus status={displayWithdrawals.find((row) => row.methodId === item.methodId && row.withdrawalAtMillis === item.withdrawalAtMillis)?.status ?? 'estimated'} /></Stack>
-              </MuiButton>
-            </Box>
-          ))}
-          {selectedWithdrawals.length > 0 && <Stack direction="row" justifyContent="space-between" sx={{ pt: 0.75 }}><Typography fontWeight={700}>合計</Typography><Typography fontWeight={700} color="error.main">{yen(selectedWithdrawals.reduce((sum, item) => sum + item.amountYen, 0))}</Typography></Stack>}
-        </Box>
-      </Card>}
-
-      <HelpText>休日による実際の引き落とし日の前後は、カード会社の明細で確認してください。</HelpText>
-
-      <SectionHeader>プリペイド残高</SectionHeader>
-      <Card>
-        {s.prepaidBalances.length === 0 ? <EmptyText>プリペイドを登録すると、チャージと利用から現在残高を表示します。</EmptyText> : s.prepaidBalances.map((balance, index) => (
-          <Box key={balance.methodId}>
-            {index > 0 && <Divider />}
-            <Stack spacing={1} sx={{ p: 3 }}>
-              <Typography fontWeight={600}>{balance.name}</Typography>
-              <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}>
-                <Typography variant="h6" color="primary.main" sx={{ minWidth: 0 }}>{yen(balance.balance)}</Typography>
-                <MuiButton size="small" sx={{ flexShrink: 0 }} onClick={() => setChargeDraft(emptyCharge(balance.methodId))}>チャージ</MuiButton>
+              <Stack direction="row" alignItems="center" spacing={1.5} sx={{ px: 2, py: 1.5 }}>
+                <Box sx={{ minWidth: 0, flex: 1 }}>
+                  <Typography fontWeight={600} noWrap>{balance.name}</Typography>
+                  <Typography variant="caption" color="text.secondary">チャージ {yen(balance.charged)} ・ 利用 {yen(balance.spent)}</Typography>
+                </Box>
+                <Typography fontWeight={700} color="primary.main" sx={{ flexShrink: 0 }}>{yen(balance.balance)}</Typography>
+                <MuiButton size="small" sx={{ flexShrink: 0, minWidth: 0 }} onClick={() => setChargeDraft(emptyCharge(balance.methodId))}>チャージ</MuiButton>
               </Stack>
-              <Typography variant="caption" color="text.secondary">チャージ {yen(balance.charged)} ・ 利用 {yen(balance.spent)}</Typography>
-            </Stack>
-          </Box>
-        ))}
-      </Card>
-
-      {s.prepaidCharges.length > 0 && <>
-        <SectionHeader>チャージ履歴</SectionHeader>
-        <Card>{s.prepaidCharges.slice(0, 20).map((charge, index) => (
-          <Box key={charge.id}>
-            {index > 0 && <Divider />}
-            <Stack direction="row" alignItems="center" spacing={1} sx={{ p: 3 }}>
-              <Box sx={{ minWidth: 0, flex: 1 }}><Typography fontWeight={600}>{s.paymentMethodName(charge.prepaidMethodId)}</Typography><Typography fontWeight={600} color="success.main" sx={{ my: 0.5 }}>+{yen(charge.amountYen)}</Typography><Typography variant="caption" color="text.secondary">{fullDate(charge.chargedAtMillis)} ・ {charge.fundingMethodId ? s.paymentMethodName(charge.fundingMethodId) : '初期残高・残高調整'}{charge.note && ` ・ ${charge.note}`}</Typography></Box>
-              <IconButton aria-label="チャージ記録を取り消す" onClick={() => setPendingChargeDelete(charge)}><DeleteOutlineRoundedIcon /></IconButton>
-            </Stack>
-          </Box>
-        ))}</Card>
+            </Box>)}
+          </Card>
+        </>}
+        <Card sx={{ mt: 2 }}>
+          <NavigationRow title="引き落としカレンダー" description="月ごとの予定と日別の明細" icon={<CalendarMonthRoundedIcon />} onClick={() => navigateTo('calendar')} />
+          <NavigationRow title="カード・決済方法" description="カード、現金、プリペイドの登録" icon={<CreditCardRoundedIcon />} badge={s.paymentMethods.length} onClick={() => navigateTo('methods')} />
+          <NavigationRow title="口座・財布" description="残高、引き落とし口座、振替" icon={<AccountBalanceWalletRoundedIcon />} badge={s.cashAccounts.length} onClick={() => navigateTo('accounts')} />
+          <NavigationRow title="チャージ履歴" description="プリペイドへのチャージ記録" icon={<HistoryRoundedIcon />} badge={s.prepaidCharges.length} onClick={() => navigateTo('charges')} />
+        </Card>
+      </> : <>
+        <SectionPageHeader title={{ calendar: '引き落としカレンダー', methods: 'カード・決済方法', accounts: '口座・財布', charges: 'チャージ履歴' }[section]} parentLabel="決済" onBack={backToOverview} />
+        {section === 'calendar' && <>
+          <WithdrawalCalendar year={calendarMonth.year} month={calendarMonth.month} withdrawals={calendarWithdrawals} selectedDay={selectedCalendarDay} onSelectDay={setSelectedCalendarDay} onMoveMonth={moveCalendarMonth} />
+          {selectedCalendarDay !== null && <Card sx={{ mt: 1.5 }}>
+            <Box sx={{ p: 3 }}>
+              <Typography fontWeight={700}>{calendarMonth.month + 1}月{selectedCalendarDay}日の引き落とし</Typography>
+              {selectedWithdrawals.length === 0 ? (
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>この日の引き落とし予定はありません</Typography>
+              ) : selectedWithdrawals.map((item, index) => <Box key={item.methodId}>
+                {index > 0 && <Divider />}
+                <MuiButton fullWidth color="inherit" onClick={() => setDetailKey(withdrawalKey(item.methodId, item.withdrawalAtMillis))} sx={{ justifyContent: 'space-between', gap: 2, py: 1 }}>
+                  <Typography sx={{ minWidth: 0, textAlign: 'left' }}>{item.methodName}</Typography>
+                  <Stack alignItems="flex-end" spacing={0.5} sx={{ flexShrink: 0 }}><Typography fontWeight={600}>{yen(item.amountYen)}</Typography><WithdrawalStatus status={displayWithdrawals.find((row) => row.methodId === item.methodId && row.withdrawalAtMillis === item.withdrawalAtMillis)?.status ?? 'estimated'} /></Stack>
+                </MuiButton>
+              </Box>)}
+              {selectedWithdrawals.length > 0 && <Stack direction="row" justifyContent="space-between" sx={{ pt: 0.75 }}><Typography fontWeight={700}>合計</Typography><Typography fontWeight={700} color="error.main">{yen(selectedWithdrawals.reduce((sum, item) => sum + item.amountYen, 0))}</Typography></Stack>}
+            </Box>
+          </Card>}
+          <HelpText>休日による実際の引き落とし日の前後は、カード会社の明細で確認してください。</HelpText>
+        </>}
+        {section === 'methods' && <>
+          <Card>{s.paymentMethods.map((method, index) => {
+            const balance = s.prepaidBalances.find((item) => item.methodId === method.id)
+            const detail = method.type === 'credit'
+              ? `${dayLabel(method.closingDay)}締め ・ ${dayLabel(method.paymentDay)}引き落とし${method.cardLastFour ? ` ・ 末尾 ${method.cardLastFour}` : ''}`
+              : method.type === 'prepaid' ? `残高 ${yen(balance?.balance ?? 0)}` : ''
+            return <Box key={method.id}>
+              {index > 0 && <Divider />}
+              <NavigationRow title={method.name} description={detail ? `${PAYMENT_TYPE_LABELS[method.type]} ・ ${detail}` : PAYMENT_TYPE_LABELS[method.type]} onClick={() => editMethod(method)} />
+            </Box>
+          })}</Card>
+          <Button variant="outline" startIcon={<AddRoundedIcon />} sx={{ mt: 2 }} onClick={() => setMethodDraft(emptyMethod())}>決済方法を追加</Button>
+          <HelpText>クレジットのカード名を入力すると、公式確認済みの候補から締め日・引き落とし日を補助入力できます。</HelpText>
+        </>}
+        {section === 'accounts' && <AccountsPanel />}
+        {section === 'charges' && (s.prepaidCharges.length === 0 ? <Card><EmptyText>チャージ履歴はありません。</EmptyText></Card> : <Card>{s.prepaidCharges.map((charge, index) => <Box key={charge.id}>
+          {index > 0 && <Divider />}
+          <Stack direction="row" alignItems="center" spacing={1} sx={{ p: 2 }}>
+            <Box sx={{ minWidth: 0, flex: 1 }}><Typography fontWeight={600}>{s.paymentMethodName(charge.prepaidMethodId)}</Typography><Typography fontWeight={600} color="success.main" sx={{ my: 0.5 }}>+{yen(charge.amountYen)}</Typography><Typography variant="caption" color="text.secondary">{fullDate(charge.chargedAtMillis)} ・ {charge.fundingMethodId ? s.paymentMethodName(charge.fundingMethodId) : '初期残高・残高調整'}{charge.note && ` ・ ${charge.note}`}</Typography></Box>
+            <IconButton aria-label="チャージ記録を取り消す" onClick={() => setPendingChargeDelete(charge)}><DeleteOutlineRoundedIcon /></IconButton>
+          </Stack>
+        </Box>)}</Card>)}
       </>}
 
-      <AccountsPanel />
-      <SectionHeader>決済方法</SectionHeader>
-      <Card>{s.paymentMethods.map((method, index) => (
-        <Box key={method.id}>
-          {index > 0 && <Divider />}
-          <Stack spacing={1} sx={{ p: 3 }}>
-            <Typography fontWeight={600}>{method.name}</Typography>
-            <Typography variant="caption" color="text.secondary">{PAYMENT_TYPE_LABELS[method.type]}{method.cardLastFour && <> ・ 末尾 {method.cardLastFour}</>}</Typography>
-            {method.type === 'credit' && <Typography variant="body2" color="text.secondary">{dayLabel(method.closingDay)}締め ・ {dayLabel(method.paymentDay)}引き落とし</Typography>}
-            <Stack direction="row" justifyContent="flex-end" spacing={0.5}>
-            <IconButton color="primary" aria-label={`${method.name}を編集`} onClick={() => editMethod(method)}><EditRoundedIcon /></IconButton>
-            {method.id !== DEFAULT_CASH_METHOD_ID && method.id !== DEFAULT_OTHER_METHOD_ID && <IconButton aria-label="決済方法を削除" onClick={() => setPendingMethodDelete(method)}><DeleteOutlineRoundedIcon /></IconButton>}
-            </Stack>
-          </Stack>
-        </Box>
-      ))}</Card>
-      <Button variant="outline" startIcon={<AddRoundedIcon />} sx={{ mt: 2 }} onClick={() => setMethodDraft(emptyMethod())}>決済方法を追加</Button>
-      <HelpText>クレジットのカード名を入力すると、公式確認済みの候補から締め日・引き落とし日を補助入力できます。</HelpText>
-
-      {methodDraft && <PaymentMethodModal draft={methodDraft} onChange={setMethodDraft} onClose={() => setMethodDraft(null)} onSave={async () => { if (await s.savePaymentMethod(methodDraft)) setMethodDraft(null) }} />}
+      {methodDraft && <PaymentMethodModal draft={methodDraft} canDelete={Boolean(methodDraft.editingId && methodDraft.editingId !== DEFAULT_CASH_METHOD_ID && methodDraft.editingId !== DEFAULT_OTHER_METHOD_ID)} onDelete={() => { const method = s.paymentMethods.find((item) => item.id === methodDraft.editingId); setMethodDraft(null); if (method) setPendingMethodDelete(method) }} onChange={setMethodDraft} onClose={() => setMethodDraft(null)} onSave={async () => { if (await s.savePaymentMethod(methodDraft)) setMethodDraft(null) }} />}
       {chargeDraft && <ChargeModal draft={chargeDraft} methods={s.paymentMethods} prepaidMethods={prepaidMethods} onChange={setChargeDraft} onClose={() => setChargeDraft(null)} onSave={async () => { if (await s.recordPrepaidCharge(chargeDraft)) setChargeDraft(null) }} />}
       {pendingMethodDelete && <ConfirmModal title="決済方法を削除しますか？" description={`「${pendingMethodDelete.name}」を削除します。使用済みの場合は削除できません。`} action="削除" onClose={() => setPendingMethodDelete(null)} onConfirm={async () => { await s.deletePaymentMethod(pendingMethodDelete); setPendingMethodDelete(null) }} />}
       {pendingChargeDelete && <ConfirmModal title="チャージ記録を取り消しますか？" description={`${yen(pendingChargeDelete.amountYen)}のチャージを取り消すと、残高とカード引落予定から除かれます。`} action="取り消す" onClose={() => setPendingChargeDelete(null)} onConfirm={async () => { await s.deletePrepaidCharge(pendingChargeDelete); setPendingChargeDelete(null) }} />}
@@ -241,7 +253,7 @@ function DaySelect({ label, value, onChange }: { label: string; value: number; o
   return <FormControl fullWidth><InputLabel>{label}</InputLabel><Select label={label} value={value} onChange={(event) => onChange(Number(event.target.value))}>{Array.from({ length: 30 }, (_, index) => index + 1).map((day) => <MenuItem key={day} value={day}>{day}日</MenuItem>)}<MenuItem value={31}>月末</MenuItem></Select></FormControl>
 }
 
-function PaymentMethodModal({ draft, onChange, onClose, onSave }: { draft: PaymentMethodDraft; onChange: (draft: PaymentMethodDraft) => void; onClose: () => void; onSave: () => Promise<void> }) {
+function PaymentMethodModal({ draft, canDelete, onDelete, onChange, onClose, onSave }: { draft: PaymentMethodDraft; canDelete: boolean; onDelete: () => void; onChange: (draft: PaymentMethodDraft) => void; onClose: () => void; onSave: () => Promise<void> }) {
   const patch = (value: Partial<PaymentMethodDraft>) => onChange({ ...draft, ...value })
   const trimmedCardName = draft.name.trim()
   const [presetListExpanded, setPresetListExpanded] = useState(trimmedCardName.length >= 2)
@@ -316,6 +328,7 @@ function PaymentMethodModal({ draft, onChange, onClose, onSave }: { draft: Payme
     )}
     {draft.type === 'credit' && <><Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}><DaySelect label="締め日" value={draft.closingDay} onChange={(closingDay) => patch({ closingDay })} /><DaySelect label="引き落とし日" value={draft.paymentDay} onChange={(paymentDay) => patch({ paymentDay })} /></Stack><Typography variant="caption" color="text.secondary">締め日までの利用分を、翌月の引き落とし日として計算します。</Typography>{selectedPreset && <Typography variant="caption" color="text.secondary">この候補は公式情報を{selectedPreset.verifiedAt}に確認。保存前に実際のカード明細も確認してください。 <Link href={selectedPreset.officialUrl} target="_blank" rel="noreferrer">公式情報</Link></Typography>}</>}
     <Stack direction="row" spacing={1.5}><Button variant="outline" onClick={onClose}>キャンセル</Button><Button onClick={() => void onSave()}>保存</Button></Stack>
+    {canDelete && <MuiButton color="error" onClick={onDelete}>この決済方法を削除</MuiButton>}
   </Stack></Modal>
 }
 

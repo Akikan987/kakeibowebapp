@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { BACK_EXIT_WINDOW_MS, createBackNavigation } from '../src/backNavigation.ts'
 
-function setup(screen = 'home', external = true) {
+function setup(screen = 'home', external = true, goBackWithinScreen?: () => boolean) {
   const entries: unknown[] = external ? [{ external: true }, { otherState: 42 }] : [{ otherState: 42 }]
   let index = entries.length - 1
   let time = 0
@@ -26,6 +26,7 @@ function setup(screen = 'home', external = true) {
     },
     isHome: () => screen === 'home',
     goHome() { screen = 'home' },
+    goBackWithinScreen,
     showExitHint(visible) { hint = visible },
   })
   const flush = () => {
@@ -71,6 +72,33 @@ test('どの他画面からも戻る1回で収支へ戻り、履歴を増やさ�
     app.back()
     assert.equal(app.exits, 1)
   }
+})
+
+test('詳細からは親の一覧へ戻り、その次に収支へ戻る。履歴と終了ガードは維持', () => {
+  let depth = 2
+  const app = setup('settings', true, () => { if (!depth) return false; depth--; return true })
+  app.controller.start()
+  app.back(); app.flush()
+  assert.equal(depth, 1)
+  assert.equal(app.screen, 'settings')
+  app.back(); app.flush()
+  assert.equal(depth, 0)
+  assert.equal(app.screen, 'settings')
+  app.back(); app.flush()
+  assert.equal(app.screen, 'home')
+  assert.equal(app.entries.length, 3)
+  assert.equal(app.hint, false)
+  app.back()
+  assert.equal(app.hint, true)
+  app.back()
+  assert.equal(app.exits, 1)
+})
+
+test('別の履歴を戻る際には内部画面の戻る処理も呼ばない', () => {
+  let calls = 0
+  const app = setup('settings', true, () => { calls++; return true })
+  app.controller.onPopState()
+  assert.equal(calls, 0)
 })
 
 test('収支での1回目は案内、2秒以内の2回目は外部の履歴へ戻れる', () => {

@@ -16,11 +16,12 @@ function markedState(state: unknown, value: 'base' | 'guard') {
 }
 
 /** One same-URL history pair, not one entry per tab. The second back is native. */
-export function createBackNavigation({ history, clock, isHome, goHome, showExitHint }: {
+export function createBackNavigation({ history, clock, isHome, goHome, goBackWithinScreen, showExitHint }: {
   history: BackHistory
   clock: Clock
   isHome: () => boolean
   goHome: () => void
+  goBackWithinScreen?: () => boolean
   showExitHint: (visible: boolean) => void
 }) {
   let timer: number | null = null
@@ -58,6 +59,11 @@ export function createBackNavigation({ history, clock, isHome, goHome, showExitH
       }
       // Never trap a different document's history or an external/hash entry.
       if (current !== 'base') return
+      if (goBackWithinScreen?.()) {
+        clearHint()
+        restoreGuard()
+        return
+      }
       if (!isHome()) {
         clearHint()
         goHome()

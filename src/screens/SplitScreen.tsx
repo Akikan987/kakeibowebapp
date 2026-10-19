@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import EditRoundedIcon from '@mui/icons-material/EditRounded'
 import PersonAddRoundedIcon from '@mui/icons-material/PersonAddRounded'
@@ -7,9 +7,11 @@ import { Button, Card, Divider, Field, LargeTitle, Modal, Screen, SectionHeader,
 import { useStore } from '../store'
 import type { Member, MemberBalance, Settlement } from '../types'
 import { SplitInvitations } from '../components/SplitInvitations'
+import { NavigationRow, SectionPageHeader, useSectionNavigation } from '../components/SectionNavigation'
 
 export function SplitScreen() {
   const s = useStore()
+  const { section, parentSection, openSection, goBack } = useSectionNavigation<'overview' | 'members' | 'sharing' | 'history'>('overview')
   const [newMember, setNewMember] = useState('')
   const [renameTarget, setRenameTarget] = useState<Member | null>(null)
   const [renameText, setRenameText] = useState('')
@@ -18,21 +20,27 @@ export function SplitScreen() {
   const [settleAmount, setSettleAmount] = useState('')
   const [pendingDelete, setPendingDelete] = useState<Settlement | null>(null)
 
-  const memberFor = (memberId: string) => s.members.find((member) => member.id === memberId)
+  useEffect(() => { if (s.account) void s.syncNow(false) }, [s.account?.uid])
+  useEffect(() => {
+    setRenameTarget(null); setRenameText(''); setPendingMemberDelete(null)
+    setSettleTarget(null); setSettleAmount(''); setPendingDelete(null)
+  }, [section])
+  const outstanding = s.balances.filter((balance) => balance.remaining !== 0)
+  const payable = s.debts.filter((debt) => debt.remaining !== 0)
+  const pendingInvitations = s.invitations.filter((row) => row.direction === 'incoming' && row.status === 'pending').length
 
   return (
     <Screen>
-      <LargeTitle>割り勘</LargeTitle>
-      <SplitInvitations />
-      {s.debts.length > 0 && <>
+      {section === 'overview' ? <LargeTitle>割り勘</LargeTitle> : <SectionPageHeader title={section === 'members' ? 'メンバー' : section === 'sharing' ? '共有の招待・承認' : '清算履歴'} parentLabel={parentSection === 'members' ? 'メンバー' : '割り勘'} onBack={goBack} />}
+      {section === 'overview' && <>
+      {payable.length > 0 && <>
         <SectionHeader>あなたが払う分</SectionHeader>
-        <Card>{s.debts.map((debt, index) => <Box key={debt.ownerUid}>{index > 0 && <Divider />}<Stack spacing={1} sx={{ p: 3 }}><Typography fontWeight={600}>{debt.ownerNickname}さんへ</Typography><Typography variant="h6" color={debt.remaining > 0 ? 'error.main' : 'text.secondary'}>{yen(debt.remaining)}</Typography><Typography variant="body2" color="text.secondary">割当 {yen(debt.charged)} ・ 清算済 {yen(debt.settled)}</Typography></Stack></Box>)}</Card>
+        <Card>{payable.map((debt, index) => <Box key={debt.ownerUid}>{index > 0 && <Divider />}<Stack spacing={1} sx={{ p: 3 }}><Typography fontWeight={600}>{debt.ownerNickname}さんへ</Typography><Typography variant="h6" color={debt.remaining > 0 ? 'error.main' : 'text.secondary'}>{yen(debt.remaining)}</Typography><Typography variant="body2" color="text.secondary">割当 {yen(debt.charged)} ・ 清算済 {yen(debt.settled)}</Typography></Stack></Box>)}</Card>
         <HelpText>相手が清算を記録すると、同期時にここの残額が減ります。</HelpText>
       </>}
 
-      <SectionHeader>割り勘メンバー</SectionHeader>
-      {s.balances.length > 0 ? <Card>{s.balances.map((balance, index) => {
-        const member = memberFor(balance.memberId)
+      {outstanding.length > 0 && <SectionHeader>あなたが受け取る分</SectionHeader>}
+      {outstanding.length > 0 ? <Card>{outstanding.map((balance, index) => {
         return <Box key={balance.memberId}>
           {index > 0 && <Divider />}
           <Stack spacing={1} sx={{ p: 3 }}>
@@ -44,17 +52,40 @@ export function SplitScreen() {
             <Typography variant="body2" color="text.secondary">割当 {yen(balance.charged)} ・ 清算済 {yen(balance.settled)}</Typography>
             <Stack direction="row" alignItems="center" justifyContent="flex-end" spacing={0.5}>
               <Button variant="text" onClick={() => { setSettleTarget(balance); setSettleAmount('') }} sx={{ width: 'auto' }}>清算</Button>
-              {member && <><IconButton aria-label={`${member.name}を編集`} onClick={() => { setRenameTarget(member); setRenameText(member.name) }}><EditRoundedIcon fontSize="small" /></IconButton><IconButton aria-label={`${member.name}を削除`} onClick={() => setPendingMemberDelete(member)}><DeleteOutlineRoundedIcon fontSize="small" /></IconButton></>}
             </Stack>
           </Stack>
         </Box>
-      })}</Card> : <Card><CardContent><Typography color="text.secondary">まだメンバーはいません。追加後に招待を送り、相手が承認すると割り勘情報を共有できます。</Typography></CardContent></Card>}
+      })}</Card> : payable.length === 0 && <Card><CardContent><Typography fontWeight={600}>未清算の割り勘はありません</Typography><Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>{s.members.length ? '清算済みの相手は「メンバー」から確認できます。' : 'メンバーを追加し、支出の登録画面から負担額を割り当てられます。'}</Typography></CardContent></Card>}
+      <SectionHeader>管理・履歴</SectionHeader>
+      <Card>
+        <NavigationRow title="メンバー" description="追加・名前の変更・相手ごとの残額" badge={`${s.members.length}人`} onClick={() => openSection('members')} /><Divider />
+        <NavigationRow title="共有の招待・承認" description={pendingInvitations ? `招待が${pendingInvitations}件届いています` : '招待を送る・共有状況を確認する'} badge={pendingInvitations || undefined} onClick={() => openSection('sharing')} /><Divider />
+        <NavigationRow title="清算履歴" description="受け取った記録を確認する" badge={s.settlements.length} onClick={() => openSection('history')} />
+      </Card>
+      </>}
 
-      <Card sx={{ mt: 1.5 }}><CardContent><Stack spacing={1.5}><Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems={{ sm: 'center' }}><Field label="メンバーの表示名" value={newMember} onChange={(event) => setNewMember(event.target.value)} /><Button startIcon={<PersonAddRoundedIcon />} onClick={async () => { if (await s.addMember(newMember)) setNewMember('') }} sx={{ width: { sm: 'auto' }, flexShrink: 0 }}>追加</Button></Stack><Typography variant="caption" color="text.secondary">追加しただけでは共有しません。共有する場合は上の「割り勘を共有する」から相手のアカウント名を指定して招待します。</Typography></Stack></CardContent></Card>
+      {section === 'sharing' && <SplitInvitations />}
+      {section === 'members' && <>
+      {s.members.length > 0 ? <Card>{s.members.map((member, index) => {
+        const balance = s.balances.find((row) => row.memberId === member.id)
+        return <Box key={member.id}>{index > 0 && <Divider />}<Stack spacing={1} sx={{ p: 3 }}>
+          <Stack direction="row" useFlexGap flexWrap="wrap" alignItems="center" gap={1}><Typography fontWeight={600}>{member.name}</Typography><Chip size="small" variant="outlined" label={member.linkedUid ? '共有中' : '自分だけ'} /></Stack>
+          <Typography variant="body2" color="text.secondary">残り {yen(balance?.remaining ?? 0)}</Typography>
+          <Stack direction="row" justifyContent="flex-end" spacing={0.5}>
+            {balance && <Button variant="text" sx={{ width: 'auto' }} onClick={() => { setSettleTarget(balance); setSettleAmount('') }}>清算</Button>}
+            <IconButton aria-label={`${member.name}を編集`} onClick={() => { setRenameTarget(member); setRenameText(member.name) }}><EditRoundedIcon fontSize="small" /></IconButton>
+            <IconButton aria-label={`${member.name}を削除`} onClick={() => setPendingMemberDelete(member)}><DeleteOutlineRoundedIcon fontSize="small" /></IconButton>
+          </Stack>
+        </Stack></Box>
+      })}</Card> : <Typography color="text.secondary">まだメンバーはいません。</Typography>}
+
+      <Card sx={{ mt: 1.5 }}><CardContent><Stack spacing={1.5}><Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems={{ sm: 'center' }}><Field label="メンバーの表示名" value={newMember} onChange={(event) => setNewMember(event.target.value)} /><Button startIcon={<PersonAddRoundedIcon />} onClick={async () => { if (await s.addMember(newMember)) setNewMember('') }} sx={{ width: { sm: 'auto' }, flexShrink: 0 }}>追加</Button></Stack><Typography variant="caption" color="text.secondary">追加しただけでは共有しません。「共有の招待・承認」から相手のアカウント名を指定して招待できます。</Typography></Stack></CardContent></Card>
       <HelpText>支出の登録画面で「他の人の負担」を入れると各人の割当に積み上がります。受け取ったら「清算」で記録すると残額が減ります。</HelpText>
+      <Button variant="text" onClick={() => openSection('sharing')}>共有の招待・承認へ</Button>
+      </>}
 
-      {s.settlements.length > 0 && <>
-        <SectionHeader>清算の履歴</SectionHeader>
+      {section === 'history' && <>
+        {!s.settlements.length && <Typography color="text.secondary">清算履歴はありません。</Typography>}
         <Card>{s.settlements.map((settlement, index) => <Box key={settlement.id}>{index > 0 && <Divider />}<Stack direction="row" alignItems="center" spacing={1} sx={{ p: 3 }}><Box sx={{ minWidth: 0, flex: 1 }}><Typography fontWeight={600}>{s.memberName(settlement.memberId)}</Typography><Typography variant="body2" color="text.secondary">{formatDate(settlement.dateMillis)}</Typography><Typography fontWeight={600} color="success.main">{yen(settlement.amountYen)}</Typography></Box><IconButton aria-label="取り消し" onClick={() => setPendingDelete(settlement)}><DeleteOutlineRoundedIcon fontSize="small" /></IconButton></Stack></Box>)}</Card>
       </>}
 

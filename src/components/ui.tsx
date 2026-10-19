@@ -1,4 +1,5 @@
-import { useState, type InputHTMLAttributes, type ReactNode } from 'react'
+import { useLayoutEffect, useRef, useState, type InputHTMLAttributes, type ReactNode } from 'react'
+import { registerModalBackHandler } from '../sectionNavigation'
 import CalculateOutlinedIcon from '@mui/icons-material/CalculateOutlined'
 import ChevronLeftRoundedIcon from '@mui/icons-material/ChevronLeftRounded'
 import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded'
@@ -178,6 +179,9 @@ export function Modal({
   children: ReactNode
   onClose: () => void
 }) {
+  const close = useRef(onClose)
+  close.current = onClose
+  useLayoutEffect(() => registerModalBackHandler(() => close.current()), [])
   return (
     <Dialog open onClose={onClose} fullWidth maxWidth="xs" scroll="paper">
       <DialogTitle sx={{ px: 3, pt: 3, pb: 2 }}>{title}</DialogTitle>

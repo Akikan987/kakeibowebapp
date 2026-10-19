@@ -14,9 +14,9 @@ function Total({ label, value }: { label: string; value: ReturnType<typeof payme
   return <Box><Typography variant="body2" color="text.secondary">{label}</Typography><Typography variant="h6">{yen(value.total)}</Typography><Typography variant="caption" color="text.secondary">確定 {yen(value.confirmed)} / 見込み {yen(value.estimated)}</Typography></Box>
 }
 
-export function PaymentOverview({ schedule, onSelect }: { schedule: ScheduledWithdrawal[]; onSelect: (row: ScheduledWithdrawal) => void }) {
+export function PaymentOverview({ schedule, onSelect, initialLimit = 12 }: { schedule: ScheduledWithdrawal[]; onSelect: (row: ScheduledWithdrawal) => void; initialLimit?: number }) {
   const [timestamp, setTimestamp] = useState(Date.now)
-  const [limit, setLimit] = useState(12)
+  const [limit, setLimit] = useState(initialLimit)
   const [pastLimit, setPastLimit] = useState(12)
   useEffect(() => {
     const refresh = () => setTimestamp(Date.now())

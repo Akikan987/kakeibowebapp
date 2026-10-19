@@ -31,6 +31,7 @@ import { emptyDraft, useStore, type ExpenseDraft } from './store'
 import { TYPE_EXPENSE, TYPE_INCOME, now } from './types'
 import { glassSurface } from './glass'
 import { BACK_EXIT_WINDOW_MS, createBackNavigation } from './backNavigation'
+import { requestSectionBack } from './sectionNavigation'
 import { nativeNotificationCommand } from './native/notifications'
 import { createGmailCompletion, GMAIL_COMPLETION_KEY, gmailCandidateAction, gmailCompletionPending, gmailOpenReason, type GmailOpenReason } from './imports/gmail'
 
@@ -76,6 +77,7 @@ export default function App() {
   const initialTab: Tab = shortcutDraft ? 'add' : shortcut === 'withdrawals' ? 'payments' : lastTab
   const [tab, setTab] = useState<Tab>(initialTab)
   const [settingsReturnTab, setSettingsReturnTab] = useState<Exclude<Tab, 'settings'>>(shortcutDraft ? lastTab : initialTab)
+  const [settingsPageRequest, setSettingsPageRequest] = useState<{ section: 'index' | 'integrations'; revision: number }>({ section: 'index', revision: 0 })
   const [addReturnTab, setAddReturnTab] = useState<MainTab>(lastTab)
   const [editDraft, setEditDraft] = useState<ExpenseDraft | null>(shortcutDraft)
   const [addDraftRevision, setAddDraftRevision] = useState(0)
@@ -105,7 +107,8 @@ export default function App() {
     setTab(readLastTab())
   }, [s.account?.uid])
 
-  const openSettings = () => {
+  const openSettings = (section: 'index' | 'integrations' = 'index') => {
+    setSettingsPageRequest((request) => ({ section, revision: request.revision + 1 }))
     if (tab !== 'settings') setSettingsReturnTab(tab)
     setTab('settings')
   }
@@ -194,6 +197,7 @@ export default function App() {
       history: window.history,
       clock: { setTimeout: (callback, delay) => window.setTimeout(callback, delay), clearTimeout: (id) => window.clearTimeout(id) },
       isHome: () => currentTab.current === 'home',
+      goBackWithinScreen: () => requestSectionBack(window),
       goHome: () => {
         currentTab.current = 'home'
         setEditDraft(null)
@@ -274,11 +278,15 @@ export default function App() {
                   ? '未同期'
                   : ''}
           </Typography>
-          <Tooltip title={tab === 'settings' ? '設定を閉じる' : '設定'}>
+          <Tooltip title={tab === 'settings' ? '戻る' : '設定'}>
             <IconButton
-              aria-label={tab === 'settings' ? '設定を閉じる' : '設定を開く'}
+              aria-label={tab === 'settings' ? '設定から戻る' : '設定を開く'}
               color="inherit"
-              onClick={() => tab === 'settings' ? setTab(settingsReturnTab) : openSettings()}
+              onClick={() => {
+                if (tab === 'settings') {
+                  if (!requestSectionBack(window)) setTab(settingsReturnTab)
+                } else openSettings()
+              }}
               sx={{ ml: 1, bgcolor: 'action.hover', border: '1px solid', borderColor: 'divider' }}
             >
               {tab === 'settings' ? <ArrowBackRoundedIcon /> : <SettingsRoundedIcon />}
@@ -337,7 +345,7 @@ export default function App() {
           )}
           {tab === 'payments' && <PaymentsScreen />}
           {tab === 'split' && <SplitScreen />}
-          {tab === 'settings' && <SettingsScreen onImport={(draft, eventId, gmailCandidateId) => {
+          {tab === 'settings' && <SettingsScreen requestedSection={settingsPageRequest.section} requestRevision={settingsPageRequest.revision} onImport={(draft, eventId, gmailCandidateId) => {
             setEditDraft(draft)
             setNativeImport(eventId ? { id: eventId, source: draft.source, owner: s.account?.uid ?? 'offline' } : null)
             setGmailImport(gmailCandidateId && s.account?.uid ? { id: gmailCandidateId, source: draft.source, owner: s.account.uid } : null)
@@ -412,7 +420,7 @@ export default function App() {
       <Snackbar
         open={!!gmailPrompt}
         message={gmailPrompt === 'connected' ? 'Gmailを接続しました。設定で自動確認を確認できます。' : gmailPrompt === 'error' ? 'Gmailの接続を完了できませんでした。設定で確認してください。' : 'Gmailの明細候補があります。追加画面で確認できます。'}
-        action={<MuiButton color="inherit" onClick={gmailPrompt === 'candidates' ? openGmailCandidates : () => { openSettings(); setGmailPrompt(null); window.setTimeout(() => document.getElementById('gmail-integration')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 200) }}>{gmailPrompt === 'candidates' ? tab === 'add' ? '候補まで移動' : '追加画面で確認' : '設定を確認'}</MuiButton>}
+        action={<MuiButton color="inherit" onClick={gmailPrompt === 'candidates' ? openGmailCandidates : () => { openSettings('integrations'); setGmailPrompt(null) }}>{gmailPrompt === 'candidates' ? tab === 'add' ? '候補まで移動' : '追加画面で確認' : '設定を確認'}</MuiButton>}
         autoHideDuration={12000}
         onClose={() => setGmailPrompt(null)}
         anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
