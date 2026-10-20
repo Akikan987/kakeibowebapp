@@ -14,6 +14,7 @@ export interface GmailStatus {
   pendingCount: number; lastCheckedAt: number | null; lastError: string; intervalSeconds: number; aiAvailable?: boolean
   discoveryEnabled?: boolean; discoveryAvailable?: boolean; discoveryConsentedAt?: number | null; discoverySince?: number | null
   aiDailyLimit?: number; aiUsedToday?: number; discoveryFailedCount?: number
+  trashEnabled?: boolean; trashCapable?: boolean; trashPendingCount?: number; trashFailedCount?: number
 }
 export type GmailAiStatusKind = 'not-connected' | 'server-setup' | 'consent-required' | 'discovery-enabled'
 export interface GmailAiStatusSummary {
@@ -110,8 +111,8 @@ export async function gmailRequest<T>(token: string, path: string, body?: unknow
   }
   return response.json() as Promise<T>
 }
-export const gmailCandidateAction = (token: string, id: string, action: 'dismiss' | 'imported') =>
-  gmailRequest(token, `gmail/candidates/${encodeURIComponent(id)}/action`, { action })
+export const gmailCandidateAction = (token: string, id: string, action: 'dismiss' | 'imported', expenseId?: string) =>
+  gmailRequest(token, `gmail/candidates/${encodeURIComponent(id)}/action`, { action, ...(action === 'imported' && expenseId ? { expenseId } : {}) })
 
 export async function reviewGmailCandidate(token: string, id: string, purchasedAtMillis: number, expectedSource: string): Promise<ReviewedGmailCandidate> {
   if (!Number.isSafeInteger(purchasedAtMillis) || purchasedAtMillis <= 0 || !Number.isFinite(new Date(purchasedAtMillis).getTime()) || !/^financial-message:v1:[a-f0-9]{64}$/u.test(expectedSource)) {

@@ -328,13 +328,13 @@ export default function App() {
                 setGmailImport(s.account?.uid ? { id: gmailCandidateId, source: draft.source, owner: s.account.uid } : null)
                 setAddDraftRevision((revision) => revision + 1)
               }}
-              onDone={(source) => {
+              onDone={(source, expenseId) => {
                 if (nativeImport && nativeImport.source === source && nativeImport.owner === (s.account?.uid ?? 'offline')) {
                   // Remove a pending notification only after an expense was actually saved.
                   void nativeNotificationCommand('ack', { ids: [nativeImport.id] }).catch(() => setNativeAckError(true))
                 }
                 if (gmailImport && gmailImport.source === source && gmailImport.owner === s.account?.uid && s.account?.token) {
-                  void gmailCandidateAction(s.account.token, gmailImport.id, 'imported').catch(() => setGmailAckError(true))
+                  void gmailCandidateAction(s.account.token, gmailImport.id, 'imported', expenseId).catch(() => setGmailAckError(true))
                 }
                 setNativeImport(null)
                 setGmailImport(null)

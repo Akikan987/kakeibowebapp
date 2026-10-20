@@ -23,6 +23,8 @@ export function GmailImport({ onImport, mode = 'settings', onOpenCandidates }: {
   const [matchNotice, setMatchNotice] = useState('')
   const [connectConsent, setConnectConsent] = useState(false)
   const [discoveryConsent, setDiscoveryConsent] = useState(false)
+  const [trashPermissionConsent, setTrashPermissionConsent] = useState(false)
+  const [trashEnableConsent, setTrashEnableConsent] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -35,7 +37,7 @@ export function GmailImport({ onImport, mode = 'settings', onOpenCandidates }: {
     generation.current += 1
     setStatus(null); setItems([]); setSelected(null); setDisconnectOutcome(null)
     setStatusError(false); setStatusLoading(!!token); setError(''); setNotice(''); setBusy(false)
-    setConnectConsent(false); setDiscoveryConsent(false); setPushReady(false); setPushSubscribed(false)
+    setConnectConsent(false); setDiscoveryConsent(false); setTrashPermissionConsent(false); setTrashEnableConsent(false); setPushReady(false); setPushSubscribed(false)
   }, [token, s.account?.uid])
 
   const refresh = async (current = generation.current) => {
@@ -215,12 +217,40 @@ export function GmailImport({ onImport, mode = 'settings', onOpenCandidates }: {
           {!!status.lastCheckedAt && <Typography variant="caption" color="text.secondary">最終確認：{new Date(status.lastCheckedAt < 1e12 ? status.lastCheckedAt * 1000 : status.lastCheckedAt).toLocaleString('ja-JP')}</Typography>}
           {status.lastError && <Alert severity="warning">{status.lastError}</Alert>}
           {status.lastError && !native && <Button variant="outline" disabled={busy} onClick={() => void run(async () => {
-            if (!window.confirm('Gmail全体を読み取れる権限をGoogle画面で確認して、接続し直します。AI明細検出は別途同意して有効化した後に、新着の明細候補だけを対象にします。続けますか？')) return
+            if (!window.confirm('Gmailを接続し直すと、保留中の候補とAI利用への同意がリセットされます。保存済みの家計簿データは残ります。Google画面では、現在接続しているものと同じGmailアカウントを選んでください。続けますか？')) return
             const result = await gmailRequest<{ url: string }>(token, 'gmail/start', { consent: true })
             window.location.assign(googleAuthorizationUrl(result.url))
           })}>Googleで接続し直す</Button>}
           <Button variant="outline" disabled={busy} onClick={() => void run(() => settings(!status.enabled, status.aiEnabled, status.discoveryEnabled === true, status.discoveryEnabled === true))}>{status.enabled ? '自動確認を停止する' : '自動確認を再開する'}</Button>
           <Button variant="outline" disabled={busy || !status.enabled || !status.discoveryEnabled} onClick={() => void run(async () => { const result = await gmailRequest<{ added: number }>(token, 'gmail/check', {}); await refresh(); setNotice(`${result.added}件の候補を追加しました`) })}>今すぐメールを確認</Button>
+          <Typography variant="subtitle2">保存後の元メール</Typography>
+          <Alert severity={status.trashEnabled ? 'warning' : 'info'}>
+            {status.trashEnabled
+              ? 'ON：家計簿への保存がサーバーで完了した後、該当する元メール1通だけをゴミ箱へ移動します。Gmailでは通常30日後に完全削除されます。'
+              : '初期設定はOFFです。ONにすると、有効化中に新しく見つかった候補だけが対象です。既存候補や過去のメールは対象になりません。'}
+          </Alert>
+          <Typography variant="caption" color="text.secondary">自動移動は約5分ごとの確認時に行います。同期・サーバーの停止中は待機し、移動に失敗しても家計簿の記録は取り消されません。新しく検出した利用候補を確認・保存した場合だけが対象です。無効化すると待機中の対象は取り消されますが、処理中のものは止められません。</Typography>
+          <Stack direction="row" spacing={1} flexWrap="wrap">
+            <Chip size="small" label={`削除待ち ${status.trashPendingCount ?? 0}件`} />
+            <Chip size="small" label={`削除失敗 ${status.trashFailedCount ?? 0}件`} />
+          </Stack>
+          {!!status.trashFailedCount && <Alert severity="warning">元メールの移動を確認できなかった記録があります。Gmailで元メールの状態を確認してください。家計簿の明細は残っています。</Alert>}
+          {!status.trashCapable ? <>
+            <Typography variant="caption" color="text.secondary">この機能にはGmailのメールをゴミ箱へ移動する追加権限が必要です。Googleの許可画面には読み取り・作成・送信・管理の権限が表示されますが、このアプリがメールを送信することはありません。権限を追加した後も、自動削除は別途有効化するまでOFFです。</Typography>
+            <FormControlLabel control={<Checkbox checked={trashPermissionConsent} disabled={busy || native} onChange={(_, checked) => setTrashPermissionConsent(checked)} />} label="追加権限の範囲と、Gmailで通常30日後に完全削除されることを理解して同意する" />
+            <Button variant="outline" disabled={busy || native || !status.configured || !trashPermissionConsent} onClick={() => void run(async () => {
+              if (!window.confirm('追加権限で再接続すると、現在の未確認候補とAI明細検出への同意がリセットされます。保存済みの家計簿は残ります。Google画面で同じ受信先アカウントを選び、戻った後にAI明細検出と元メールの自動移動をそれぞれ有効にしてください。続けますか？')) return
+              const result = await gmailRequest<{ url: string }>(token, 'gmail/start', { consent: true, trashConsent: true })
+              window.location.assign(googleAuthorizationUrl(result.url))
+            })}>同意してGmailの追加権限を許可する</Button>
+          </> : <>
+            <FormControlLabel control={<Checkbox checked={trashEnableConsent} disabled={busy || status.trashEnabled === true} onChange={(_, checked) => setTrashEnableConsent(checked)} />} label="保存後に対象メールをゴミ箱へ移動することに同意する" />
+            <Stack direction="row" spacing={1} flexWrap="wrap">
+              {status.trashEnabled
+                ? <Button variant="outline" disabled={busy} onClick={() => void run(async () => { await gmailRequest<{ ok: boolean }>(token, 'gmail/trash-settings', { enabled: false, consent: false }); await refresh(); setTrashEnableConsent(false) })}>自動削除を停止する</Button>
+                : <Button variant="outline" disabled={busy || !trashEnableConsent} onClick={() => void run(async () => { await gmailRequest<{ ok: boolean }>(token, 'gmail/trash-settings', { enabled: true, consent: true }); await refresh(); setTrashEnableConsent(false) })}>同意して自動削除を有効にする</Button>}
+            </Stack>
+          </>}
           <Typography variant="subtitle2">AIで明細メールを検出</Typography>
           {status.discoveryEnabled ? <>
             <Alert severity="success"><strong>AI明細検出ON：</strong>三井住友を含むカード・銀行・電子マネーの明細メールをまとめて候補にします。新着メールだけが対象です。</Alert>

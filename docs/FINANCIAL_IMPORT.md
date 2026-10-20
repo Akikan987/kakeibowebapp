@@ -75,3 +75,5 @@ Web Pushは対応ブラウザー／PWAで明示許可後に利用し、通知に
 - API・DB・OCRコンテナは再起動せず、サーバー実装・DBスキーマ・受信メール権限は変更しない。Android APKは個人確認用で、ストア公開・端末インストールは行っていない。
 
 公式参考: [三井住友カードの利用通知](https://www.smbc-card.com/mem/service/sec/selfcontrol/usage_notice.jsp)、[Android通知リスナー](https://developer.android.com/reference/android/service/notification/NotificationListenerService)、[AndroidX WebKit](https://developer.android.com/reference/androidx/webkit/WebViewCompat)。
+
+2026-10-20追記: Gmail設定に任意の「保存後の元メール」移動を追加。初期OFFで、追加権限`gmail.modify`のGoogle再接続とアプリ内の個別同意が必要。有効中に新しく検出した利用候補を確認・保存し、同じ所有者の支出がサーバーへ同期された場合にだけ1通をゴミ箱へ移動する。既存候補・除外・未保存・確認専用は対象外。Gmailのゴミ箱は通常30日後に完全削除される。再接続で候補とAI同意をリセットし、保存済み家計簿は維持。APIの外部通信はモックで検証し、実メールは動かさない。[詳細](https://github.com/Akikan987/kakeibo/blob/main/server/docs/GMAIL_IMPORT.md)。

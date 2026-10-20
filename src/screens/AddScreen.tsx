@@ -27,7 +27,7 @@ import { emptyDraft, useStore, type ExpenseDraft } from '../store'
 import { draftStorageKey, findDuplicateExpenses, hasDraftContent, merchantSuggestions, readDraft, writeDraft } from '../entries/draft'
 import { PAYMENT_TYPES, PAYMENT_TYPE_LABELS, TYPE_EXPENSE, TYPE_INCOME, now } from '../types'
 
-export function AddScreen({ initial, onDone, onGmailImport }: { initial?: ExpenseDraft | null; onDone: (source: string) => void; onGmailImport: (draft: ExpenseDraft, gmailCandidateId: string) => void }) {
+export function AddScreen({ initial, onDone, onGmailImport }: { initial?: ExpenseDraft | null; onDone: (source: string, expenseId: string) => void; onGmailImport: (draft: ExpenseDraft, gmailCandidateId: string) => void }) {
   const s = useStore()
   const [draft, setDraft] = useState<ExpenseDraft>(() => initial ?? emptyDraft())
   const storageKey = draftStorageKey(s.account?.uid ?? 'offline', initial?.editingId ?? null)
@@ -96,10 +96,11 @@ export function AddScreen({ initial, onDone, onGmailImport }: { initial?: Expens
     savingRef.current = true
     setSaving(true)
     try {
-      if (await s.saveExpense(draft)) {
+      const expenseId = await s.saveExpense(draft)
+      if (expenseId) {
         finished.current = true
         try { localStorage.removeItem(storageKey) } catch { /* Saved record is not lost if localStorage is unavailable. */ }
-        onDone(draft.source)
+        onDone(draft.source, expenseId)
       }
     } finally { savingRef.current = false; if (mounted.current) setSaving(false) }
   }

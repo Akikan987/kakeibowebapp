@@ -240,7 +240,7 @@ interface Store {
   requestCurrentEmailVerification: () => Promise<EmailVerificationChallenge | null>
   confirmCurrentEmailVerification: (verificationId: string, code: string) => Promise<boolean>
   // 明細
-  saveExpense: (draft: ExpenseDraft) => Promise<boolean>
+  saveExpense: (draft: ExpenseDraft) => Promise<string | false>
   deleteExpense: (e: Expense) => Promise<void>
   splitsOfExpense: (expenseId: string) => ExpenseSplit[]
   // メンバー
@@ -945,7 +945,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           })()
         } } })
         autoSync()
-        return true
+        return id
       } catch (error) {
         notify(error instanceof DuplicateFinancialMessageError ? error.message : '保存できませんでした。入力内容を確認して再試行してください', 'error')
         return false
