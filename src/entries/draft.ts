@@ -1,4 +1,5 @@
 import type { Category, Expense, PaymentMethod } from '../types.ts'
+import { readReceiptSplitDraft, type ReceiptSplitDraft } from '../receiptSplit.ts'
 
 export interface DraftSplit { memberId: string; amount: string }
 export interface ExpenseDraft {
@@ -12,6 +13,8 @@ export interface ExpenseDraft {
   source: string
   paymentMethodId: string
   splits: DraftSplit[]
+  /** Local calculation scratchpad, never a receipt image or synced expense field. */
+  receiptSplit?: ReceiptSplitDraft
 }
 
 const normalize = (text: string) => text.normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase('ja-JP')
@@ -47,7 +50,7 @@ export function findDuplicateExpenses(draft: ExpenseDraft, expenses: Expense[]):
     (draft.type !== 'expense' || row.paymentMethodId === draft.paymentMethodId))
 }
 
-export const hasDraftContent = (draft: ExpenseDraft) => !!(draft.title.trim() || draft.amountYen || draft.splits.length)
+export const hasDraftContent = (draft: ExpenseDraft) => !!(draft.title.trim() || draft.amountYen || draft.splits.length || draft.receiptSplit?.items.length)
 
 const draftPrefix = (owner: string) => `kakeibo:entry-draft:${encodeURIComponent(owner)}:`
 export const draftStorageKey = (owner: string, editingId: string | null) => `${draftPrefix(owner)}${encodeURIComponent(editingId ?? 'new')}`
@@ -73,6 +76,12 @@ export function readDraft(storage: Pick<Storage, 'getItem'>, key: string, editin
     if (!['title', 'amountYen', 'category', 'source', 'paymentMethodId'].every((key) => typeof draft[key as keyof ExpenseDraft] === 'string')) return null
     if (!Number.isFinite(draft.purchasedAtMillis) || !Number.isFinite(new Date(draft.purchasedAtMillis).getTime())) return null
     if (!Array.isArray(draft.splits) || !draft.splits.every((row) => row && typeof row.memberId === 'string' && typeof row.amount === 'string')) return null
+    if (draft.receiptSplit !== undefined) {
+      const scratchpad = readReceiptSplitDraft(draft.receiptSplit)
+      // A malformed scratchpad must not destroy the user's ordinary unsaved entry.
+      if (scratchpad) draft.receiptSplit = scratchpad
+      else delete draft.receiptSplit
+    }
     return hasDraftContent(draft) ? draft : null
   } catch { return null }
 }

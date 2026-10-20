@@ -23,9 +23,11 @@ import { expectedWithdrawalDate } from '../payments'
 import { equalSplitAmounts } from '../splits'
 import { CashAccountSelect } from '../components/CashAccountSelect'
 import { GmailImport } from '../components/GmailImport'
+import { ReceiptSplitCalculator } from '../components/ReceiptSplitCalculator'
+import { SELF_PARTICIPANT, type ReceiptSplitDraft } from '../receiptSplit'
 import { emptyDraft, useStore, type ExpenseDraft } from '../store'
 import { draftStorageKey, findDuplicateExpenses, hasDraftContent, merchantSuggestions, readDraft, writeDraft } from '../entries/draft'
-import { PAYMENT_TYPES, PAYMENT_TYPE_LABELS, TYPE_EXPENSE, TYPE_INCOME, now } from '../types'
+import { PAYMENT_TYPES, PAYMENT_TYPE_LABELS, TYPE_EXPENSE, TYPE_INCOME, newId, now } from '../types'
 
 export function AddScreen({ initial, onDone, onGmailImport }: { initial?: ExpenseDraft | null; onDone: (source: string, expenseId: string) => void; onGmailImport: (draft: ExpenseDraft, gmailCandidateId: string) => void }) {
   const s = useStore()
@@ -54,6 +56,9 @@ export function AddScreen({ initial, onDone, onGmailImport }: { initial?: Expens
   const [reading, setReading] = useState(false)
   const receiptRef = useRef<HTMLInputElement>(null)
   const receiptMode = useRef<'ai' | 'local'>('ai')
+  const receiptItemsMode = useRef(false)
+  const [receiptWantsSplit, setReceiptWantsSplit] = useState(false)
+  const [receiptSplitOpen, setReceiptSplitOpen] = useState(false)
   const [aiAvailable, setAiAvailable] = useState(false)
   const [configLoading, setConfigLoading] = useState(true)
   const [receiptResult, setReceiptResult] = useState<OcrResult | null>(null)
@@ -153,6 +158,16 @@ export function AddScreen({ initial, onDone, onGmailImport }: { initial?: Expens
   const selectedPrepaidBalance = s.prepaidBalances.find((balance) => balance.methodId === draft.paymentMethodId)
   const paymentMatch = receiptResult ? matchReceiptPayment(receiptResult, s.paymentMethods) : null
   const receiptCategory = receiptResult && s.categories.some((item) => item.name === receiptResult.category) ? receiptResult.category : ''
+  const makeReceiptSplit = (items: OcrResult['items'] = []): ReceiptSplitDraft => ({
+    version: 1,
+    participantIds: [SELF_PARTICIPANT, ...new Set(draft.splits.filter((split) => s.members.some((member) => !member.deleted && member.id === split.memberId)).map((split) => `member:${split.memberId}`))],
+    differenceMode: 'unallocated',
+    items: items.map((item) => ({ id: newId(), name: item.name, quantity: item.quantity, amountYen: item.lineTotalYen, participantIds: [] })),
+  })
+  const openReceiptSplit = () => {
+    if (!draft.receiptSplit) patch({ receiptSplit: makeReceiptSplit() })
+    setReceiptSplitOpen(true)
+  }
   const applyReceipt = () => {
     if (!receiptResult) return
     const next: Partial<ExpenseDraft> = { source: receiptResult.engine === 'openai' ? 'receipt_ai' : 'receipt_ocr' }
@@ -162,9 +177,12 @@ export function AddScreen({ initial, onDone, onGmailImport }: { initial?: Expens
     if (timestamp !== null) next.purchasedAtMillis = timestamp
     if (receiptCategory) next.category = receiptCategory
     if (paymentMatch?.id) next.paymentMethodId = paymentMatch.id
+    // A different receipt must not leave a previous receipt's product assignments attached.
+    next.receiptSplit = receiptWantsSplit ? makeReceiptSplit(receiptResult.items) : undefined
     patch(next)
     setReceiptNotice('読み取り候補を反映しました。題名・金額・品目・決済方法を確認して保存してください。')
     setReceiptResult(null)
+    if (receiptWantsSplit) setReceiptSplitOpen(true)
   }
 
   return (
@@ -223,10 +241,11 @@ export function AddScreen({ initial, onDone, onGmailImport }: { initial?: Expens
           <SectionHeader>レシートから入力</SectionHeader>
           <Card><CardContent>
             <Stack spacing={1.5}>
-              <Typography variant="body2">AIが題名・合計金額・日付・品目・支払方法を読み取ります。候補を確認してから入力欄に反映できます。</Typography>
+              <Typography variant="body2">AIが題名・合計金額・日付・品目・支払方法を読み取ります。商品ごとのお会計を計算したいときは「商品を読んで割り勘」を選んでください。</Typography>
               {!configLoading && !aiAvailable && <Alert severity="info">{s.account ? 'AI読み取りは準備中、または設定を確認できません。通常の読み取りと手入力は利用できます。' : 'レシート読み取りにはログインが必要です。手入力はそのまま利用できます。'}</Alert>}
-              <Button disabled={reading || configLoading || !aiAvailable} startIcon={<CameraAltRoundedIcon />} onClick={() => { receiptMode.current = 'ai'; receiptRef.current?.click() }}>{reading && receiptMode.current === 'ai' ? 'AIで読み取り中…' : 'AIでレシートを読み取る'}</Button>
-              <Button variant="outline" disabled={reading || !s.account} onClick={() => { receiptMode.current = 'local'; receiptRef.current?.click() }}>{reading && receiptMode.current === 'local' ? '読み取り中…' : '通常の読み取りを使う（外部AI送信なし）'}</Button>
+              <Button disabled={reading || configLoading || !aiAvailable} startIcon={<CameraAltRoundedIcon />} onClick={() => { receiptMode.current = 'ai'; receiptItemsMode.current = false; receiptRef.current?.click() }}>{reading && receiptMode.current === 'ai' && !receiptItemsMode.current ? 'AIで読み取り中…' : 'AIでレシートを読み取る'}</Button>
+              <Button variant="outline" disabled={reading || configLoading || !aiAvailable} startIcon={<CalculateRoundedIcon />} onClick={() => { receiptMode.current = 'ai'; receiptItemsMode.current = true; receiptRef.current?.click() }}>{reading && receiptItemsMode.current ? '商品を読み取り中…' : '商品を読んで割り勘'}</Button>
+              <Button variant="text" disabled={reading || !s.account} onClick={() => { receiptMode.current = 'local'; receiptItemsMode.current = false; receiptRef.current?.click() }}>{reading && receiptMode.current === 'local' ? '読み取り中…' : '通常の読み取りを使う（外部AI送信なし）'}</Button>
             </Stack>
             <input ref={receiptRef} type="file" accept="image/*" hidden onChange={async (event) => {
               const file = event.target.files?.[0]
@@ -235,8 +254,8 @@ export function AddScreen({ initial, onDone, onGmailImport }: { initial?: Expens
               if (receiptMode.current === 'ai' && !aiAvailable) return
               setReading(true)
               try {
-                const result = await s.readReceipt(file, receiptMode.current)
-                if (result && mounted.current) setReceiptResult(result)
+                const result = await s.readReceipt(file, receiptMode.current, receiptItemsMode.current)
+                if (result && mounted.current) { setReceiptWantsSplit(receiptItemsMode.current); setReceiptResult(result) }
               } finally { if (mounted.current) setReading(false) }
             }} />
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5 }}>AI読み取りでは、レシート画像と登録済みの品目名をOpenAIへ送信します。画像内の情報も送信されます。読み取りは誤ることがあります。カード末尾4桁は「決済」で登録できます。読み取れない項目は手入力してください。通常の読み取りは店名・金額・日付のみです。</Typography>
@@ -245,6 +264,7 @@ export function AddScreen({ initial, onDone, onGmailImport }: { initial?: Expens
 
           <SectionHeader>割り勘（他の人の負担）</SectionHeader>
           <Card><CardContent>
+            <Button variant="outline" startIcon={<CalculateRoundedIcon />} onClick={openReceiptSplit} sx={{ mb: 2 }}>{draft.receiptSplit?.items.length ? `商品を選んで計算（${draft.receiptSplit.items.length}行）` : '商品を選んで計算・手入力'}</Button>
             {s.members.length === 0 && draft.splits.length === 0 ? (
               <Typography variant="body2" color="text.secondary">「割り勘」タブでメンバーを追加すると、この支出から他の人の負担を割り当てられます。</Typography>
             ) : (
@@ -270,7 +290,7 @@ export function AddScreen({ initial, onDone, onGmailImport }: { initial?: Expens
                 </Stack>
                 {draft.splits.length > 0 && (
                   <Box sx={{ pt: 2, borderTop: '1px solid', borderColor: 'divider' }}>
-                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>あなたを含む{draft.splits.length + 1}人で均等割りします。割り切れない端数はあなたの負担になります。</Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>「均等割りを入力」を押すと、あなたを含む{draft.splits.length + 1}人で分け、端数はあなたの負担にします。商品別の計算・手入力の金額も使えます。</Typography>
                     <Stack direction="row" justifyContent="space-between"><Typography variant="body2" color="text.secondary">他の人の負担 計</Typography><Typography variant="body2">{yen(splitTotal)}</Typography></Stack>
                     <Stack direction="row" justifyContent="space-between" sx={{ mt: 1 }}><Typography fontWeight={700}>あなたの負担（統計に反映）</Typography><Typography fontWeight={700} color={amount - splitTotal < 0 ? 'error.main' : 'success.main'}>{yen(amount - splitTotal)}</Typography></Stack>
                   </Box>
@@ -298,10 +318,19 @@ export function AddScreen({ initial, onDone, onGmailImport }: { initial?: Expens
         <Typography sx={{ overflowWrap: 'anywhere' }}>記録する決済方法：{s.paymentMethods.find((method) => method.id === paymentMatch?.id)?.name || (selectedPayment ? `${selectedPayment.name}（現在の選択を維持）` : '自動選択なし')}</Typography>
         {receiptResult.engine === 'openai' && <Alert severity={paymentMatch?.id ? 'info' : 'warning'}>{paymentMatch?.message}</Alert>}
         {receiptResult.warnings.map((warning, index) => <Alert key={index} severity="warning">{warning}</Alert>)}
+        {receiptWantsSplit && <Alert severity="info">商品明細 {receiptResult.items.length}行。反映後に商品を頼んだ人を選べます。読めなかった行や金額は手入力してください。商品読み取りは通常のAI読み取りより時間・出力トークンが増える場合があります。</Alert>}
         <Typography variant="body2" color="text.secondary">読み取れた項目を入力欄へ反映します。読み取れなかった項目は現在の入力を維持します。決済方法を含め、反映後に確認・修正してください。この操作だけでは保存されません。</Typography>
-        <Button onClick={applyReceipt}>候補を入力欄に反映する</Button>
+        <Button onClick={applyReceipt}>{receiptWantsSplit ? '候補を反映して商品を選ぶ' : '候補を入力欄に反映する'}</Button>
         <Button variant="text" onClick={() => setReceiptResult(null)}>反映せず閉じる</Button>
       </Stack></Modal>}
+      {receiptSplitOpen && draft.receiptSplit && <ReceiptSplitCalculator value={draft.receiptSplit} totalAmount={draft.amountYen} members={s.members}
+        onChange={(value) => patch({ receiptSplit: value })} onTotalChange={(value) => patch({ amountYen: value })} onClose={() => setReceiptSplitOpen(false)}
+        onApply={(allocations) => {
+          if (allocations.some((row) => row.participantId !== SELF_PARTICIPANT && !s.members.some((member) => !member.deleted && `member:${member.id}` === row.participantId))) { s.notify('割り勘メンバーが変更されています。選び直してください', 'error'); return }
+          patch({ splits: allocations.filter((row) => row.participantId !== SELF_PARTICIPANT && row.amountYen > 0).map((row) => ({ memberId: row.participantId.slice('member:'.length), amount: String(row.amountYen) })) })
+          setReceiptSplitOpen(false)
+          s.notify('商品から計算した人別金額を反映しました。内容を確認して保存してください。')
+        }} />}
     </Screen>
   )
 }

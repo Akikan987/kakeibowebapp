@@ -1,4 +1,5 @@
 import { normalizePaymentNetworks } from './paymentNetworks.ts'
+import { readReceiptItems } from './receiptItems.ts'
 import type {
   Account,
   CashAccount, AccountTransfer, ExpenseRefund, SplitInvitation,
@@ -514,6 +515,7 @@ export async function apiSync(
 // ---------------- レシートOCR ----------------
 
 export interface OcrResult {
+  items: import('./receiptItems').ReceiptLineItem[]
   title: string
   amountYen: number
   date: string
@@ -542,6 +544,7 @@ export async function apiReadReceipt(
   file: File,
   mode: 'ai' | 'local' = 'local',
   categories: string[] = [],
+  includeItems = false,
 ): Promise<OcrResult> {
   const maxBytes = 8 * 1024 * 1024
   if (file.size > maxBytes) {
@@ -556,6 +559,7 @@ export async function apiReadReceipt(
   form.append('mode', mode)
   form.append('ai_consent', mode === 'ai' ? 'true' : 'false')
   form.append('categories', JSON.stringify(categories))
+  form.append('include_items', mode === 'ai' && includeItems ? 'true' : 'false')
   const headers: Record<string, string> = { 'X-Kakeibo-Session': 'cookie' }
   if (token !== 'cookie') headers.Authorization = `Bearer ${token}`
   const res = await fetch('/ocr/receipt', {
@@ -574,7 +578,11 @@ export async function apiReadReceipt(
     throw new ApiError(res.status, detail)
   }
   const j = (await res.json()) as Record<string, unknown>
+  const items = readReceiptItems(j.items ?? [])
+  const warnings = Array.isArray(j.warnings) ? j.warnings.filter((w): w is string => typeof w === 'string') : []
+  if (items === null) warnings.push('商品明細を確認できませんでした。商品を手入力するか、もう一度読み取ってください。')
   return {
+    items: items ?? [],
     title: String(j.title ?? ''),
     amountYen: Number(j.amount_yen ?? 0),
     date: String(j.date ?? ''),
@@ -586,6 +594,6 @@ export async function apiReadReceipt(
     paymentLabel: String(j.payment_label ?? ''),
     cardLastFour: typeof j.card_last_four === 'string' && /^[0-9]{4}$/.test(j.card_last_four) ? j.card_last_four : '',
     paymentConfidence: String(j.payment_confidence ?? 'unknown'),
-    warnings: Array.isArray(j.warnings) ? j.warnings.filter((w): w is string => typeof w === 'string') : [],
+    warnings,
   }
 }

@@ -274,7 +274,7 @@ interface Store {
   saveCardStatement: (draft: CardStatementDraft) => Promise<boolean>
   deleteCardStatement: (statement: CardStatement) => Promise<void>
   // レシートOCR
-  readReceipt: (file: File, mode?: 'ai' | 'local') => Promise<OcrResult | null>
+  readReceipt: (file: File, mode?: 'ai' | 'local', includeItems?: boolean) => Promise<OcrResult | null>
   // バックアップ
   exportJson: () => void
   exportCsv: () => void
@@ -1463,14 +1463,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // ---------------- レシートOCR ----------------
 
   const readReceipt = useCallback(
-    async (file: File, mode: 'ai' | 'local' = 'local'): Promise<OcrResult | null> => {
+    async (file: File, mode: 'ai' | 'local' = 'local', includeItems = false): Promise<OcrResult | null> => {
       const token = account?.token
       if (!token) {
         notify('レシート読み取りにはログインが必要です', 'error')
         return null
       }
       try {
-        return await apiReadReceipt(token, file, mode, categories.map((category) => category.name).slice(0, 100))
+        return await apiReadReceipt(token, file, mode, categories.map((category) => category.name).slice(0, 100), includeItems)
       } catch (err) {
         notify(
           err instanceof ApiError && err.status === 429
