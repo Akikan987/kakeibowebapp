@@ -1,3 +1,4 @@
+import { normalizePaymentNetworks } from './paymentNetworks.ts'
 import type {
   Account,
   CashAccount, AccountTransfer, ExpenseRefund, SplitInvitation,
@@ -348,6 +349,7 @@ const paymentMethodOut = (m: PaymentMethod): Raw => ({
   closing_day: m.closingDay,
   payment_day: m.paymentDay,
   ...(m.cardLastFour !== undefined ? { card_last_four: m.cardLastFour } : {}),
+  ...(m.paymentNetworks !== undefined ? { payment_networks: normalizePaymentNetworks(m.paymentNetworks) } : {}),
 })
 const paymentMethodIn = (r: Raw): PaymentMethod => ({
   cashAccountId: String(r.cash_account_id ?? ''),
@@ -357,6 +359,7 @@ const paymentMethodIn = (r: Raw): PaymentMethod => ({
   closingDay: Number(r.closing_day ?? 0),
   paymentDay: Number(r.payment_day ?? 0),
   cardLastFour: String(r.card_last_four ?? ''),
+  paymentNetworks: normalizePaymentNetworks(r.payment_networks),
 })
 
 const prepaidChargeOut = (c: PrepaidCharge): Raw => ({

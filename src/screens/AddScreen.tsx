@@ -293,7 +293,8 @@ export function AddScreen({ initial, onDone, onGmailImport }: { initial?: Expens
         <Typography>金額：{receiptResult.amountYen > 0 ? yen(receiptResult.amountYen) : '確認してください'}</Typography>
         <Typography>日付：{receiptDateMillis(receiptResult.date) !== null ? receiptResult.date : '確認してください'}</Typography>
         <Typography>品目：{receiptCategory || '自動選択なし'}</Typography>
-        <Typography>決済方法：{s.paymentMethods.find((method) => method.id === paymentMatch?.id)?.name || '自動選択なし'}</Typography>
+        <Typography sx={{ overflowWrap: 'anywhere' }}>読み取った支払方法：{receiptResult.paymentLabel || '読み取れませんでした'}{receiptResult.cardLastFour && `（末尾 ${receiptResult.cardLastFour}）`}</Typography>
+        <Typography sx={{ overflowWrap: 'anywhere' }}>記録する決済方法：{s.paymentMethods.find((method) => method.id === paymentMatch?.id)?.name || (selectedPayment ? `${selectedPayment.name}（現在の選択を維持）` : '自動選択なし')}</Typography>
         {receiptResult.engine === 'openai' && <Alert severity={paymentMatch?.id ? 'info' : 'warning'}>{paymentMatch?.message}</Alert>}
         {receiptResult.warnings.map((warning, index) => <Alert key={index} severity="warning">{warning}</Alert>)}
         <Typography variant="body2" color="text.secondary">読み取れた項目を入力欄へ反映します。読み取れなかった項目は現在の入力を維持します。決済方法を含め、反映後に確認・修正してください。この操作だけでは保存されません。</Typography>

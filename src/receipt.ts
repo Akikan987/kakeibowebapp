@@ -1,4 +1,5 @@
 import type { PaymentMethod } from './types.ts'
+import { normalizePaymentNetworks, receiptPaymentNetwork, PAYMENT_NETWORK_LABELS } from './paymentNetworks.ts'
 
 export interface ReceiptPayment {
   paymentType: string
@@ -10,13 +11,27 @@ export interface ReceiptPayment {
 /** AIは手がかりだけを返す。登録済みの決済方法の選択は一意の根拠で行う。 */
 export function matchReceiptPayment(receipt: ReceiptPayment, methods: PaymentMethod[]): { id: string; message: string } {
   const active = methods.filter((method) => !method.deleted)
-  if (receipt.paymentConfidence !== 'certain' || ['mixed', 'unknown'].includes(receipt.paymentType)) {
+  if (receipt.paymentConfidence !== 'certain' || !['cash', 'card', 'electronic'].includes(receipt.paymentType)) {
     return { id: '', message: '支払方法が不明、または併用のため手動で選択してください。' }
   }
+  const network = receiptPaymentNetwork(receipt.paymentLabel)
+  if (network && receipt.paymentType === 'cash') return { id: '', message: '現金とタッチ決済の読み取り結果が矛盾しています。手動で選択してください。' }
+  const networkMatches = network ? active.filter((method) => ['credit', 'debit', 'prepaid'].includes(method.type) && normalizePaymentNetworks(method.paymentNetworks).includes(network)) : []
   if (receipt.cardLastFour && receipt.paymentType !== 'cash') {
+    if (!/^[0-9]{4}$/u.test(receipt.cardLastFour)) return { id: '', message: 'カード末尾を確認できません。手動で選択してください。' }
     const matches = active.filter((method) => method.type !== 'cash' && method.cardLastFour === receipt.cardLastFour)
+    if (networkMatches.length && matches.length) {
+      const combined = matches.filter((method) => networkMatches.some((row) => row.id === method.id))
+      if (combined.length === 1) return { id: combined[0].id, message: `末尾 ${receipt.cardLastFour} と${PAYMENT_NETWORK_LABELS[network!]}の紐づけが一致しました。保存前に確認してください。` }
+      if (!combined.length) return { id: '', message: 'カード末尾とタッチ決済の紐づけが一致しません。手動で選択してください。' }
+    }
     if (matches.length === 1) return { id: matches[0].id, message: `末尾 ${receipt.cardLastFour} が一致しました。保存前に確認してください。` }
     return { id: '', message: matches.length > 1 ? `末尾 ${receipt.cardLastFour} のカードが複数あります。手動で選択してください。` : `末尾 ${receipt.cardLastFour} に一致する決済方法がありません。モバイル決済では券面と番号が異なる場合があります。` }
+  }
+  if (network && receipt.paymentType !== 'cash') {
+    return networkMatches.length === 1
+      ? { id: networkMatches[0].id, message: `${PAYMENT_NETWORK_LABELS[network]}に紐づく決済方法が1件のため選択しました。保存前に確認してください。` }
+      : { id: '', message: networkMatches.length > 1 ? `${PAYMENT_NETWORK_LABELS[network]}に紐づく決済方法が複数あります。手動で選択してください。` : `${PAYMENT_NETWORK_LABELS[network]}に紐づく決済方法がありません。「決済」のカード編集で登録するか、手動で選択してください。` }
   }
   if (receipt.paymentType === 'cash' && !receipt.cardLastFour) {
     const cash = active.filter((method) => method.type === 'cash')

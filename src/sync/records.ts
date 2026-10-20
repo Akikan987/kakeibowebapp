@@ -1,8 +1,13 @@
-/** Sync records are flat objects of primitive values; compare fields, not key order. */
+/** Sync records contain primitive fields and bounded primitive arrays. */
+function sameValue(left: unknown, right: unknown): boolean {
+  return left === right || (Array.isArray(left) && Array.isArray(right) &&
+    left.length === right.length && left.every((value, index) => value === right[index]))
+}
+
 export function sameRecord<T extends object>(left: T, right: T): boolean {
   const keys = Object.keys(left) as (keyof T)[]
   return keys.length === Object.keys(right).length && keys.every(
-    (key) => Object.prototype.hasOwnProperty.call(right, key) && left[key] === right[key],
+    (key) => Object.prototype.hasOwnProperty.call(right, key) && sameValue(left[key], right[key]),
   )
 }
 

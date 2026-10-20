@@ -62,6 +62,7 @@ import {
   seedPaymentMethodsIfEmpty,
 } from './db'
 import { computeCardWithdrawals, computePrepaidBalances } from './payments'
+import { normalizePaymentNetworks, validPaymentNetworks, type PaymentNetwork } from './paymentNetworks'
 import {
   DEFAULT_TITLE,
   PAYMENT_TYPES,
@@ -125,6 +126,7 @@ export const emptyDraft = (): ExpenseDraft => ({
 })
 
 export interface PaymentMethodDraft {
+  paymentNetworks?: PaymentNetwork[]
   cashAccountId?: string
   editingId: string | null
   name: string
@@ -1176,6 +1178,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (draft.cashAccountId && !cashAccounts.some((row) => row.id === draft.cashAccountId)) { notify('口座を選び直してください', 'error'); return false }
       if (existing && [DEFAULT_CASH_METHOD_ID, DEFAULT_OTHER_METHOD_ID].includes(existing.id) && existing.type !== draft.type) { notify('標準の決済方法は種類を変更できません', 'error'); return false }
       const cardLastFour = draft.type === 'cash' ? '' : draft.cardLastFour.trim()
+      if (draft.paymentNetworks !== undefined && !validPaymentNetworks(draft.paymentNetworks)) {
+        notify('利用するタッチ決済を選び直してください', 'error')
+        return false
+      }
+      const paymentNetworks = ['credit', 'debit', 'prepaid'].includes(draft.type)
+        ? normalizePaymentNetworks(draft.paymentNetworks ?? existing?.paymentNetworks) : []
       if (!/^([0-9]{4})?$/.test(cardLastFour)) {
         notify('カード末尾は半角数字4桁で入力してください', 'error')
         return false
@@ -1201,6 +1209,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         closingDay: draft.type === 'credit' ? draft.closingDay : 0,
         paymentDay: draft.type === 'credit' ? draft.paymentDay : 0,
         cardLastFour,
+        paymentNetworks,
         cashAccountId: draft.type === 'prepaid' ? '' : draft.cashAccountId ?? existing?.cashAccountId ?? '',
         updatedAt: now(),
         deleted: false,
@@ -1544,13 +1553,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         dateMillis,
       })),
       paymentMethods: paymentMethods.map(
-        ({ id, name, type, closingDay, paymentDay, cardLastFour, cashAccountId }) => ({
+        ({ id, name, type, closingDay, paymentDay, cardLastFour, cashAccountId, paymentNetworks }) => ({
           id,
           name,
           type,
           closingDay,
           paymentDay,
           cardLastFour: cardLastFour ?? '',
+          paymentNetworks: normalizePaymentNetworks(paymentNetworks),
           cashAccountId: cashAccountId ?? '',
         }),
       ),
@@ -1677,6 +1687,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             const type = PAYMENT_TYPES.includes(rawType as PaymentType)
               ? (rawType as PaymentType)
               : 'other'
+            if (o.paymentNetworks !== undefined && !validPaymentNetworks(o.paymentNetworks)) {
+              throw new Error('バックアップのタッチ決済情報が不正です。ファイルを確認してください')
+            }
             return {
               id: String(o.id ?? newId()),
               name: String(o.name ?? ''),
@@ -1684,6 +1697,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               closingDay: Number(o.closingDay ?? 0),
               paymentDay: Number(o.paymentDay ?? 0),
               cardLastFour: /^([0-9]{4})?$/.test(String(o.cardLastFour ?? '')) ? String(o.cardLastFour ?? '') : '',
+              paymentNetworks: ['credit', 'debit', 'prepaid'].includes(type) ? normalizePaymentNetworks(o.paymentNetworks) : [],
               cashAccountId: o.cashAccountId === undefined ? undefined : String(o.cashAccountId),
               updatedAt: ts,
               deleted: false,
