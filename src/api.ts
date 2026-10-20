@@ -349,7 +349,7 @@ const paymentMethodOut = (m: PaymentMethod): Raw => ({
   closing_day: m.closingDay,
   payment_day: m.paymentDay,
   ...(m.cardLastFour !== undefined ? { card_last_four: m.cardLastFour } : {}),
-  ...(m.paymentNetworks !== undefined ? { payment_networks: normalizePaymentNetworks(m.paymentNetworks) } : {}),
+  ...(m.paymentNetworks !== undefined ? { payment_networks: normalizePaymentNetworks(m.paymentNetworks), payment_networks_complete: m.paymentNetworksKnown === true } : {}),
 })
 const paymentMethodIn = (r: Raw): PaymentMethod => ({
   cashAccountId: String(r.cash_account_id ?? ''),
@@ -360,6 +360,7 @@ const paymentMethodIn = (r: Raw): PaymentMethod => ({
   paymentDay: Number(r.payment_day ?? 0),
   cardLastFour: String(r.card_last_four ?? ''),
   paymentNetworks: normalizePaymentNetworks(r.payment_networks),
+  paymentNetworksKnown: Array.isArray(r.payment_networks),
 })
 
 const prepaidChargeOut = (c: PrepaidCharge): Raw => ({
@@ -458,6 +459,7 @@ export async function apiSync(
     // Full snapshot comparison, but do not echo records already on this device.
     // Old servers ignore this optional field and return the full response safely.
     omit_unchanged: true,
+    payment_networks_version: 2,
     changes: {
       cash_accounts: local.cashAccounts.map(cashAccountOut),
       account_transfers: local.accountTransfers.map(transferOut),

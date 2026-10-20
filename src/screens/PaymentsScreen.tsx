@@ -14,12 +14,7 @@ import {
   AccordionSummary,
   Box,
   Button as MuiButton,
-  Checkbox,
   FormControl,
-  FormControlLabel,
-  FormGroup,
-  FormHelperText,
-  FormLabel,
   IconButton,
   InputLabel,
   Link,
@@ -33,11 +28,12 @@ import { Button, Card, Divider, Field, LargeTitle, Modal, Screen, SectionHeader,
 import { NavigationRow, SectionPageHeader, useSectionNavigation } from '../components/SectionNavigation'
 import { DEFAULT_CASH_METHOD_ID, DEFAULT_OTHER_METHOD_ID } from '../db'
 import { cardWithdrawalsByDay } from '../payments'
-import { PAYMENT_NETWORKS, PAYMENT_NETWORK_LABELS, normalizePaymentNetworks } from '../paymentNetworks'
+import { normalizePaymentNetworks, paymentNetworkLabel, type PaymentNetwork } from '../paymentNetworks'
 import { buildWithdrawalSchedule, withdrawalKey } from '../domain/paymentOverview'
 import { PaymentOverview, WithdrawalDetails, WithdrawalStatus } from '../components/PaymentOverview'
 import { AccountsPanel } from '../components/AccountsPanel'
 import { CashAccountSelect } from '../components/CashAccountSelect'
+import { PaymentNetworkSelect } from '../components/PaymentNetworkSelect'
 import { type CardStatementDraft, type PaymentMethodDraft, type PrepaidChargeDraft, useStore } from '../store'
 import { PAYMENT_TYPES, PAYMENT_TYPE_LABELS, now, type CardStatement, type CardWithdrawal, type PaymentMethod, type PrepaidCharge } from '../types'
 
@@ -165,7 +161,7 @@ export function PaymentsScreen() {
               ? `${dayLabel(method.closingDay)}締め ・ ${dayLabel(method.paymentDay)}引き落とし${method.cardLastFour ? ` ・ 末尾 ${method.cardLastFour}` : ''}`
               : method.type === 'prepaid' ? `残高 ${yen(balance?.balance ?? 0)}` : ''
             const networkLabels = ['credit', 'debit', 'prepaid'].includes(method.type)
-              ? normalizePaymentNetworks(method.paymentNetworks).map((network) => PAYMENT_NETWORK_LABELS[network]).join(' / ')
+              ? normalizePaymentNetworks(method.paymentNetworks).map(paymentNetworkLabel).join(' / ')
               : ''
             const description = [PAYMENT_TYPE_LABELS[method.type], detail, networkLabels].filter(Boolean).join(' ・ ')
             return <Box key={method.id}>
@@ -186,7 +182,7 @@ export function PaymentsScreen() {
         </Box>)}</Card>)}
       </>}
 
-      {methodDraft && <PaymentMethodModal draft={methodDraft} canDelete={Boolean(methodDraft.editingId && methodDraft.editingId !== DEFAULT_CASH_METHOD_ID && methodDraft.editingId !== DEFAULT_OTHER_METHOD_ID)} onDelete={() => { const method = s.paymentMethods.find((item) => item.id === methodDraft.editingId); setMethodDraft(null); if (method) setPendingMethodDelete(method) }} onChange={setMethodDraft} onClose={() => setMethodDraft(null)} onSave={async () => { if (await s.savePaymentMethod(methodDraft)) setMethodDraft(null) }} />}
+      {methodDraft && <PaymentMethodModal draft={methodDraft} networkOptions={s.paymentMethods.filter((method) => method.id !== methodDraft.editingId).flatMap((method) => normalizePaymentNetworks(method.paymentNetworks))} canDelete={Boolean(methodDraft.editingId && methodDraft.editingId !== DEFAULT_CASH_METHOD_ID && methodDraft.editingId !== DEFAULT_OTHER_METHOD_ID)} onDelete={() => { const method = s.paymentMethods.find((item) => item.id === methodDraft.editingId); setMethodDraft(null); if (method) setPendingMethodDelete(method) }} onChange={setMethodDraft} onClose={() => setMethodDraft(null)} onSave={async () => { if (await s.savePaymentMethod(methodDraft)) setMethodDraft(null) }} />}
       {chargeDraft && <ChargeModal draft={chargeDraft} methods={s.paymentMethods} prepaidMethods={prepaidMethods} onChange={setChargeDraft} onClose={() => setChargeDraft(null)} onSave={async () => { if (await s.recordPrepaidCharge(chargeDraft)) setChargeDraft(null) }} />}
       {pendingMethodDelete && <ConfirmModal title="決済方法を削除しますか？" description={`「${pendingMethodDelete.name}」を削除します。使用済みの場合は削除できません。`} action="削除" onClose={() => setPendingMethodDelete(null)} onConfirm={async () => { await s.deletePaymentMethod(pendingMethodDelete); setPendingMethodDelete(null) }} />}
       {pendingChargeDelete && <ConfirmModal title="チャージ記録を取り消しますか？" description={`${yen(pendingChargeDelete.amountYen)}のチャージを取り消すと、残高とカード引落予定から除かれます。`} action="取り消す" onClose={() => setPendingChargeDelete(null)} onConfirm={async () => { await s.deletePrepaidCharge(pendingChargeDelete); setPendingChargeDelete(null) }} />}
@@ -263,7 +259,7 @@ function DaySelect({ label, value, onChange }: { label: string; value: number; o
   return <FormControl fullWidth><InputLabel>{label}</InputLabel><Select label={label} value={value} onChange={(event) => onChange(Number(event.target.value))}>{Array.from({ length: 30 }, (_, index) => index + 1).map((day) => <MenuItem key={day} value={day}>{day}日</MenuItem>)}<MenuItem value={31}>月末</MenuItem></Select></FormControl>
 }
 
-function PaymentMethodModal({ draft, canDelete, onDelete, onChange, onClose, onSave }: { draft: PaymentMethodDraft; canDelete: boolean; onDelete: () => void; onChange: (draft: PaymentMethodDraft) => void; onClose: () => void; onSave: () => Promise<void> }) {
+function PaymentMethodModal({ draft, networkOptions, canDelete, onDelete, onChange, onClose, onSave }: { draft: PaymentMethodDraft; networkOptions: PaymentNetwork[]; canDelete: boolean; onDelete: () => void; onChange: (draft: PaymentMethodDraft) => void; onClose: () => void; onSave: () => Promise<void> }) {
   const patch = (value: Partial<PaymentMethodDraft>) => onChange({ ...draft, ...value })
   const trimmedCardName = draft.name.trim()
   const [presetListExpanded, setPresetListExpanded] = useState(trimmedCardName.length >= 2)
@@ -285,13 +281,7 @@ function PaymentMethodModal({ draft, canDelete, onDelete, onChange, onClose, onS
       <Field label="カード末尾4桁（任意）" inputMode="numeric" value={draft.cardLastFour} onChange={(event) => patch({ cardLastFour: event.target.value.replace(/[^0-9]/g, '').slice(0, 4) })} placeholder="例: 0123" />
       <Typography variant="caption" color="text.secondary">レシートのカード末尾と照合します。カード番号全体は入力しないでください。Apple Payなどでは、券面とレシートの末尾が異なる場合があります。</Typography>
     </>}
-    {['credit', 'debit', 'prepaid'].includes(draft.type) && <FormControl component="fieldset">
-      <FormLabel component="legend">このカードで使う支払方法（任意・複数選択可）</FormLabel>
-      <FormGroup row sx={{ gap: 1, mt: 0.5 }}>
-        {PAYMENT_NETWORKS.map((network) => <FormControlLabel key={network} sx={{ ml: 0, mr: 2 }} label={PAYMENT_NETWORK_LABELS[network]} control={<Checkbox checked={normalizePaymentNetworks(draft.paymentNetworks).includes(network)} onChange={(_, checked) => patch({ paymentNetworks: checked ? [...normalizePaymentNetworks(draft.paymentNetworks), network] : normalizePaymentNetworks(draft.paymentNetworks).filter((item) => item !== network) })} />} />)}
-      </FormGroup>
-      <FormHelperText sx={{ mx: 0 }}>実際にこのカードで使うものだけ選んでください。同じ支払方法を複数のカードに登録した場合、レシート反映後にカードを選んでください。</FormHelperText>
-    </FormControl>}
+    {['credit', 'debit', 'prepaid'].includes(draft.type) && <PaymentNetworkSelect value={normalizePaymentNetworks(draft.paymentNetworks)} options={networkOptions} onChange={(paymentNetworks) => patch({ paymentNetworks })} />}
     {draft.type === 'credit' && (
       <Accordion
         expanded={presetListExpanded}

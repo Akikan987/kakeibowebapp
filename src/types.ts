@@ -53,6 +53,8 @@ export interface Settlement extends SyncBase {
 
 export interface PaymentMethod extends SyncBase {
   paymentNetworks?: import('./paymentNetworks.ts').PaymentNetwork[]
+  /** A full server response (or an explicit import/new card) supplied these attributes. */
+  paymentNetworksKnown?: boolean
   cashAccountId?: string
   name: string
   type: PaymentType
