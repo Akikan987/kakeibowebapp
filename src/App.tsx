@@ -249,7 +249,7 @@ export default function App() {
   }
 
   return (
-    <Box sx={{ minHeight: '100dvh', pb: 'calc(106px + env(safe-area-inset-bottom))' }}>
+    <Box sx={{ minHeight: '100dvh', pb: 'calc(6.625rem + env(safe-area-inset-bottom))' }}>
       <AppBar
         position="sticky"
         color="transparent"
@@ -384,7 +384,7 @@ export default function App() {
             showLabels
             value={tab === 'add' || tab === 'settings' ? false : tab}
             onChange={(_, value: MainTab) => setTab(value)}
-            sx={{ height: 72, bgcolor: 'transparent' }}
+            sx={{ minHeight: '4.5rem', height: 'auto', bgcolor: 'transparent' }}
           >
             {TABS.map((item) => (
               <BottomNavigationAction
@@ -453,7 +453,7 @@ export default function App() {
         autoHideDuration={BACK_EXIT_WINDOW_MS}
         transitionDuration={0}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-        sx={{ bottom: 'calc(104px + env(safe-area-inset-bottom))', zIndex: (theme) => theme.zIndex.snackbar + 1 }}
+        sx={{ bottom: 'calc(6.5rem + env(safe-area-inset-bottom))', zIndex: (theme) => theme.zIndex.snackbar + 1 }}
       />
     </Box>
   )

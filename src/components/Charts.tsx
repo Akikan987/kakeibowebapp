@@ -120,7 +120,6 @@ export function DailyChart({
   data: Map<number, number>
   daysInMonth: number
 }) {
-  const theme = useTheme()
   const [selected, setSelected] = useState<number | null>(null)
 
   if (data.size === 0)
@@ -167,7 +166,8 @@ export function DailyChart({
                       ? 'primary.main'
                       : value < 0 ? 'success.main' : 'divider',
                   borderRadius: '4px 4px 0 0',
-                  transition: theme.transitions.create(['height', 'background-color']),
+                  // Financial data should be immediate; do not animate height on month changes.
+                  transition: 'none',
                 }}
               />
             </Box>

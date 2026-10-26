@@ -15,21 +15,21 @@ export function glassSurface(isDark: boolean, blur = 0): CSSObject {
   return {
     backgroundColor: opaque,
     border: '1px solid',
-    borderColor: isDark ? 'rgba(255,255,255,0.16)' : 'rgba(255,255,255,0.85)',
-    backgroundImage: isDark
-      ? 'linear-gradient(135deg, rgba(255,255,255,0.09), rgba(255,255,255,0.01) 50%, rgba(255,255,255,0.04))'
-      : 'linear-gradient(135deg, rgba(255,255,255,0.7), rgba(255,255,255,0.08) 55%, rgba(255,255,255,0.4))',
+    borderColor: isDark ? 'rgba(255,255,255,0.09)' : 'rgba(29,29,31,0.06)',
+    backgroundImage: blur > 0 ? 'linear-gradient(180deg, rgba(255,255,255,0.08), transparent)' : 'none',
     boxShadow: isDark
-      ? 'inset 0 1px 0 rgba(255,255,255,0.1), 0 8px 24px rgba(0,0,0,0.12)'
-      : 'inset 0 1px 0 rgba(255,255,255,0.95), 0 8px 24px rgba(28,48,76,0.06)',
+      ? '0 2px 8px rgba(0,0,0,0.1)'
+      : '0 2px 8px rgba(28,48,76,0.035)',
     '@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)))': {
-      backgroundColor: isDark
-        ? `rgba(28,32,38,${blur > 0 ? '0.8' : '0.9'})`
-        : `rgba(255,255,255,${blur > 0 ? '0.76' : '0.8'})`,
+      backgroundColor: blur > 0 ? (isDark ? 'rgba(28,32,38,0.88)' : 'rgba(255,255,255,0.86)') : opaque,
       backdropFilter: filter,
       WebkitBackdropFilter: filter,
     },
     '@media (prefers-reduced-transparency: reduce)': flat,
+    '@media (prefers-contrast: more)': {
+      ...flat,
+      borderColor: isDark ? '#ABB2BC' : '#68686E',
+    },
     '@media (forced-colors: active)': {
       ...flat,
       backgroundColor: 'Canvas',

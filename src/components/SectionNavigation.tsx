@@ -50,14 +50,14 @@ export function useSectionNavigation<T extends string>(root: T) {
 export function NavigationRow({ title, description, onClick, icon, badge }: {
   title: string; description?: string; onClick: () => void; icon?: ReactNode; badge?: string | number
 }) {
-  return <ListItemButton onClick={onClick} sx={{ px: 3, py: 2.25, minHeight: 76, gap: 1.5 }}>
-    {icon && <Box aria-hidden="true" sx={{ color: 'primary.main', display: 'flex', flexShrink: 0 }}>{icon}</Box>}
+  return <ListItemButton onClick={onClick} sx={{ px: 3, py: 2.25, minHeight: 80, gap: 1.5, alignItems: 'flex-start' }}>
+    {icon && <Box aria-hidden="true" sx={{ color: 'primary.main', bgcolor: 'action.selected', borderRadius: '12px', p: 1, display: 'flex', flexShrink: 0 }}>{icon}</Box>}
     <Box sx={{ minWidth: 0, flex: 1 }}>
       <Typography fontWeight={600}>{title}</Typography>
       {description && <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.25 }}>{description}</Typography>}
+      {badge !== undefined && <Chip size="small" label={badge} sx={{ mt: 1, maxWidth: '100%' }} />}
     </Box>
-    {badge !== undefined && <Chip size="small" label={badge} sx={{ flexShrink: 0, maxWidth: 100 }} />}
-    <ChevronRightRoundedIcon color="disabled" aria-hidden="true" sx={{ flexShrink: 0 }} />
+    <ChevronRightRoundedIcon color="disabled" aria-hidden="true" sx={{ flexShrink: 0, alignSelf: 'center' }} />
   </ListItemButton>
 }
 

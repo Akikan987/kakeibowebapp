@@ -8,6 +8,9 @@ body,
 
 html {
   min-height: 100%;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  overscroll-behavior-y: none;
 }
 
 body {
@@ -24,6 +27,27 @@ textarea,
 button {
   font-size: 16px;
   font-family: inherit;
+}
+
+/* Only controls opt out of text selection. Amounts, errors and body copy remain copyable. */
+button,
+[role="button"] {
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Also covers MUI portals, chart buttons and existing inline transition styles. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition-duration: 0s !important;
+    transition-delay: 0s !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 /* 数値入力のスピナーを消す */
