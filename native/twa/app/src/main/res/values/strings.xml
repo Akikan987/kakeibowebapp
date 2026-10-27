@@ -1,0 +1,6 @@
+<resources>
+    <string name="asset_statements">[{\"relation\":[\"delegate_permission/common.handle_all_urls\"],\"target\":{\"namespace\":\"web\",\"site\":\"https://app.kakeibodata.com\"}}]</string>
+    <string name="shortcut_expense">支出を追加</string>
+    <string name="shortcut_income">収入を追加</string>
+    <string name="shortcut_withdrawals">引き落とし予定</string>
+</resources>

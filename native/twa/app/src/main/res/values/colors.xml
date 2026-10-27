@@ -1,0 +1,5 @@
+<resources>
+    <color name="background_light">#F5F5F7</color>
+    <color name="background_dark">#101418</color>
+    <color name="brand_blue">#0066CC</color>
+</resources>

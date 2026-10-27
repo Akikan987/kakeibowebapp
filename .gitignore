@@ -4,3 +4,5 @@ dist/
 *.local
 .vite/
 *.tsbuildinfo
+public/pr/downloads/*.apk
+public/pr/downloads/*.aab

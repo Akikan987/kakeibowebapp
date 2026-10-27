@@ -1,0 +1,11 @@
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut android:shortcutId="add-expense" android:enabled="true" android:icon="@drawable/ic_notification" android:shortcutShortLabel="@string/shortcut_expense">
+        <intent android:action="android.intent.action.VIEW" android:targetPackage="com.kakeibodata.kakeibo.app" android:targetClass="com.kakeibodata.kakeibo.app.MainActivity" android:data="https://app.kakeibodata.com/?shortcut=add-expense" />
+    </shortcut>
+    <shortcut android:shortcutId="add-income" android:enabled="true" android:icon="@drawable/ic_notification" android:shortcutShortLabel="@string/shortcut_income">
+        <intent android:action="android.intent.action.VIEW" android:targetPackage="com.kakeibodata.kakeibo.app" android:targetClass="com.kakeibodata.kakeibo.app.MainActivity" android:data="https://app.kakeibodata.com/?shortcut=add-income" />
+    </shortcut>
+    <shortcut android:shortcutId="withdrawals" android:enabled="true" android:icon="@drawable/ic_notification" android:shortcutShortLabel="@string/shortcut_withdrawals">
+        <intent android:action="android.intent.action.VIEW" android:targetPackage="com.kakeibodata.kakeibo.app" android:targetClass="com.kakeibodata.kakeibo.app.MainActivity" android:data="https://app.kakeibodata.com/?shortcut=withdrawals" />
+    </shortcut>
+</shortcuts>

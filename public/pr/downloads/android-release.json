@@ -1,0 +1,12 @@
+{
+  "buildDate": "2026-10-27T08:27:02Z",
+  "bytes": 556613,
+  "packageName": "com.kakeibodata.kakeibo.app",
+  "certificateSha256": "7E:64:3C:EE:BD:39:7B:39:16:15:F8:F1:2C:A2:51:62:D5:C9:88:77:57:30:9B:05:EE:EF:B5:66:6B:D5:45:CE",
+  "versionCode": 1,
+  "mode": "trusted-web-activity",
+  "file": "kakeibo-android-1.0.0.apk",
+  "sha256": "1803f4fc3c4c93f8505ca1440c64add3a9945261eead946327901cf01a4326fd",
+  "minAndroid": "8.0",
+  "versionName": "1.0.0"
+}

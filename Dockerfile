@@ -4,6 +4,7 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 COPY . .
+RUN node scripts/verify-android-release.mjs --public-only
 RUN npm run build
 
 # --- 配信（静的ファイル + APIの中継） ---

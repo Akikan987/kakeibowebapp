@@ -1,0 +1,37 @@
+import assert from 'node:assert/strict'
+import { readFile, stat } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+
+const root = new URL('../', import.meta.url)
+const metadata = JSON.parse(await readFile(new URL('public/pr/downloads/android-release.json', root), 'utf8'))
+// native/ is deliberately excluded from the Web image, including all private signing files.
+const release = process.argv.includes('--public-only')
+  ? { applicationId: 'com.kakeibodata.kakeibo.app', versionCode: metadata.versionCode, versionName: metadata.versionName }
+  : JSON.parse(await readFile(new URL('native/twa/release.json', root), 'utf8'))
+const associations = JSON.parse(await readFile(new URL('public/.well-known/assetlinks.json', root), 'utf8'))
+assert.equal(release.applicationId, 'com.kakeibodata.kakeibo.app')
+assert.match(release.versionName, /^\d+\.\d+\.\d+$/)
+assert.ok(Number.isSafeInteger(release.versionCode) && release.versionCode > 0)
+assert.equal(metadata.packageName, release.applicationId)
+assert.equal(metadata.versionCode, release.versionCode)
+assert.equal(metadata.versionName, release.versionName)
+assert.equal(metadata.file, `kakeibo-android-${release.versionName}.apk`)
+assert.match(metadata.sha256, /^[a-f0-9]{64}$/)
+assert.match(metadata.certificateSha256, /^(?:[A-F0-9]{2}:){31}[A-F0-9]{2}$/)
+assert.equal(associations.length, 1)
+assert.deepEqual(associations[0].relation, ['delegate_permission/common.handle_all_urls'])
+assert.equal(associations[0].target.namespace, 'android_app')
+assert.equal(associations[0].target.package_name, metadata.packageName)
+assert.deepEqual(associations[0].target.sha256_cert_fingerprints, [metadata.certificateSha256])
+const apkUrl = new URL(`public/pr/downloads/${metadata.file}`, root)
+const apk = await readFile(apkUrl)
+assert.equal((await stat(apkUrl)).size, metadata.bytes)
+assert.equal(apk.readUInt32LE(0), 0x04034b50, 'APK must be a ZIP, never an HTML error page')
+assert.equal(createHash('sha256').update(apk).digest('hex'), metadata.sha256)
+const nginx = await readFile(new URL('nginx.conf', root), 'utf8')
+assert.match(nginx, /location = \/\.well-known\/assetlinks\.json/)
+assert.match(nginx, /location \^~ \/pr\/downloads\//)
+assert.match(nginx, /application\/vnd\.android\.package-archive apk/)
+const guide = await readFile(new URL('public/pr/install.html', root), 'utf8')
+assert.ok(guide.includes(`/pr/downloads/${metadata.file}`))
+console.log(`Android release verified: ${metadata.packageName} ${metadata.versionName}, ${metadata.bytes} bytes, APK hash and Digital Asset Links agree.`)

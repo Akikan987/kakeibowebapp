@@ -1,0 +1,12 @@
+.gradle/
+.gradle-user-home/
+.gradle-project-cache/
+.signing/
+local.properties
+**/build/
+releases/
+*.apk
+*.aab
+*.p12
+*.jks
+*.keystore

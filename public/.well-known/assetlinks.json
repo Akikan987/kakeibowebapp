@@ -1,0 +1,14 @@
+[
+  {
+    "target": {
+      "package_name": "com.kakeibodata.kakeibo.app",
+      "namespace": "android_app",
+      "sha256_cert_fingerprints": [
+        "7E:64:3C:EE:BD:39:7B:39:16:15:F8:F1:2C:A2:51:62:D5:C9:88:77:57:30:9B:05:EE:EF:B5:66:6B:D5:45:CE"
+      ]
+    },
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ]
+  }
+]

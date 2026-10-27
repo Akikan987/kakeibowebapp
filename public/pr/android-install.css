@@ -1,0 +1,33 @@
+.install-guide .device-links {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+.apk-card {
+  display: grid;
+  gap: 24px;
+  padding: clamp(20px, 4vw, 32px);
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background: #fff;
+  overflow-wrap: anywhere;
+}
+.apk-card p { margin: 0; }
+.apk-download {
+  width: fit-content;
+  max-width: 100%;
+  min-height: 48px;
+  white-space: normal;
+  line-height: 1.5;
+  gap: 16px;
+}
+.apk-download span { flex-shrink: 0; white-space: nowrap; }
+.apk-steps {
+  display: grid;
+  gap: 16px;
+  list-style: decimal;
+  margin: 0;
+  padding-inline-start: 1.5rem;
+}
+.apk-caveat { color: var(--muted); font-size: .875rem; line-height: 1.8; }
+@media (max-width: 480px) {
+  .apk-download { width: 100%; }
+}

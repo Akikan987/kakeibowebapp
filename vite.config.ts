@@ -91,12 +91,13 @@ export default defineConfig({
         // アプリ本体（HTML/JS/CSS/アイコン）を端末に保存し、サーバーが止まっていても起動できるようにする
         globPatterns: ['**/*.{js,css,html,svg,png}'],
         // manifestはプラグインが改訂番号付きで追加するため、globでの重複登録を避ける
-        globIgnores: ['pr/**/*', 'og.png', 'manifest.webmanifest'],
+        globIgnores: ['pr/**/*', 'downloads/**/*', '.well-known/**/*', 'og.png', 'manifest.webmanifest'],
         // 未知のURLは index.html を返す（SPA）。ただしAPIは除く。
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [
           /^\/(auth|sync|users|ocr|health|integrations|docs|openapi\.json)/,
           /^\/pr(?:\/|$)/,
+          /^\/(?:downloads|\.well-known)(?:\/|$)/,
         ],
         // APIはキャッシュせず必ずサーバーへ（データの正はサーバーとIndexedDB）
         runtimeCaching: [

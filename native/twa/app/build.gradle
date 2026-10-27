@@ -1,0 +1,43 @@
+plugins { id "com.android.application" }
+def releaseInfo = new groovy.json.JsonSlurper().parse(rootProject.file("release.json"))
+def signingPath = System.getenv("KAKEIBO_ANDROID_STORE_FILE")
+def signingPassword = System.getenv("KAKEIBO_ANDROID_STORE_PASSWORD")
+
+android {
+    namespace releaseInfo.applicationId
+    compileSdk 36
+    defaultConfig {
+        applicationId releaseInfo.applicationId
+        minSdk releaseInfo.minSdk
+        targetSdk releaseInfo.targetSdk
+        versionCode releaseInfo.versionCode
+        versionName releaseInfo.versionName
+    }
+    signingConfigs {
+        release {
+            if (signingPath && signingPassword) {
+                storeFile file(signingPath)
+                storePassword signingPassword
+                keyAlias "kakeibo-release"
+                keyPassword signingPassword
+                storeType "PKCS12"
+            }
+        }
+    }
+    buildTypes {
+        release {
+            signingConfig signingConfigs.release
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+dependencies {
+    implementation "com.google.androidbrowserhelper:androidbrowserhelper:2.7.4"
+    testImplementation "junit:junit:4.13.2"
+}
