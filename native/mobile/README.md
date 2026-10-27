@@ -88,6 +88,8 @@ Capacitorアプリ、`KakeiboDevice`プラグイン、WidgetKit用ソースとAp
 
 最終APK: `releases/kakeibo-native-0.1.0.apk`、3,946,866 bytes、SHA256 `947311fd23c6d5e0f4c56238f6f66e5821590b8c4810e0d420529c437fe405d9`。APKはGitや公開Web配布先へアップロードしていません。
 
+GitHubへのプッシュも自動承認レビューで拒否されたため、コミット済み・未送信です。承認対象は既存の `Akikan987/kakeibowebapp` の `main` と、`Akikan987/kakeibo` の `codex/native-auth`。API側は同時進行の別作業を送信対象へ混ぜないよう、remote mainから専用worktreeへ今回の認証コミットだけを移しました（`6b683a8`、テスト済みAPIソースと同一）。Webの実装コミットは`2e017a0`で、後続は承認待ち状態の文書更新です。送信承認なしに別ツールや送信先を使って回避しません。
+
 参考: [Capacitorのプラグイン構成](https://capacitorjs.com/docs/plugins)、[開発環境](https://capacitorjs.com/docs/getting-started/environment-setup)、[WorkManagerの周期制限](https://developer.android.com/develop/background-work/background-tasks/persistent/getting-started/define-work)、[WidgetKit](https://developer.apple.com/documentation/widgetkit)。
 
 ## 実機確認チェックリスト
