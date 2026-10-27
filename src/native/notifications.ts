@@ -1,3 +1,4 @@
+import { isHybridAndroid, KakeiboDevice } from './runtime.ts'
 /** Optional Android bridge. Nothing is collected/read just by importing this module. */
 export interface NativeNotificationEvent {
   id: string
@@ -22,7 +23,7 @@ interface NativeBridge {
 declare global { interface Window { KakeiboNative?: NativeBridge } }
 
 const sourcePackages = new Set(['jp.co.smbc.direct', 'com.smbc_card.vpass'])
-export const isAndroidNative = () => typeof window !== 'undefined' && typeof window.KakeiboNative?.postMessage === 'function'
+export const isAndroidNative = () => isHybridAndroid() || typeof window !== 'undefined' && typeof window.KakeiboNative?.postMessage === 'function'
 
 /** Validate native data as strictly as imported text; never render raw HTML or follow links. */
 export function notificationEvents(value: unknown): NativeNotificationEvent[] {
@@ -57,6 +58,7 @@ let bound: NativeBridge | undefined
 const commands = new Set(['status', 'enable', 'disable', 'openNotificationSettings', 'readPending', 'ack', 'appearance'])
 
 export function nativeNotificationCommand(command: string, extra: { ids?: string[]; dark?: boolean } = {}): Promise<unknown> {
+  if (isHybridAndroid() && commands.has(command)) return KakeiboDevice.notificationCommand({ command, ...extra })
   const bridge = typeof window !== 'undefined' ? window.KakeiboNative : undefined
   if (!bridge || !commands.has(command)) return Promise.reject(new Error('Androidアプリ版で利用できます'))
   if (pending.size >= 10) return Promise.reject(new Error('処理が混み合っています。少し待ってください'))

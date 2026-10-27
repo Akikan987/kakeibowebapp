@@ -3,6 +3,8 @@ import { Alert, Box, Button, CircularProgress, Stack, Typography } from '@mui/ma
 import { ApiError, apiSocialConnections, apiSocialProviders, apiSocialStart, apiSocialUnlink, type SocialProvider, type SocialProviderId } from '../api'
 import { Field, Modal } from './ui'
 import { isAndroidNative } from '../native/notifications'
+import { isHybridNative } from '../native/runtime'
+import { beginNativeLogin, openAccountInBrowser } from '../native/auth'
 
 const labels: Record<SocialProviderId, string> = { google: 'Google', line: 'LINE', kakao: 'KakaoTalk', x: 'X' }
 export const socialError = (error: unknown) => {
@@ -62,6 +64,16 @@ export function SocialLogin({ token, disabled = false, onBusyChange }: { token?:
       setNotice('連携を解除し、ほかの端末からログアウトしました。')
     } catch (err) { setError(socialError(err)) } finally { setBusy(false) }
   }
+  if (isHybridNative()) return <Stack spacing={1.5}>
+    <Typography variant="subtitle2">{token ? 'アカウントの外部連携' : 'Google・LINEでログイン'}</Typography>
+    <Button disabled={disabled || busy} variant="outlined" onClick={() => {
+      setBusy(true); setError('')
+      void (token ? openAccountInBrowser() : beginNativeLogin()).catch((err) => setError(err instanceof Error ? err.message : '認証を開始できませんでした')).finally(() => setBusy(false))
+    }}>{token ? 'ブラウザーで連携を管理' : 'ブラウザーでログインしてアプリへ戻る'}</Button>
+    <Typography variant="caption">システムブラウザーでいつもの方法を選び、表示されたアカウントを確認してアプリへのログインを許可してください。連携管理ではブラウザー側も同じアカウントか確認してください。</Typography>
+    {!token && <Button onClick={() => window.dispatchEvent(new Event('kakeibo:native-complete'))}>ブラウザーで許可済み：ログインを確認</Button>}
+    {error && <Alert severity="error">{error}</Alert>}
+  </Stack>
   return <Stack spacing={1.5}>
     <Typography variant="subtitle2">{token ? '外部サービスとの連携' : '外部サービスで続ける'}</Typography>
     {loading ? <Box role="status" sx={{ textAlign: 'center', p: 2 }}><CircularProgress size={22} aria-label="ログイン方法を読み込み中" /></Box> :

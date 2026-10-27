@@ -1,3 +1,4 @@
+import { apiFetch } from './native/http.ts'
 import { normalizePaymentNetworks } from './paymentNetworks.ts'
 import { readReceiptItems } from './receiptItems.ts'
 import type {
@@ -42,7 +43,7 @@ async function request<T>(
   headers['X-Kakeibo-Registration'] = 'email-v1'
   if (options.token && options.token !== 'cookie') headers['Authorization'] = `Bearer ${options.token}`
 
-  const res = await fetch(BASE + path, {
+  const res = await apiFetch(BASE + path, {
     method: options.method ?? 'GET',
     headers,
     credentials: 'same-origin',
@@ -533,7 +534,7 @@ export interface OcrResult {
 export async function apiReceiptConfig(token: string): Promise<boolean> {
   const headers: Record<string, string> = { 'X-Kakeibo-Session': 'cookie' }
   if (token !== 'cookie') headers.Authorization = `Bearer ${token}`
-  const res = await fetch('/ocr/config', { headers, credentials: 'same-origin', cache: 'no-store' })
+  const res = await apiFetch('/ocr/config', { headers, credentials: 'same-origin', cache: 'no-store' })
   if (!res.ok) throw new ApiError(res.status, '読み取り設定を取得できませんでした')
   return (await res.json()).ai_available === true
 }
@@ -562,7 +563,7 @@ export async function apiReadReceipt(
   form.append('include_items', mode === 'ai' && includeItems ? 'true' : 'false')
   const headers: Record<string, string> = { 'X-Kakeibo-Session': 'cookie' }
   if (token !== 'cookie') headers.Authorization = `Bearer ${token}`
-  const res = await fetch('/ocr/receipt', {
+  const res = await apiFetch('/ocr/receipt', {
     method: 'POST',
     headers,
     credentials: 'same-origin',

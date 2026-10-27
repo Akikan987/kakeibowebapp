@@ -6,6 +6,8 @@ import { StoreProvider } from './store'
 import { setupOffline } from './offline'
 import { AppThemeProvider } from './theme'
 import './index.css'
+import { isHybridNative } from './native/runtime'
+import { BrowserNativeApproval, NativeIntegration } from './components/NativeIntegration'
 
 const root = createRoot(document.getElementById('root')!)
 // Only in dev: no account store, auth requests, AI calls or service worker in this preview.
@@ -14,13 +16,15 @@ if (import.meta.env.DEV && new URLSearchParams(location.search).get('design-prev
     root.render(<StrictMode><AppThemeProvider><DesignPreview /></AppThemeProvider></StrictMode>)
   })
 } else {
-  setupOffline()
+  if (!isHybridNative()) setupOffline()
   root.render(
     <StrictMode>
       <AppThemeProvider>
         <StoreProvider>
+          <BrowserNativeApproval />
           <App />
-          <PwaUpdatePrompt />
+          <NativeIntegration />
+          {!isHybridNative() && <PwaUpdatePrompt />}
         </StoreProvider>
       </AppThemeProvider>
     </StrictMode>,

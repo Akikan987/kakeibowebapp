@@ -4,6 +4,8 @@
 
 ## 最新の実装状況
 
+- 2026-10-27 家計簿 Native 開発版: TWA・旧通知試験版を残した別のCapacitorアプリとして、共通Web UI、ブラウザーPKCE認証、Android通知読み取り・支払ウィジェット・端末通知を追加。署名APK0.1.0、Web187件・API265件・Android単体8件・エミュレーター実行4件を検証。**認証対応の本番Web/API反映は承認待ち**で、ブラウザーからのNativeログインには反映が必要。実機の銀行通知・OAuth・Gmail・ウィジェット確認とiOSビルドは未完了。[構成・制約・手順](native/mobile/README.md)。
+
 - 2026-10-27 Androidインストール版: 現行Web版を全画面で使う署名付きTrusted Web Activity（TWA）のAPK/AABを追加。新パッケージ `com.kakeibodata.kakeibo.app` で、旧WebViewの銀行通知読み取り試験版は残す。Google／LINE・Gmail・画像選択・書き出しはブラウザーの既存処理を利用し、認証やデータ形式は変更しない。APKは[インストール案内](https://app.kakeibodata.com/pr/install.html#android-apk)から配布。ネイティブUIへの全面再実装、ウィジェット、銀行通知の直接読み取り、iOSビルド、Google Play公開は含まない。[方式・ビルド・署名鍵](native/twa/README.md)。
 
 - 2026-10-27 デザイン基盤の改善: [Emil Kowalskiのデザインスキル](https://github.com/emilkowalski/skills)を開発環境へ導入し、既存MUIに適用。共通ボタンの押下反応・フォーカス、カードの余白と不透明な本文、長い名前と件数の配置、狭い画面での金額表示、閉じるボタン付きダイアログを整理。拡大制限を削除し、動きを抑える設定と高コントラストにも対応。Androidのtheme-color・既存ナビゲーションとデータ処理は維持する。架空データの開発専用プレビューは本番ビルドから除外。[方針・検証方法](docs/DESIGN_SYSTEM.md)。

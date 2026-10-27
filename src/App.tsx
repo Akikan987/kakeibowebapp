@@ -221,6 +221,27 @@ export default function App() {
 
   useEffect(() => { backNavigation.current?.screenChanged() }, [tab])
 
+  useEffect(() => {
+    const url = new URL(location.href)
+    if (url.searchParams.get('native_manage') === '1') sessionStorage.setItem('kakeibo:native-manage', '1')
+    if (!s.hasEntered || sessionStorage.getItem('kakeibo:native-manage') !== '1') return
+    sessionStorage.removeItem('kakeibo:native-manage')
+    url.searchParams.delete('native_manage')
+    history.replaceState(history.state, '', `${url.pathname}${url.search}${url.hash}`)
+    setSettingsPageRequest({ section: 'integrations', revision: Date.now() })
+    setSettingsReturnTab('home'); setTab('settings')
+  }, [s.hasEntered])
+
+  useEffect(() => {
+    const open = (event: Event) => {
+      const shortcut = (event as CustomEvent<string>).detail
+      if (shortcut === 'add-expense') { setEditDraft(emptyDraft()); setAddReturnTab('home'); setTab('add') }
+      else if (shortcut === 'withdrawals') setTab('payments')
+    }
+    window.addEventListener('kakeibo:native-shortcut', open)
+    return () => window.removeEventListener('kakeibo:native-shortcut', open)
+  }, [])
+
   if (socialCallback === 'complete' || socialCallback === 'error') {
     return <><SocialCallbackScreen failed={socialCallback === 'error'} onDone={(linked) => {
       const url = new URL(window.location.href)

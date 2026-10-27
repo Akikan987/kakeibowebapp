@@ -7,11 +7,13 @@ import { matchSmbcPayment } from '../imports/smbc'
 import { financialMessageSource } from '../imports/source'
 import { GMAIL_CONNECTIONS_URL, gmailAiStatusSummary, gmailCandidateAction, gmailCandidates, gmailDateToInput, gmailDisconnectOutcome, gmailPaymentOptions, gmailPaymentTypeMismatch, gmailRequest, gmailReviewTimestamp, googleAuthorizationUrl, pushApplicationKey, pushDeviceId, reviewGmailCandidate, sendPushTest, type GmailCandidate, type GmailDisconnectOutcome, type GmailStatus } from '../imports/gmail'
 import { isAndroidNative } from '../native/notifications'
+import { isHybridNative } from '../native/runtime'
+import { NativeBrowserAccountButton } from './NativeIntegration'
 
 export function GmailImport({ onImport, mode = 'settings', onOpenCandidates }: { onImport: (draft: ExpenseDraft, eventId?: string, gmailCandidateId?: string) => void; mode?: 'settings' | 'candidates'; onOpenCandidates?: () => void }) {
   const s = useStore()
   const token = s.account?.token
-  const native = isAndroidNative()
+  const native = isAndroidNative() || isHybridNative()
   const [status, setStatus] = useState<GmailStatus | null>(null)
   const [statusLoading, setStatusLoading] = useState(!!token)
   const [statusError, setStatusError] = useState(false)
@@ -206,7 +208,7 @@ export function GmailImport({ onImport, mode = 'settings', onOpenCandidates }: {
     <Card id={mode === 'settings' ? 'gmail-integration' : 'gmail-candidates'}><CardContent><Stack spacing={2}>
       {mode === 'settings' && <Typography variant="body2">カード・銀行・電子マネーの明細メールから候補を作り、内容を確認してから家計簿に追加できます。</Typography>}
       {mode === 'settings' && (!token ? <Alert severity="info">Gmail連携には家計簿アカウントへのログインが必要です。</Alert> : <>
-        {native && <Alert severity="info">Gmailの接続・通知設定はChrome／Safariなどのブラウザー版・PWAで行ってください。Androidアプリ内ではGoogle認証を開きません。</Alert>}
+        {native && <Alert severity="info">Gmailの認証はシステムブラウザーで行います。同じ家計簿アカウントで接続した後、この画面で更新すると接続状態・候補を確認できます。{isHybridNative() && <NativeBrowserAccountButton />}</Alert>}
         {statusLoading && <Alert severity="info">{status ? 'Gmailの接続状態を更新しています。' : 'Gmailの接続状態を読み込み中です。'}</Alert>}
         {statusError && <Alert severity="error">最新のGmail接続状態を取得できませんでした。通信を確認し、「接続状態・候補を更新する」から再試行してください。</Alert>}
         {status?.connected ? <>

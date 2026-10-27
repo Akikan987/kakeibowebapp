@@ -20,6 +20,7 @@ import { SocialLogin } from '../components/SocialLogin'
 import { EmailVerification } from '../components/EmailVerification'
 import { FinancialImport } from '../components/FinancialImport'
 import { GmailImport } from '../components/GmailImport'
+import { NativeSettings } from '../components/NativeIntegration'
 import type { ExpenseDraft } from '../entries/draft'
 import { useAppTheme, type AppThemeMode } from '../theme'
 
@@ -190,6 +191,7 @@ export function SettingsScreen({ onImport, onOpenGmailCandidates, requestedSecti
         </>}
 
         {section === 'integrations' && <>
+          <NativeSettings />
           <SectionHeader>取り込み</SectionHeader>
           <FinancialImport key={s.account?.uid ?? 'offline'} onImport={onImport} />
           <GmailImport key={`gmail:${s.account?.uid ?? 'offline'}`} mode="settings" onImport={onImport} onOpenCandidates={onOpenGmailCandidates} />

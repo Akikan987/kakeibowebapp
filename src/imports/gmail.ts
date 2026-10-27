@@ -1,3 +1,4 @@
+import { apiFetch } from '../native/http.ts'
 import type { FinancialMessageCandidate } from './smbc.ts'
 import type { PaymentMethod } from '../types.ts'
 
@@ -97,7 +98,7 @@ export async function gmailRequest<T>(token: string, path: string, body?: unknow
   const headers: Record<string, string> = { 'X-Kakeibo-Session': 'cookie' }
   if (token !== 'cookie') headers.Authorization = `Bearer ${token}`
   if (body !== undefined) headers['Content-Type'] = 'application/json'
-  const response = await fetch(`/integrations/${path}`, {
+  const response = await apiFetch(`/integrations/${path}`, {
     credentials: 'same-origin', cache: 'no-store', headers,
     method: body === undefined ? 'GET' : 'POST', body: body === undefined ? undefined : JSON.stringify(body),
   })

@@ -1,3 +1,4 @@
+import { exportFile } from './native/files'
 import {
   createContext,
   useCallback,
@@ -1512,15 +1513,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       ...accountTransfers.map((row) => [new Date(row.transferredAtMillis).toLocaleString('ja-JP'), '振替（収支対象外）', row.note, row.amountYen, '', `${cashAccounts.find((a) => a.id === row.fromAccountId)?.name ?? ''} → ${cashAccounts.find((a) => a.id === row.toAccountId)?.name ?? ''}`]),
     ]
     const csv = `\uFEFF${rows.map((row) => row.map(escape).join(',')).join('\r\n')}`
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
     const d = new Date()
     const p = (n: number) => String(n).padStart(2, '0')
-    const a = document.createElement('a')
-    a.href = URL.createObjectURL(blob)
-    a.download = `kakeibo-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}.csv`
-    a.click()
-    URL.revokeObjectURL(a.href)
-    notify('CSVをエクスポートしました')
+    void exportFile(csv, `kakeibo-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}.csv`, 'text/csv;charset=utf-8')
+      .then(() => notify('CSVの保存・共有を終了しました')).catch(() => notify('CSVを保存・共有できませんでした', 'error'))
   }, [accountTransfers, cashAccounts, expenseRefunds, expenses, notify, paymentMethods])
 
   const exportJson = useCallback(() => {
@@ -1614,17 +1610,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         }),
       ),
     }
-    const blob = new Blob([JSON.stringify(payload, null, 2)], {
-      type: 'application/json',
-    })
     const d = new Date()
     const p = (n: number) => String(n).padStart(2, '0')
-    const a = document.createElement('a')
-    a.href = URL.createObjectURL(blob)
-    a.download = `kakeibo-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}.json`
-    a.click()
-    URL.revokeObjectURL(a.href)
-    notify('エクスポートしました')
+    void exportFile(JSON.stringify(payload, null, 2), `kakeibo-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}.json`, 'application/json')
+      .then(() => notify('バックアップの保存・共有を終了しました')).catch(() => notify('バックアップを保存・共有できませんでした', 'error'))
   }, [cashAccounts, accountTransfers, expenseRefunds, budgets, cardStatements, categories, expenses, members, notify, paymentMethods, prepaidCharges, recurringTemplates, settlements, splits])
 
   const importJson = useCallback(

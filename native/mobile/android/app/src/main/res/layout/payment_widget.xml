@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_open" android:layout_width="match_parent" android:layout_height="match_parent"
+    android:orientation="vertical" android:padding="16dp" android:background="@drawable/widget_background">
+    <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="家計簿 Native · 今月の支払予定" android:textColor="#BAE6FD" android:textSize="13sp" />
+    <TextView android:id="@+id/widget_total" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="金額は非表示" android:textColor="#FFFFFF" android:textSize="23sp" android:textStyle="bold" android:layout_marginTop="6dp" />
+    <TextView android:id="@+id/widget_next" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="アプリで支払予定を確認" android:textColor="#E2E8F0" android:textSize="13sp" android:layout_marginTop="4dp" />
+    <TextView android:id="@+id/widget_updated" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:text="ログインしてアプリを開いてください" android:textColor="#CBD5E1" android:textSize="11sp" android:layout_marginTop="8dp" />
+    <Button android:id="@+id/widget_add" android:layout_width="match_parent" android:layout_height="40dp" android:minHeight="0dp" android:text="＋ 支出を追加" android:textSize="13sp" />
+</LinearLayout>

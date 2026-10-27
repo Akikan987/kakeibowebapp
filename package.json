@@ -9,9 +9,19 @@
     "legal:build": "node scripts/build-legal.mjs",
     "legal:check": "node scripts/verify-legal.mjs",
     "test": "node --experimental-strip-types --test tests/*.test.ts",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "native:build": "node scripts/build-native-web.mjs",
+    "native:sync": "npm run native:build && cap sync android"
   },
   "dependencies": {
+    "@capacitor/android": "7.6.9",
+    "@capacitor/app": "7.1.2",
+    "@capacitor/browser": "7.0.5",
+    "@capacitor/core": "7.6.9",
+    "@capacitor/filesystem": "7.1.9",
+    "@capacitor/ios": "7.6.9",
+    "@capacitor/local-notifications": "7.0.7",
+    "@capacitor/share": "7.0.4",
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
     "@mui/icons-material": "7.3.1",
@@ -22,6 +32,7 @@
     "react-is": "18.3.1"
   },
   "devDependencies": {
+    "@capacitor/cli": "7.6.9",
     "@tailwindcss/vite": "^4.0.0",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",

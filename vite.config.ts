@@ -5,7 +5,8 @@ import { VitePWA } from 'vite-plugin-pwa'
 
 const buildId = Date.now().toString(36)
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
+  publicDir: mode === 'native' ? false : 'public',
   define: {
     __APP_BUILD_ID__: JSON.stringify(buildId),
   },
@@ -36,6 +37,7 @@ export default defineConfig({
     react(),
     tailwindcss(),
     VitePWA({
+      disable: mode === 'native',
       // 入力中に突然再読込しないよう、新版は画面上で案内してから切り替える
       registerType: 'prompt',
       // Cloudflareに古いsw.jsが残っても、ビルド固有URLで必ず新版を確認する
@@ -121,4 +123,4 @@ export default defineConfig({
       '/integrations': 'http://localhost:8000',
     },
   },
-})
+}))

@@ -1,0 +1,7 @@
+{
+  "applicationId": "com.kakeibodata.kakeibo.nativeapp",
+  "versionCode": 1,
+  "versionName": "0.1.0",
+  "minSdk": 26,
+  "targetSdk": 36
+}

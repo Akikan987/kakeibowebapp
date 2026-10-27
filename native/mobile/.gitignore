@@ -1,0 +1,15 @@
+.gradle/
+.gradle-*/
+.tooling/
+.signing/
+.debug/
+web/
+releases/
+**/build/
+**/local.properties
+*.apk
+*.aab
+*.jks
+*.keystore
+*.p12
+*.dpapi
