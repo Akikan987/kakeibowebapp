@@ -86,7 +86,12 @@ function useEntryFieldNavigation() {
   }
 }
 
-function EntrySaveBar({ children, disabled, onSave }: { children: ReactNode; disabled: boolean; onSave: () => void }) {
+function EntrySaveBar({ children, disabled, onSave, onDiscard }: {
+  children: ReactNode
+  disabled: boolean
+  onSave: () => void
+  onDiscard: () => void
+}) {
   const [viewportOverlap, setViewportOverlap] = useState(0)
   useEffect(() => {
     const viewport = window.visualViewport
@@ -121,15 +126,19 @@ function EntrySaveBar({ children, disabled, onSave }: { children: ReactNode; dis
       borderColor: 'divider',
       borderRadius: '20px',
     }}>
-      <Button disabled={disabled} onClick={onSave} sx={{ minHeight: 44 }}>{children}</Button>
+      <Stack direction="row" spacing={1}>
+        <Button variant="outline" disabled={disabled} onClick={onDiscard} sx={{ width: 'auto', minHeight: 44 }}>破棄</Button>
+        <Button disabled={disabled} onClick={onSave} sx={{ minHeight: 44, flex: 1 }}>{children}</Button>
+      </Stack>
     </Box>
   </Box>
 }
 
-export function AddScreen({ initial, importKey, onDone, onGmailImport, gmailFocusRequest }: {
+export function AddScreen({ initial, importKey, onDone, onDiscard, onGmailImport, gmailFocusRequest }: {
   initial?: ExpenseDraft | null
   importKey?: string
   onDone: (source: string, expenseId: string) => void
+  onDiscard: () => void
   onGmailImport: (draft: ExpenseDraft, gmailCandidateId: string) => void
   gmailFocusRequest?: { id: number; complete: () => void }
 }) {
@@ -191,14 +200,17 @@ export function AddScreen({ initial, importKey, onDone, onGmailImport, gmailFocu
   }
   const amountField = useYenField(draft.amountYen, (amountYen) => patch({ amountYen }), { max: MAX_ENTRY_YEN, refundHint: draft.type === TYPE_EXPENSE })
   const fieldNavigation = useEntryFieldNavigation()
+  const zeroAmount = parseYenAmount(draft.amountYen).error === 'zero'
 
   const importGmailDraft = (gmailDraft: ExpenseDraft, _eventId?: string, candidateId?: string) => {
     if (!candidateId) return
     if (dirty) {
       const saved = writeDraft(localStorage, storageKey, draft, baseUpdatedAt.current, true)
-      const message = saved
-        ? '入力中の内容を下書きに保存しました。Gmail候補の入力へ切り替えますか？'
-        : '入力中の内容を下書きに保存できませんでした。それでもGmail候補の入力へ切り替えますか？'
+      const message = zeroAmount
+        ? '金額が0円のため、入力中の内容は下書きに残りません。Gmail候補の入力へ切り替えますか？'
+        : saved
+          ? '入力中の内容を下書きに保存しました。Gmail候補の入力へ切り替えますか？'
+          : '入力中の内容を下書きに保存できませんでした。それでもGmail候補の入力へ切り替えますか？'
       if (!window.confirm(message)) return
     }
     onGmailImport(gmailDraft, candidateId)
@@ -218,6 +230,33 @@ export function AddScreen({ initial, importKey, onDone, onGmailImport, gmailFocu
       }
     } finally { savingRef.current = false; if (mounted.current) setSaving(false) }
   }
+  const requestDiscard = () => {
+    setDiscardFailed(false)
+    setConfirmDiscard(true)
+  }
+  const discardDialog = confirmDiscard && <Modal
+    title={recoverable ? '下書きを破棄しますか？' : '入力を破棄しますか？'}
+    onClose={() => setConfirmDiscard(false)}
+  >
+    <Stack spacing={2}>
+      <Typography variant="body2">入力途中の内容をこの端末から削除します。</Typography>
+      {discardFailed && <Alert severity="error">下書きを削除できませんでした。もう一度お試しください。</Alert>}
+      <Stack direction="row" spacing={1.5}>
+        <Button variant="outline" onClick={() => setConfirmDiscard(false)}>キャンセル</Button>
+        <Button color="#D32F2F" onClick={() => {
+          if (!discardDraft(localStorage, storageKey)) { setDiscardFailed(true); return }
+          setConfirmDiscard(false)
+          if (recoverable) {
+            setRecoverable(null)
+          } else {
+            finished.current = true
+            onDiscard()
+          }
+        }}>破棄する</Button>
+      </Stack>
+    </Stack>
+  </Modal>
+
   if (recoverable) {
     return <Screen>
       <LargeTitle>{initial?.editingId ? '編集' : '記録する'}</LargeTitle>
@@ -235,23 +274,10 @@ export function AddScreen({ initial, importKey, onDone, onGmailImport, gmailFocu
             setRecoverable(null)
             setSplitExpanded(null)
           }}>下書きを続ける</Button>
-          <Button variant="outline" onClick={() => { setDiscardFailed(false); setConfirmDiscard(true) }}>下書きを破棄する</Button>
+          <Button variant="outline" onClick={requestDiscard}>下書きを破棄する</Button>
         </Stack>
       </CardContent></Card>
-      {confirmDiscard && <Modal title="下書きを破棄しますか？" onClose={() => setConfirmDiscard(false)}>
-        <Stack spacing={2}>
-          <Typography variant="body2">入力途中の内容をこの端末から削除します。</Typography>
-          {discardFailed && <Alert severity="error">下書きを削除できませんでした。もう一度お試しください。</Alert>}
-          <Stack direction="row" spacing={1.5}>
-            <Button variant="outline" onClick={() => setConfirmDiscard(false)}>キャンセル</Button>
-            <Button color="#D32F2F" onClick={() => {
-              if (!discardDraft(localStorage, storageKey)) { setDiscardFailed(true); return }
-              setConfirmDiscard(false)
-              setRecoverable(null)
-            }}>破棄する</Button>
-          </Stack>
-        </Stack>
-      </Modal>}
+      {discardDialog}
       {s.account && !initial?.editingId && <GmailImport mode="candidates" onImport={importGmailDraft} focusRequest={gmailFocusRequest} />}
     </Screen>
   }
@@ -271,6 +297,9 @@ export function AddScreen({ initial, importKey, onDone, onGmailImport, gmailFocu
   }
 
   const isIncome = draft.type === TYPE_INCOME
+  const draftStatus = zeroAmount
+    ? '金額が0円の間は下書きに保存しません。'
+    : dirty && !draftStorageFailed ? '下書きをこの端末に保存しています。' : '入力途中の内容はこの端末の下書きに保存します。'
   const amount = parseYenAmount(draft.amountYen, MAX_ENTRY_YEN).amount ?? 0
   const splitTotal = draft.splits.reduce((total, split) => total + (parseInt(split.amount, 10) || 0), 0)
   const fillEqualSplits = () => {
@@ -328,8 +357,8 @@ export function AddScreen({ initial, importKey, onDone, onGmailImport, gmailFocu
         {!draft.editingId && <Button variant="text" onClick={() => patch({ type: '' }, false)} sx={{ width: 'auto' }}>種類を変更</Button>}
       </Stack>
 
-      {draftStorageFailed && <Alert severity="warning" sx={{ mb: 2 }}>この端末に下書きを保存できません。画面を閉じる前に明細を保存してください。</Alert>}
-      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>{dirty && !draftStorageFailed ? '下書きをこの端末に保存しています。' : '入力途中の内容はこの端末の下書きに保存します。'} 画像は保存せず、別端末には同期しません。</Typography>
+      {draftStorageFailed && <Alert severity="warning" sx={{ mb: 2 }}>{zeroAmount ? 'この端末に残っている下書きを削除できませんでした。' : 'この端末に下書きを保存できません。画面を閉じる前に明細を保存してください。'}</Alert>}
+      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>{draftStatus} 画像は保存せず、別端末には同期しません。</Typography>
 
       <SectionHeader>内容</SectionHeader>
       {!isIncome && <Accordion disableGutters elevation={0} sx={{ ...optionStyle, mt: 0, mb: 1.5 }}>
@@ -466,9 +495,10 @@ export function AddScreen({ initial, importKey, onDone, onGmailImport, gmailFocu
 
       {duplicates.length > 0 && <Alert severity="warning" sx={{ mt: 2 }}>同じ日・金額{isIncome ? '' : '・決済方法'}の記録が{duplicates.length}件あります。保存前に重複を確認してください。</Alert>}
       {s.account && !draft.editingId && !isIncome && <GmailImport mode="candidates" onImport={importGmailDraft} focusRequest={gmailFocusRequest} />}
-      <EntrySaveBar disabled={reading || saving} onSave={() => void save()}>
+      <EntrySaveBar disabled={reading || saving} onSave={() => void save()} onDiscard={requestDiscard}>
         {saving ? '保存中…' : draft.editingId ? '更新' : '保存'}
       </EntrySaveBar>
+      {discardDialog}
       {duplicateConfirmedDraft && <Modal title="同じ内容の記録があります" onClose={() => setDuplicateConfirmedDraft(null)}><Stack spacing={1.5}>
         <Typography>同日・同額{isIncome ? '' : '・同じ決済方法'}の記録です。別の買い物なら、そのまま保存できます。自動では統合・削除しません。</Typography>
         {findDuplicateExpenses(duplicateConfirmedDraft, s.expenses).slice(0, 5).map((row) => <Typography key={row.id}>{row.title} ・ {yen(row.amountYen)} ・ {new Date(row.purchasedAtMillis).toLocaleString('ja-JP')}</Typography>)}

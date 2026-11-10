@@ -115,6 +115,13 @@ export default function App() {
     setTab('settings')
   }
 
+  const closeEntry = () => {
+    setNativeImport(null)
+    setGmailImport(null)
+    setEditDraft(null)
+    setTab(addReturnTab)
+  }
+
   const openGmailCandidates = () => {
     setGmailPrompt(null)
     if (editDraft?.editingId) {
@@ -352,6 +359,7 @@ export default function App() {
             <AddScreen
               key={`${s.account?.uid ?? 'offline'}:${editDraft?.editingId ?? 'new'}:${addDraftRevision}`}
               initial={editDraft}
+              onDiscard={closeEntry}
               importKey={gmailImport ? `gmail:${gmailImport.id}` : nativeImport ? `native:${nativeImport.id}` : undefined}
               gmailFocusRequest={gmailFocusRequest ? { id: gmailFocusRequest, complete: () => setGmailFocusRequest(0) } : undefined}
               onGmailImport={(draft, gmailCandidateId) => {
@@ -369,10 +377,7 @@ export default function App() {
                 if (gmailImport && gmailImport.source === source && gmailImport.owner === s.account?.uid && s.account?.token) {
                   void gmailCandidateAction(s.account.token, gmailImport.id, 'imported', expenseId).catch(() => setGmailAckError(true))
                 }
-                setNativeImport(null)
-                setGmailImport(null)
-                setEditDraft(null)
-                setTab(addReturnTab)
+                closeEntry()
               }}
             />
           )}

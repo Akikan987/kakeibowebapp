@@ -78,6 +78,18 @@ test('決済方法だけを選んだ下書きも復元でき、取込下書き�
   assert.equal(discardDraft({ removeItem() { throw new Error('storage unavailable') } }, manual), false)
 })
 
+test('金額を0円にした下書きは残さず、過去の0円の下書きも復元しない', () => {
+  const store = storage()
+  const key = draftStorageKey('user-a', null)
+  for (const amountYen of ['0', '０', ' 00 ']) {
+    assert.ok(writeDraft(store, key, draft, null, true))
+    assert.ok(writeDraft(store, key, { ...draft, amountYen }, null, true))
+    assert.equal(store.getItem(key), null)
+  }
+  store.setItem(key, JSON.stringify({ version: 1, baseUpdatedAt: null, draft: { ...draft, amountYen: '0' }, keepDetails: true }))
+  assert.equal(readDraft(store, key, null, null), null)
+})
+
 test('ログアウト時は対象アカウントの下書きだけを削除する', () => {
   const store = {
     [draftStorageKey('user-a', null)]: 'new',

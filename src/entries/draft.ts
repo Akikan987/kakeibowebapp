@@ -1,5 +1,6 @@
 import type { Category, Expense, PaymentMethod } from '../types.ts'
 import { readReceiptSplitDraft, type ReceiptSplitDraft } from '../receiptSplit.ts'
+import { parseYenAmount } from './amount.ts'
 
 export interface DraftSplit { memberId: string; amount: string }
 export interface ExpenseDraft {
@@ -67,6 +68,7 @@ interface SavedDraft { version: 1; draft: ExpenseDraft; baseUpdatedAt: number | 
 
 /** Local-only and account-scoped. Never store a receipt image, API key, or token. */
 export function writeDraft(storage: Pick<Storage, 'setItem' | 'removeItem'>, key: string, draft: ExpenseDraft, baseUpdatedAt: number | null, keepDetails = false): boolean {
+  if (parseYenAmount(draft.amountYen).error === 'zero') return discardDraft(storage, key)
   try {
     if (hasDraftContent(draft) || keepDetails) {
       const saved: SavedDraft = { version: 1, draft, baseUpdatedAt }
@@ -86,6 +88,7 @@ export function readDraft(storage: Pick<Storage, 'getItem'>, key: string, editin
     if (!draft || draft.editingId !== editingId || !['', 'income', 'expense'].includes(draft.type)) return null
     if (draft.cashAccountId !== undefined && typeof draft.cashAccountId !== 'string') return null
     if (!['title', 'amountYen', 'category', 'source', 'paymentMethodId'].every((key) => typeof draft[key as keyof ExpenseDraft] === 'string')) return null
+    if (parseYenAmount(draft.amountYen).error === 'zero') return null
     if (!Number.isFinite(draft.purchasedAtMillis) || !Number.isFinite(new Date(draft.purchasedAtMillis).getTime())) return null
     if (!Array.isArray(draft.splits) || !draft.splits.every((row) => row && typeof row.memberId === 'string' && typeof row.amount === 'string')) return null
     if (draft.receiptSplit !== undefined) {
