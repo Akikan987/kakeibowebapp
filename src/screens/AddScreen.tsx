@@ -1,9 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import CalculateRoundedIcon from '@mui/icons-material/CalculateRounded'
 import CameraAltRoundedIcon from '@mui/icons-material/CameraAltRounded'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
+import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded'
 import {
+  Accordion,
+  AccordionDetails,
+  AccordionSummary,
   Box,
   Alert,
   CardContent,
@@ -31,7 +35,63 @@ import { MAX_ENTRY_YEN, parseYenAmount } from '../entries/amount'
 import { useYenField } from '../components/useYenField'
 import { PAYMENT_TYPES, PAYMENT_TYPE_LABELS, TYPE_EXPENSE, TYPE_INCOME, newId, now } from '../types'
 
-export function AddScreen({ initial, onDone, onGmailImport }: { initial?: ExpenseDraft | null; onDone: (source: string, expenseId: string) => void; onGmailImport: (draft: ExpenseDraft, gmailCandidateId: string) => void }) {
+const optionStyle = {
+  mt: 1.5,
+  border: 1,
+  borderColor: 'divider',
+  borderRadius: '24px',
+  overflow: 'hidden',
+  '&.MuiAccordion-root': { borderRadius: '24px' },
+  '&::before': { display: 'none' },
+  '& .MuiAccordionSummary-root': { minHeight: 52, px: 2 },
+} as const
+
+function EntrySaveBar({ children, disabled, onSave }: { children: ReactNode; disabled: boolean; onSave: () => void }) {
+  const [viewportOverlap, setViewportOverlap] = useState(0)
+  useEffect(() => {
+    const viewport = window.visualViewport
+    if (!viewport) return
+    // Safari can leave the layout viewport behind the software keyboard.
+    const update = () => {
+      const overlap = viewport.scale === 1 ? Math.round(window.innerHeight - viewport.height - viewport.offsetTop) : 0
+      setViewportOverlap(Math.max(0, overlap))
+    }
+    update()
+    viewport.addEventListener('resize', update)
+    viewport.addEventListener('scroll', update)
+    return () => {
+      viewport.removeEventListener('resize', update)
+      viewport.removeEventListener('scroll', update)
+    }
+  }, [])
+
+  return <Box sx={{ height: '4rem' }}>
+    <Box sx={{
+      position: 'fixed',
+      bottom: `max(calc(var(--kakeibo-nav-clearance) + env(safe-area-inset-bottom, 0px)), ${viewportOverlap}px)`,
+      left: 0,
+      right: 0,
+      zIndex: (theme) => theme.zIndex.appBar - 1,
+      width: 'calc(100% - 24px)',
+      maxWidth: 600,
+      mx: 'auto',
+      p: 1,
+      bgcolor: 'background.paper',
+      border: 1,
+      borderColor: 'divider',
+      borderRadius: '20px',
+    }}>
+      <Button disabled={disabled} onClick={onSave} sx={{ minHeight: 44 }}>{children}</Button>
+    </Box>
+  </Box>
+}
+
+export function AddScreen({ initial, onDone, onGmailImport, gmailFocusRequest }: {
+  initial?: ExpenseDraft | null
+  onDone: (source: string, expenseId: string) => void
+  onGmailImport: (draft: ExpenseDraft, gmailCandidateId: string) => void
+  gmailFocusRequest?: { id: number; complete: () => void }
+}) {
   const s = useStore()
   const [draft, setDraft] = useState<ExpenseDraft>(() => initial ?? emptyDraft())
   const storageKey = draftStorageKey(s.account?.uid ?? 'offline', initial?.editingId ?? null)
@@ -61,6 +121,7 @@ export function AddScreen({ initial, onDone, onGmailImport }: { initial?: Expens
   const receiptItemsMode = useRef(false)
   const [receiptWantsSplit, setReceiptWantsSplit] = useState(false)
   const [receiptSplitOpen, setReceiptSplitOpen] = useState(false)
+  const [splitExpanded, setSplitExpanded] = useState<boolean | null>(null)
   const [aiAvailable, setAiAvailable] = useState(false)
   const [configLoading, setConfigLoading] = useState(true)
   const [receiptResult, setReceiptResult] = useState<OcrResult | null>(null)
@@ -117,7 +178,7 @@ export function AddScreen({ initial, onDone, onGmailImport }: { initial?: Expens
   const draftBanner = <>
     {recoverable && <Alert severity="info" sx={{ mb: 2 }}>
       <Typography variant="body2">前回の下書きがあります：{recoverable.title || '名称未入力'}{recoverable.amountYen && ` / ${recoverable.amountYen}円`}</Typography>
-      <Button variant="text" onClick={() => { setDraft(recoverable); setDirty(true); setRecoverable(null) }}>下書きを復元する</Button>
+      <Button variant="text" onClick={() => { setDraft(recoverable); setDirty(true); setRecoverable(null); setSplitExpanded(null) }}>下書きを復元する</Button>
       <Typography variant="caption">復元せず入力を始めると、新しい下書きで上書きします。</Typography>
     </Alert>}
     {draftStorageFailed && <Alert severity="warning">この端末に下書きを保存できません。画面を閉じる前に明細を保存してください。</Alert>}
@@ -133,13 +194,12 @@ export function AddScreen({ initial, onDone, onGmailImport }: { initial?: Expens
           <Button color="#2E7D32" sx={{ minHeight: 68, fontSize: 18 }} onClick={() => patch({ type: TYPE_INCOME, purchasedAtMillis: now() })}>収入を入力</Button>
           <Button color="#D32F2F" sx={{ minHeight: 68, fontSize: 18 }} onClick={() => patch({ type: TYPE_EXPENSE, purchasedAtMillis: now() })}>支出を入力</Button>
         </Stack>
-        <GmailImport mode="candidates" onImport={importGmailDraft} />
+        {s.account && <GmailImport mode="candidates" onImport={importGmailDraft} focusRequest={gmailFocusRequest} />}
       </Screen>
     )
   }
 
   const isIncome = draft.type === TYPE_INCOME
-  const accent = isIncome ? '#2E7D32' : '#D32F2F'
   const amount = parseYenAmount(draft.amountYen, MAX_ENTRY_YEN).amount ?? 0
   const splitTotal = draft.splits.reduce((total, split) => total + (parseInt(split.amount, 10) || 0), 0)
   const fillEqualSplits = () => {
@@ -192,7 +252,6 @@ export function AddScreen({ initial, onDone, onGmailImport }: { initial?: Expens
 
   return (
     <Screen>
-      {!draft.editingId && !isIncome && <GmailImport mode="candidates" onImport={importGmailDraft} />}
       <Stack direction="row" alignItems="center" justifyContent="space-between">
         <LargeTitle>{draft.editingId ? '編集' : isIncome ? '収入を入力' : '支出を入力'}</LargeTitle>
         {!draft.editingId && <Button variant="text" onClick={() => patch({ type: '' })} sx={{ width: 'auto' }}>種類を変更</Button>}
@@ -203,9 +262,13 @@ export function AddScreen({ initial, onDone, onGmailImport }: { initial?: Expens
 
       <SectionHeader>内容</SectionHeader>
       <Card><CardContent><Stack spacing={2}>
+        <Field
+          label="金額（円）"
+          autoFocus={!draft.editingId && !recoverable && !hasDraftContent(draft)}
+          {...amountField.field}
+        />
         <Field label="タイトル" value={draft.title} onChange={(e) => patch({ title: e.target.value })} placeholder="未入力なら「その他」" />
         {suggestions.length > 0 && <Box><Typography variant="caption" color="text.secondary">同じタイトルの過去の記録から（押したときだけ反映）</Typography>{suggestions.map((suggestion) => <Button key={`${suggestion.category}:${suggestion.paymentMethodId}`} variant="outline" sx={{ mt: 0.75 }} onClick={() => patch({ category: suggestion.category, ...(draft.type === TYPE_EXPENSE ? { paymentMethodId: suggestion.paymentMethodId } : {}) })}>{suggestion.category}{suggestion.paymentName && ` / ${suggestion.paymentName}`}を反映（{suggestion.count}件）</Button>)}</Box>}
-        <Field label="金額（円）" {...amountField.field} />
         <FormControl fullWidth>
           <InputLabel id="category-label">品目</InputLabel>
           <Select labelId="category-label" label="品目" value={draft.category} onChange={(e) => patch({ category: e.target.value })}>
@@ -213,8 +276,6 @@ export function AddScreen({ initial, onDone, onGmailImport }: { initial?: Expens
             {!s.categories.some((category) => category.name === draft.category) && <MenuItem value={draft.category}>{draft.category}</MenuItem>}
           </Select>
         </FormControl>
-        <Field label="記録日時" type="datetime-local" value={toLocalInput(draft.purchasedAtMillis)} onChange={(e) => patch({ purchasedAtMillis: fromLocalInput(e.target.value) })} />
-        {(isIncome || !selectedPayment || !['credit', 'prepaid'].includes(selectedPayment.type)) && <CashAccountSelect label={isIncome ? '入金先の口座・財布' : '支出元の口座・財布'} value={draft.cashAccountId ?? (draft.editingId ? s.expenses.find((row) => row.id === draft.editingId)?.cashAccountId ?? '' : isIncome ? '' : selectedPayment?.cashAccountId ?? '')} onChange={(cashAccountId) => patch({ cashAccountId })} />}
         {!isIncome && (
           <Box>
             <FormControl fullWidth>
@@ -239,75 +300,88 @@ export function AddScreen({ initial, onDone, onGmailImport }: { initial?: Expens
             )}
           </Box>
         )}
+        {(isIncome || !selectedPayment || !['credit', 'prepaid'].includes(selectedPayment.type)) && <CashAccountSelect label={isIncome ? '入金先の口座・財布' : '支出元の口座・財布'} value={draft.cashAccountId ?? (draft.editingId ? s.expenses.find((row) => row.id === draft.editingId)?.cashAccountId ?? '' : isIncome ? '' : selectedPayment?.cashAccountId ?? '')} onChange={(cashAccountId) => patch({ cashAccountId })} />}
+        <Field label="記録日時" type="datetime-local" value={toLocalInput(draft.purchasedAtMillis)} onChange={(e) => patch({ purchasedAtMillis: fromLocalInput(e.target.value) })} />
       </Stack></CardContent></Card>
 
       {!isIncome && (
         <>
-          <SectionHeader>レシートから入力</SectionHeader>
-          <Card><CardContent>
-            <Stack spacing={1.5}>
-              <Typography variant="body2">AIが題名・合計金額・日付・品目・支払方法を読み取ります。商品ごとのお会計を計算したいときは「商品を読んで割り勘」を選んでください。</Typography>
-              {!configLoading && !aiAvailable && <Alert severity="info">{s.account ? 'AI読み取りは準備中、または設定を確認できません。通常の読み取りと手入力は利用できます。' : 'レシート読み取りにはログインが必要です。手入力はそのまま利用できます。'}</Alert>}
-              <Button disabled={reading || configLoading || !aiAvailable} startIcon={<CameraAltRoundedIcon />} onClick={() => { receiptMode.current = 'ai'; receiptItemsMode.current = false; receiptRef.current?.click() }}>{reading && receiptMode.current === 'ai' && !receiptItemsMode.current ? 'AIで読み取り中…' : 'AIでレシートを読み取る'}</Button>
-              <Button variant="outline" disabled={reading || configLoading || !aiAvailable} startIcon={<CalculateRoundedIcon />} onClick={() => { receiptMode.current = 'ai'; receiptItemsMode.current = true; receiptRef.current?.click() }}>{reading && receiptItemsMode.current ? '商品を読み取り中…' : '商品を読んで割り勘'}</Button>
-              <Button variant="text" disabled={reading || !s.account} onClick={() => { receiptMode.current = 'local'; receiptItemsMode.current = false; receiptRef.current?.click() }}>{reading && receiptMode.current === 'local' ? '読み取り中…' : '通常の読み取りを使う（外部AI送信なし）'}</Button>
-            </Stack>
-            <input ref={receiptRef} type="file" accept="image/*" hidden onChange={async (event) => {
-              const file = event.target.files?.[0]
-              event.target.value = ''
-              if (!file) return
-              if (receiptMode.current === 'ai' && !aiAvailable) return
-              setReading(true)
-              try {
-                const result = await s.readReceipt(file, receiptMode.current, receiptItemsMode.current)
-                if (result && mounted.current) { setReceiptWantsSplit(receiptItemsMode.current); setReceiptResult(result) }
-              } finally { if (mounted.current) setReading(false) }
-            }} />
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5 }}>AI読み取りでは、レシート画像と登録済みの品目名をOpenAIへ送信します。画像内の情報も送信されます。読み取りは誤ることがあります。カード末尾4桁は「決済」で登録できます。読み取れない項目は手入力してください。通常の読み取りは店名・金額・日付のみです。</Typography>
-            {receiptNotice && <Alert severity="info" sx={{ mt: 1.5 }}>{receiptNotice}</Alert>}
-          </CardContent></Card>
+          <Accordion disableGutters elevation={0} sx={optionStyle}>
+            <AccordionSummary expandIcon={<ExpandMoreRoundedIcon />} id="entry-receipt-toggle" aria-controls="entry-receipt-panel">
+              <Typography fontWeight={600}>レシートから入力</Typography>
+            </AccordionSummary>
+            <AccordionDetails>
+              <Stack spacing={1.5}>
+                <Typography variant="body2">AIが題名・合計金額・日付・品目・支払方法を読み取ります。商品ごとのお会計を計算したいときは「商品を読んで割り勘」を選んでください。</Typography>
+                {!configLoading && !aiAvailable && <Alert severity="info">{s.account ? 'AI読み取りは準備中、または設定を確認できません。通常の読み取りと手入力は利用できます。' : 'レシート読み取りにはログインが必要です。手入力はそのまま利用できます。'}</Alert>}
+                <Button disabled={reading || configLoading || !aiAvailable} startIcon={<CameraAltRoundedIcon />} onClick={() => { receiptMode.current = 'ai'; receiptItemsMode.current = false; receiptRef.current?.click() }}>{reading && receiptMode.current === 'ai' && !receiptItemsMode.current ? 'AIで読み取り中…' : 'AIでレシートを読み取る'}</Button>
+                <Button variant="outline" disabled={reading || configLoading || !aiAvailable} startIcon={<CalculateRoundedIcon />} onClick={() => { receiptMode.current = 'ai'; receiptItemsMode.current = true; receiptRef.current?.click() }}>{reading && receiptItemsMode.current ? '商品を読み取り中…' : '商品を読んで割り勘'}</Button>
+                <Button variant="text" disabled={reading || !s.account} onClick={() => { receiptMode.current = 'local'; receiptItemsMode.current = false; receiptRef.current?.click() }}>{reading && receiptMode.current === 'local' ? '読み取り中…' : '通常の読み取りを使う（外部AI送信なし）'}</Button>
+              </Stack>
+              <input ref={receiptRef} type="file" accept="image/*" hidden onChange={async (event) => {
+                const file = event.target.files?.[0]
+                event.target.value = ''
+                if (!file) return
+                if (receiptMode.current === 'ai' && !aiAvailable) return
+                setReading(true)
+                try {
+                  const result = await s.readReceipt(file, receiptMode.current, receiptItemsMode.current)
+                  if (result && mounted.current) { setReceiptWantsSplit(receiptItemsMode.current); setReceiptResult(result) }
+                } finally { if (mounted.current) setReading(false) }
+              }} />
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5 }}>AI読み取りでは、レシート画像と登録済みの品目名をOpenAIへ送信します。画像内の情報も送信されます。読み取りは誤ることがあります。カード末尾4桁は「決済」で登録できます。読み取れない項目は手入力してください。通常の読み取りは店名・金額・日付のみです。</Typography>
+              {receiptNotice && <Alert severity="info" sx={{ mt: 1.5 }}>{receiptNotice}</Alert>}
+            </AccordionDetails>
+          </Accordion>
 
-          <SectionHeader>割り勘（他の人の負担）</SectionHeader>
-          <Card><CardContent>
-            <Button variant="outline" startIcon={<CalculateRoundedIcon />} onClick={openReceiptSplit} sx={{ mb: 2 }}>{draft.receiptSplit?.items.length ? `商品を選んで計算（${draft.receiptSplit.items.length}行）` : '商品を選んで計算・手入力'}</Button>
-            {s.members.length === 0 && draft.splits.length === 0 ? (
-              <Typography variant="body2" color="text.secondary">「割り勘」タブでメンバーを追加すると、この支出から他の人の負担を割り当てられます。</Typography>
-            ) : (
-              <Stack spacing={2}>
-                {draft.splits.map((split, index) => (
-                  <Stack key={index} direction="row" alignItems="center" spacing={1}>
-                    <FormControl fullWidth>
-                      <InputLabel id={`member-${index}`}>人</InputLabel>
-                      <Select labelId={`member-${index}`} label="人" value={split.memberId} onChange={(e) => { const next = [...draft.splits]; next[index] = { ...next[index], memberId: e.target.value }; patch({ splits: next }) }}>
-                        {!s.members.some((member) => member.id === split.memberId) && <MenuItem value={split.memberId} disabled>削除されたメンバー（選び直してください）</MenuItem>}
-                        {s.members.map((member) => <MenuItem key={member.id} value={member.id}>{member.name}</MenuItem>)}
-                      </Select>
-                    </FormControl>
-                    <Field onCalculate={(value) => { const next = [...draft.splits]; next[index] = { ...next[index], amount: value }; patch({ splits: next }) }} label="円" inputMode="numeric" value={split.amount} onChange={(e) => { const next = [...draft.splits]; next[index] = { ...next[index], amount: e.target.value.replace(/[^0-9]/g, '') }; patch({ splits: next }) }} sx={{ maxWidth: 165 }} />
-                    <IconButton aria-label="削除" onClick={() => patch({ splits: draft.splits.filter((_, itemIndex) => itemIndex !== index) })}><CloseRoundedIcon /></IconButton>
+          <Accordion disableGutters elevation={0} sx={optionStyle} expanded={splitExpanded ?? (draft.splits.length > 0 || !!draft.receiptSplit?.items.length)} onChange={(_, expanded) => setSplitExpanded(expanded)}>
+            <AccordionSummary expandIcon={<ExpandMoreRoundedIcon />} id="entry-split-toggle" aria-controls="entry-split-panel">
+              <Typography fontWeight={600}>割り勘（他の人の負担）</Typography>
+            </AccordionSummary>
+            <AccordionDetails>
+              <Button variant="outline" startIcon={<CalculateRoundedIcon />} onClick={openReceiptSplit} sx={{ mb: 2 }}>{draft.receiptSplit?.items.length ? `商品を選んで計算（${draft.receiptSplit.items.length}行）` : '商品を選んで計算・手入力'}</Button>
+              {s.members.length === 0 && draft.splits.length === 0 ? (
+                <Typography variant="body2" color="text.secondary">「割り勘」タブでメンバーを追加すると、この支出から他の人の負担を割り当てられます。</Typography>
+              ) : (
+                <Stack spacing={2}>
+                  {draft.splits.map((split, index) => (
+                    <Stack key={index} direction="row" alignItems="center" spacing={1}>
+                      <FormControl fullWidth>
+                        <InputLabel id={`member-${index}`}>人</InputLabel>
+                        <Select labelId={`member-${index}`} label="人" value={split.memberId} onChange={(e) => { const next = [...draft.splits]; next[index] = { ...next[index], memberId: e.target.value }; patch({ splits: next }) }}>
+                          {!s.members.some((member) => member.id === split.memberId) && <MenuItem value={split.memberId} disabled>削除されたメンバー（選び直してください）</MenuItem>}
+                          {s.members.map((member) => <MenuItem key={member.id} value={member.id}>{member.name}</MenuItem>)}
+                        </Select>
+                      </FormControl>
+                      <Field onCalculate={(value) => { const next = [...draft.splits]; next[index] = { ...next[index], amount: value }; patch({ splits: next }) }} label="円" inputMode="numeric" value={split.amount} onChange={(e) => { const next = [...draft.splits]; next[index] = { ...next[index], amount: e.target.value.replace(/[^0-9]/g, '') }; patch({ splits: next }) }} sx={{ maxWidth: 165 }} />
+                      <IconButton aria-label="削除" onClick={() => patch({ splits: draft.splits.filter((_, itemIndex) => itemIndex !== index) })}><CloseRoundedIcon /></IconButton>
+                    </Stack>
+                  ))}
+                  <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+                    <Button variant="text" disabled={s.members.length === 0} startIcon={<AddRoundedIcon />} onClick={() => patch({ splits: [...draft.splits, { memberId: s.members[0].id, amount: '' }] })} sx={{ width: 'fit-content' }}>人を追加</Button>
+                    {draft.splits.length > 0 && (
+                      <Button variant="outline" startIcon={<CalculateRoundedIcon />} onClick={fillEqualSplits} sx={{ width: 'fit-content' }}>均等割りを入力</Button>
+                    )}
                   </Stack>
-                ))}
-                <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
-                  <Button variant="text" disabled={s.members.length === 0} startIcon={<AddRoundedIcon />} onClick={() => patch({ splits: [...draft.splits, { memberId: s.members[0].id, amount: '' }] })} sx={{ width: 'fit-content' }}>人を追加</Button>
                   {draft.splits.length > 0 && (
-                    <Button variant="outline" startIcon={<CalculateRoundedIcon />} onClick={fillEqualSplits} sx={{ width: 'fit-content' }}>均等割りを入力</Button>
+                    <Box sx={{ pt: 2, borderTop: '1px solid', borderColor: 'divider' }}>
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>「均等割りを入力」を押すと、あなたを含む{draft.splits.length + 1}人で分け、端数はあなたの負担にします。商品別の計算・手入力の金額も使えます。</Typography>
+                      <Stack direction="row" justifyContent="space-between"><Typography variant="body2" color="text.secondary">他の人の負担 計</Typography><Typography variant="body2">{yen(splitTotal)}</Typography></Stack>
+                      <Stack direction="row" justifyContent="space-between" sx={{ mt: 1 }}><Typography fontWeight={700}>あなたの負担（統計に反映）</Typography><Typography fontWeight={700} color={amount - splitTotal < 0 ? 'error.main' : 'success.main'}>{yen(amount - splitTotal)}</Typography></Stack>
+                    </Box>
                   )}
                 </Stack>
-                {draft.splits.length > 0 && (
-                  <Box sx={{ pt: 2, borderTop: '1px solid', borderColor: 'divider' }}>
-                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>「均等割りを入力」を押すと、あなたを含む{draft.splits.length + 1}人で分け、端数はあなたの負担にします。商品別の計算・手入力の金額も使えます。</Typography>
-                    <Stack direction="row" justifyContent="space-between"><Typography variant="body2" color="text.secondary">他の人の負担 計</Typography><Typography variant="body2">{yen(splitTotal)}</Typography></Stack>
-                    <Stack direction="row" justifyContent="space-between" sx={{ mt: 1 }}><Typography fontWeight={700}>あなたの負担（統計に反映）</Typography><Typography fontWeight={700} color={amount - splitTotal < 0 ? 'error.main' : 'success.main'}>{yen(amount - splitTotal)}</Typography></Stack>
-                  </Box>
-                )}
-              </Stack>
-            )}
-          </CardContent></Card>
+              )}
+            </AccordionDetails>
+          </Accordion>
         </>
       )}
 
       {duplicates.length > 0 && <Alert severity="warning" sx={{ mt: 2 }}>同じ日・金額{isIncome ? '' : '・決済方法'}の記録が{duplicates.length}件あります。保存前に重複を確認してください。</Alert>}
-      <Button color={accent} disabled={reading || saving} sx={{ mt: 3 }} onClick={() => void save()}>{saving ? '保存中…' : draft.editingId ? '更新' : '保存'}</Button>
+      {s.account && !draft.editingId && !isIncome && <GmailImport mode="candidates" onImport={importGmailDraft} focusRequest={gmailFocusRequest} />}
+      <EntrySaveBar disabled={reading || saving} onSave={() => void save()}>
+        {saving ? '保存中…' : draft.editingId ? '更新' : '保存'}
+      </EntrySaveBar>
       {duplicateConfirmedDraft && <Modal title="同じ内容の記録があります" onClose={() => setDuplicateConfirmedDraft(null)}><Stack spacing={1.5}>
         <Typography>同日・同額{isIncome ? '' : '・同じ決済方法'}の記録です。別の買い物なら、そのまま保存できます。自動では統合・削除しません。</Typography>
         {findDuplicateExpenses(duplicateConfirmedDraft, s.expenses).slice(0, 5).map((row) => <Typography key={row.id}>{row.title} ・ {yen(row.amountYen)} ・ {new Date(row.purchasedAtMillis).toLocaleString('ja-JP')}</Typography>)}
@@ -333,6 +407,7 @@ export function AddScreen({ initial, onDone, onGmailImport }: { initial?: Expens
         onApply={(allocations) => {
           if (allocations.some((row) => row.participantId !== SELF_PARTICIPANT && !s.members.some((member) => !member.deleted && `member:${member.id}` === row.participantId))) { s.notify('割り勘メンバーが変更されています。選び直してください', 'error'); return }
           patch({ splits: allocations.filter((row) => row.participantId !== SELF_PARTICIPANT && row.amountYen > 0).map((row) => ({ memberId: row.participantId.slice('member:'.length), amount: String(row.amountYen) })) })
+          setSplitExpanded(true)
           setReceiptSplitOpen(false)
           s.notify('商品から計算した人別金額を反映しました。内容を確認して保存してください。')
         }} />}

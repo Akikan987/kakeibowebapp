@@ -81,6 +81,8 @@ export default function App() {
   const [addReturnTab, setAddReturnTab] = useState<MainTab>(lastTab)
   const [editDraft, setEditDraft] = useState<ExpenseDraft | null>(shortcutDraft)
   const [addDraftRevision, setAddDraftRevision] = useState(0)
+  const [gmailFocusRequest, setGmailFocusRequest] = useState(0)
+  useEffect(() => { if (tab !== 'add') setGmailFocusRequest(0) }, [tab])
   const [nativeImport, setNativeImport] = useState<{ id: string; source: string; owner: string } | null>(null)
   const [gmailImport, setGmailImport] = useState<{ id: string; source: string; owner: string } | null>(null)
   const [gmailPrompt, setGmailPrompt] = useState<GmailOpenReason | null>(() => { const reason = gmailOpenReason(window.location.search); return reason === 'complete' ? null : reason })
@@ -123,7 +125,7 @@ export default function App() {
       setAddReturnTab(tab === 'settings' ? (settingsReturnTab === 'add' ? lastTab : settingsReturnTab) : tab)
       setTab('add')
     }
-    window.setTimeout(() => document.getElementById('gmail-candidates')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 200)
+    setGmailFocusRequest((request) => request + 1)
   }
 
   const clearGmailCompletion = () => {
@@ -270,7 +272,7 @@ export default function App() {
   }
 
   return (
-    <Box sx={{ minHeight: '100dvh', pb: 'calc(6.625rem + env(safe-area-inset-bottom))' }}>
+    <Box sx={{ '--kakeibo-nav-clearance': 'calc(4.5rem + 8px)', minHeight: '100dvh', pb: 'calc(6.625rem + env(safe-area-inset-bottom))' }}>
       <AppBar
         position="sticky"
         color="transparent"
@@ -343,7 +345,9 @@ export default function App() {
             <AddScreen
               key={`${s.account?.uid ?? 'offline'}:${editDraft?.editingId ?? 'new'}:${addDraftRevision}`}
               initial={editDraft}
+              gmailFocusRequest={gmailFocusRequest ? { id: gmailFocusRequest, complete: () => setGmailFocusRequest(0) } : undefined}
               onGmailImport={(draft, gmailCandidateId) => {
+                setGmailFocusRequest(0)
                 setEditDraft(draft)
                 setNativeImport(null)
                 setGmailImport(s.account?.uid ? { id: gmailCandidateId, source: draft.source, owner: s.account.uid } : null)
