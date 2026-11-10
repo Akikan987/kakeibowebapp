@@ -11,7 +11,7 @@ export function gmailPaymentTypeMismatch(candidate: FinancialMessageCandidate, m
 }
 
 export interface GmailStatus {
-  configured: boolean; connected: boolean; email: string; enabled: boolean; aiEnabled: boolean
+  configured: boolean; connected: boolean; email: string; enabled: boolean; aiEnabled: boolean; restricted?: boolean
   pendingCount: number; lastCheckedAt: number | null; lastError: string; intervalSeconds: number; aiAvailable?: boolean
   discoveryEnabled?: boolean; discoveryAvailable?: boolean; discoveryConsentedAt?: number | null; discoverySince?: number | null
   aiDailyLimit?: number; aiUsedToday?: number; discoveryFailedCount?: number

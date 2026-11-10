@@ -47,9 +47,10 @@ export function GmailImport({ onImport, mode = 'settings', onOpenCandidates }: {
     if (current === generation.current) { setStatusLoading(true); setStatusError(false) }
     try {
       const value = await gmailRequest<GmailStatus>(token, 'gmail/status')
-      const rows = mode === 'candidates' && value.connected ? gmailCandidates(await gmailRequest(token, 'gmail/candidates')) : []
+      const rows = mode === 'candidates' && value.connected && !value.restricted ? gmailCandidates(await gmailRequest(token, 'gmail/candidates')) : []
       if (current !== generation.current) return
       setStatus(value); setItems(rows)
+      if (value.restricted) setSelected(null)
     } catch (err) {
       if (current === generation.current) setStatusError(true)
       throw err
@@ -190,6 +191,7 @@ export function GmailImport({ onImport, mode = 'settings', onOpenCandidates }: {
   const selectedMethod = methods.find((method) => method.id === methodId)
   const paymentMismatch = !!candidate && gmailPaymentTypeMismatch(candidate, selectedMethod)
   const aiStatus = gmailAiStatusSummary(status)
+  const restricted = status?.restricted === true
   const candidateKindLabels: Record<GmailCandidate['candidate']['kind'], string> = {
     card_usage: 'カード・決済利用', bank_notice: '銀行入出金', card_bill: 'カード請求',
     prepaid_charge: 'プリペイドチャージ', refund: '返金・取消', unsupported: '内容要確認',
@@ -208,10 +210,11 @@ export function GmailImport({ onImport, mode = 'settings', onOpenCandidates }: {
     <Card id={mode === 'settings' ? 'gmail-integration' : 'gmail-candidates'}><CardContent><Stack spacing={2}>
       {mode === 'settings' && <Typography variant="body2">カード・銀行・電子マネーの明細メールから候補を作り、内容を確認してから家計簿に追加できます。</Typography>}
       {mode === 'settings' && (!token ? <Alert severity="info">Gmail連携には家計簿アカウントへのログインが必要です。</Alert> : <>
-        {native && <Alert severity="info">Gmailの認証はシステムブラウザーで行います。同じ家計簿アカウントで接続した後、この画面で更新すると接続状態・候補を確認できます。{isHybridNative() && <NativeBrowserAccountButton />}</Alert>}
+        {restricted && <Alert severity="info">Gmail連携は現在、承認した少数の利用者に限って試験提供しています。このアカウントでは接続・設定・候補の確認を利用できません。通常の家計簿とGoogleログインは引き続き利用できます。</Alert>}
+        {native && !restricted && <Alert severity="info">Gmailの認証はシステムブラウザーで行います。同じ家計簿アカウントで接続した後、この画面で更新すると接続状態・候補を確認できます。{isHybridNative() && <NativeBrowserAccountButton />}</Alert>}
         {statusLoading && <Alert severity="info">{status ? 'Gmailの接続状態を更新しています。' : 'Gmailの接続状態を読み込み中です。'}</Alert>}
         {statusError && <Alert severity="error">最新のGmail接続状態を取得できませんでした。通信を確認し、「接続状態・候補を更新する」から再試行してください。</Alert>}
-        {status?.connected ? <>
+        {status?.connected && !restricted ? <>
           <Typography variant="body2">接続先：{status.email}</Typography>
           <Stack direction="row" spacing={1} flexWrap="wrap"><Chip size="small" label="Gmail接続済み" /><Chip size="small" label={status.enabled ? status.discoveryEnabled ? '自動確認ON' : '同意待ち・確認待機' : '自動確認OFF'} /><Chip size="small" label={`未確認 ${status.pendingCount}件`} /></Stack>
           <Alert severity={aiStatus.severity}><strong>{aiStatus.label}：</strong>{aiStatus.description}</Alert>
@@ -269,6 +272,16 @@ export function GmailImport({ onImport, mode = 'settings', onOpenCandidates }: {
             })}>同意してAI明細検出を有効にする</Button>
             {status.discoveryAvailable !== true && <Typography variant="caption" color="text.secondary">AI明細検出は現在サーバー設定待ちです。</Typography>}
           </>}
+        </> : status && !restricted ? <>
+          <Alert severity={aiStatus.severity}><strong>{aiStatus.label}：</strong>{aiStatus.description}</Alert>
+          <Alert severity="info">Googleの許可画面ではGmail全体を読み取れる権限（gmail.readonly）が表示されます。明細メールのAI検出は、この画面で別途同意して有効化するまで行いません。有効化後も対象は新着の明細候補メールです。</Alert>
+          <Typography variant="caption" color="text.secondary">Googleの接続トークンをサーバーで暗号化保存します。メール本文は取得・解析時のみ使用し永続保存しません。日時・店名・金額などの候補はサーバーに保存されます。AI明細検出は初期OFFで、明示的に同意するまでメールをAI処理しません。</Typography>
+          <Typography variant="caption" color="text.secondary">家計簿へのログイン用Googleアカウントとは別のGmailも選べます。次のGoogle画面で、利用通知を受信しているアカウントを選んでください。</Typography>
+          <FormControlLabel control={<Checkbox checked={connectConsent} disabled={busy || native} onChange={(_, checked) => setConnectConsent(checked)} />} label="権限・データの取り扱いを理解し、Gmail連携に同意する" />
+          <Button disabled={busy || native || !status?.configured || !connectConsent} onClick={() => void run(async () => { const result = await gmailRequest<{ url: string }>(token, 'gmail/start', { consent: true }); window.location.assign(googleAuthorizationUrl(result.url)) })}>GoogleでGmailを接続する</Button>
+          {status && !status.configured && <Typography variant="caption" color="text.secondary">サーバー側のGmail連携設定が必要です。</Typography>}
+        </> : null}
+        {status?.connected && <>
           <Typography variant="subtitle2">この端末への通知</Typography>
           <Typography variant="caption" color="text.secondary">通知には明細候補があることだけを表示します。端末・OSにより届かない場合があります。iPhoneはホーム画面へ追加したPWAから設定してください。</Typography>
           {!native && pushReady ? <>
@@ -291,15 +304,7 @@ export function GmailImport({ onImport, mode = 'settings', onOpenCandidates }: {
             }
             await refresh(current)
           })}>Gmail連携を解除する</Button>
-        </> : status ? <>
-          <Alert severity={aiStatus.severity}><strong>{aiStatus.label}：</strong>{aiStatus.description}</Alert>
-          <Alert severity="info">Googleの許可画面ではGmail全体を読み取れる権限（gmail.readonly）が表示されます。明細メールのAI検出は、この画面で別途同意して有効化するまで行いません。有効化後も対象は新着の明細候補メールです。</Alert>
-          <Typography variant="caption" color="text.secondary">Googleの接続トークンをサーバーで暗号化保存します。メール本文は取得・解析時のみ使用し永続保存しません。日時・店名・金額などの候補はサーバーに保存されます。AI明細検出は初期OFFで、明示的に同意するまでメールをAI処理しません。</Typography>
-          <Typography variant="caption" color="text.secondary">家計簿へのログイン用Googleアカウントとは別のGmailも選べます。次のGoogle画面で、利用通知を受信しているアカウントを選んでください。</Typography>
-          <FormControlLabel control={<Checkbox checked={connectConsent} disabled={busy || native} onChange={(_, checked) => setConnectConsent(checked)} />} label="権限・データの取り扱いを理解し、Gmail連携に同意する" />
-          <Button disabled={busy || native || !status?.configured || !connectConsent} onClick={() => void run(async () => { const result = await gmailRequest<{ url: string }>(token, 'gmail/start', { consent: true }); window.location.assign(googleAuthorizationUrl(result.url)) })}>GoogleでGmailを接続する</Button>
-          {status && !status.configured && <Typography variant="caption" color="text.secondary">サーバー側のGmail連携設定が必要です。</Typography>}
-        </> : null}
+        </>}
       </>)}
       {mode === 'settings' && <>
         {notice && <Alert severity="success">{notice}</Alert>}
@@ -307,17 +312,18 @@ export function GmailImport({ onImport, mode = 'settings', onOpenCandidates }: {
         {disconnectOutcome.message}
         {disconnectOutcome.disconnected && !disconnectOutcome.revoked && <> <a href={GMAIL_CONNECTIONS_URL} target="_blank" rel="noreferrer">Googleアカウント設定でアクセスを手動で削除</a></>}
         </Alert>}
-        <Button variant="outline" disabled={!token} onClick={onOpenCandidates}>追加画面で候補を確認する</Button>
+        {!restricted && <Button variant="outline" disabled={!token} onClick={onOpenCandidates}>追加画面で候補を確認する</Button>}
       </>}
       {mode === 'candidates' && <>
         {!token ? <Alert severity="info">Gmail候補の確認には家計簿アカウントへのログインが必要です。</Alert> : <>
-          {statusLoading && <Alert severity="info">Gmailの候補を読み込み中です。</Alert>}
-          {statusError && <Alert severity="error">候補を更新できませんでした。通信を確認して、もう一度更新してください。</Alert>}
-          {status && !status.connected && <Alert severity="info">Gmailが接続されていません。設定から接続できます。</Alert>}
-          <Button variant="text" disabled={busy || statusLoading} onClick={() => void refresh().catch(() => { /* The refresh error is shown above. */ })}>候補を更新する</Button>
-          {items.length > 0 && <Typography variant="subtitle2">内容を確認してから追加できます</Typography>}
-          {!statusLoading && !items.length && status?.connected && !statusError && <Typography variant="body2" color="text.secondary">未確認の候補はありません。</Typography>}
-          {items.map((item) => <Card key={item.id} variant="outlined"><CardContent><Stack spacing={1.5}>
+          {restricted && <Alert severity="info">Gmail連携は現在、承認した少数の利用者に限って試験提供しています。このアカウントでは候補を確認できません。通常の家計簿とGoogleログインは引き続き利用できます。</Alert>}
+          {!restricted && statusLoading && <Alert severity="info">Gmailの候補を読み込み中です。</Alert>}
+          {!restricted && statusError && <Alert severity="error">候補を更新できませんでした。通信を確認して、もう一度更新してください。</Alert>}
+          {!restricted && status && !status.connected && <Alert severity="info">Gmailが接続されていません。設定から接続できます。</Alert>}
+          {!restricted && <Button variant="text" disabled={busy || statusLoading} onClick={() => void refresh().catch(() => { /* The refresh error is shown above. */ })}>候補を更新する</Button>}
+          {!restricted && items.length > 0 && <Typography variant="subtitle2">内容を確認してから追加できます</Typography>}
+          {!restricted && !statusLoading && !items.length && status?.connected && !statusError && <Typography variant="body2" color="text.secondary">未確認の候補はありません。</Typography>}
+          {!restricted && items.map((item) => <Card key={item.id} variant="outlined"><CardContent><Stack spacing={1.5}>
             <Chip size="small" label={candidateKindLabels[item.candidate.kind]} sx={{ alignSelf: 'flex-start' }} />
             <Typography>{item.candidate.merchant || candidateKindLabels[item.candidate.kind]}</Typography>
             <Typography variant="body2">{item.candidate.amountYen === null ? '金額を確認してください' : yen(item.candidate.amountYen)}{item.candidate.purchasedAtMillis ? ` ・ ${new Intl.DateTimeFormat('ja-JP', { timeZone: 'Asia/Tokyo', dateStyle: 'short' }).format(item.candidate.purchasedAtMillis)}` : ' ・ 日時不明'}</Typography>
@@ -329,7 +335,7 @@ export function GmailImport({ onImport, mode = 'settings', onOpenCandidates }: {
         {error && !selected && <Alert severity="error">{error}</Alert>}
       </>}
     </Stack></CardContent></Card>
-    {candidate && <Modal title="Gmailの明細候補（未保存）" onClose={() => { setSelected(null); setError('') }}><Stack spacing={2}>
+    {!restricted && candidate && <Modal title="Gmailの明細候補（未保存）" onClose={() => { setSelected(null); setError('') }}><Stack spacing={2}>
       <Chip size="small" label={candidateKindLabels[candidate.kind]} sx={{ alignSelf: 'flex-start' }} />
       <Typography>利用先：{candidate.merchant || '不明'}</Typography>
       <Typography>金額：{candidate.amountYen === null ? '不明' : yen(candidate.amountYen)}</Typography>
