@@ -61,6 +61,7 @@ export function ListScreen({ onEdit, onDuplicate }: {
 }) {
   const s = useStore()
   const [pendingDelete, setPendingDelete] = useState<Expense | null>(null)
+  const pendingDeleteSplits = pendingDelete ? s.splitsOfExpense(pendingDelete.id) : []
   const [refundTarget, setRefundTarget] = useState<Expense | null>(null)
   const [filters, setFilters] = useState<Filters>(initialFilters)
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
@@ -245,6 +246,12 @@ export function ListScreen({ onEdit, onDuplicate }: {
       {pendingDelete && (
         <Modal title="削除しますか？" onClose={() => setPendingDelete(null)}>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>「{pendingDelete.title}」（{yen(pendingDelete.amountYen)}）を削除します。</Typography>
+          {pendingDeleteSplits.length > 0 && (
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 3, overflowWrap: 'anywhere' }}>
+              この支出に含まれる負担（{pendingDeleteSplits.map((split) => `${s.memberName(split.memberId)}さん ${yen(split.amountYen)}`).join('、')}）も割当から外れます。
+              清算の記録は残ります。取り消す場合は、割り勘の「清算履歴」から操作してください。
+            </Typography>
+          )}
           <Stack direction="row" spacing={1.5}>
             <Button variant="outline" onClick={() => setPendingDelete(null)}>キャンセル</Button>
             <Button color="#D32F2F" onClick={async () => { await s.deleteExpense(pendingDelete); setPendingDelete(null) }}>削除</Button>
