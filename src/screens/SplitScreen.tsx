@@ -8,6 +8,23 @@ import { useStore } from '../store'
 import type { Member, MemberBalance, Settlement } from '../types'
 import { SplitInvitations } from '../components/SplitInvitations'
 import { NavigationRow, SectionPageHeader, useSectionNavigation } from '../components/SectionNavigation'
+import { useYenField } from '../components/useYenField'
+
+function SettlementDialog({ target, onClose }: { target: MemberBalance; onClose: () => void }) {
+  const { recordSettlement } = useStore()
+  const [amountText, setAmountText] = useState('')
+  const amountField = useYenField(amountText, setAmountText)
+  return <Modal title={`${target.name} から清算された額`} onClose={onClose}>
+    <Field label="金額（円）" autoFocus {...amountField.field} />
+    <Stack direction="row" spacing={1.5} sx={{ mt: 3 }}>
+      <Button variant="outline" onClick={onClose}>キャンセル</Button>
+      <Button onClick={async () => {
+        const amount = amountField.validate()
+        if (amount !== undefined && await recordSettlement(target.memberId, amount)) onClose()
+      }}>記録</Button>
+    </Stack>
+  </Modal>
+}
 
 export function SplitScreen() {
   const s = useStore()
@@ -17,13 +34,12 @@ export function SplitScreen() {
   const [renameText, setRenameText] = useState('')
   const [pendingMemberDelete, setPendingMemberDelete] = useState<Member | null>(null)
   const [settleTarget, setSettleTarget] = useState<MemberBalance | null>(null)
-  const [settleAmount, setSettleAmount] = useState('')
   const [pendingDelete, setPendingDelete] = useState<Settlement | null>(null)
 
   useEffect(() => { if (s.account) void s.syncNow(false) }, [s.account?.uid])
   useEffect(() => {
     setRenameTarget(null); setRenameText(''); setPendingMemberDelete(null)
-    setSettleTarget(null); setSettleAmount(''); setPendingDelete(null)
+    setSettleTarget(null); setPendingDelete(null)
   }, [section])
   const outstanding = s.balances.filter((balance) => balance.remaining !== 0)
   const payable = s.debts.filter((debt) => debt.remaining !== 0)
@@ -51,7 +67,7 @@ export function SplitScreen() {
             <Typography variant="h6" color={balance.remaining > 0 ? 'success.main' : 'text.secondary'}>残り {yen(balance.remaining)}</Typography>
             <Typography variant="body2" color="text.secondary">割当 {yen(balance.charged)} ・ 清算済 {yen(balance.settled)}</Typography>
             <Stack direction="row" alignItems="center" justifyContent="flex-end" spacing={0.5}>
-              <Button variant="text" onClick={() => { setSettleTarget(balance); setSettleAmount('') }} sx={{ width: 'auto' }}>清算</Button>
+              <Button variant="text" onClick={() => setSettleTarget(balance)} sx={{ width: 'auto' }}>清算</Button>
             </Stack>
           </Stack>
         </Box>
@@ -72,7 +88,7 @@ export function SplitScreen() {
           <Stack direction="row" useFlexGap flexWrap="wrap" alignItems="center" gap={1}><Typography fontWeight={600}>{member.name}</Typography><Chip size="small" variant="outlined" label={member.linkedUid ? '共有中' : '自分だけ'} /></Stack>
           <Typography variant="body2" color="text.secondary">残り {yen(balance?.remaining ?? 0)}</Typography>
           <Stack direction="row" justifyContent="flex-end" spacing={0.5}>
-            {balance && <Button variant="text" sx={{ width: 'auto' }} onClick={() => { setSettleTarget(balance); setSettleAmount('') }}>清算</Button>}
+            {balance && <Button variant="text" sx={{ width: 'auto' }} onClick={() => setSettleTarget(balance)}>清算</Button>}
             <IconButton aria-label={`${member.name}を編集`} onClick={() => { setRenameTarget(member); setRenameText(member.name) }}><EditRoundedIcon fontSize="small" /></IconButton>
             <IconButton aria-label={`${member.name}を削除`} onClick={() => setPendingMemberDelete(member)}><DeleteOutlineRoundedIcon fontSize="small" /></IconButton>
           </Stack>
@@ -91,7 +107,7 @@ export function SplitScreen() {
 
       {renameTarget && <Modal title="メンバー名を編集" onClose={() => setRenameTarget(null)}><Field label="メンバーの表示名" autoFocus value={renameText} onChange={(event) => setRenameText(event.target.value)} /><Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5 }}>表示名のみ変更します。共有先は変わりません。</Typography><Stack direction="row" spacing={1.5} sx={{ mt: 3 }}><Button variant="outline" onClick={() => setRenameTarget(null)}>キャンセル</Button><Button onClick={async () => { if (await s.renameMember(renameTarget, renameText)) setRenameTarget(null) }}>保存</Button></Stack></Modal>}
       {pendingMemberDelete && <Modal title="メンバーを削除しますか？" onClose={() => setPendingMemberDelete(null)}><Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>{pendingMemberDelete.name} をメンバーから削除します。過去の支出記録は残りますが、以後このメンバーとの共有は更新されません。</Typography><Stack direction="row" spacing={1.5}><Button variant="outline" onClick={() => setPendingMemberDelete(null)}>やめる</Button><Button color="#D32F2F" onClick={async () => { await s.deleteMember(pendingMemberDelete); setPendingMemberDelete(null) }}>削除</Button></Stack></Modal>}
-      {settleTarget && <Modal title={`${settleTarget.name} から清算された額`} onClose={() => setSettleTarget(null)}><Field onCalculate={setSettleAmount} label="金額（円）" inputMode="numeric" autoFocus value={settleAmount} onChange={(event) => setSettleAmount(event.target.value.replace(/[^0-9]/g, ''))} /><Stack direction="row" spacing={1.5} sx={{ mt: 3 }}><Button variant="outline" onClick={() => setSettleTarget(null)}>キャンセル</Button><Button onClick={async () => { if (await s.recordSettlement(settleTarget.memberId, parseInt(settleAmount, 10))) setSettleTarget(null) }}>記録</Button></Stack></Modal>}
+      {settleTarget && <SettlementDialog target={settleTarget} onClose={() => setSettleTarget(null)} />}
       {pendingDelete && <Modal title="取り消しますか？" onClose={() => setPendingDelete(null)}><Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>{s.memberName(pendingDelete.memberId)} の清算 {yen(pendingDelete.amountYen)} を取り消します。</Typography><Stack direction="row" spacing={1.5}><Button variant="outline" onClick={() => setPendingDelete(null)}>やめる</Button><Button color="#D32F2F" onClick={async () => { await s.deleteSettlement(pendingDelete); setPendingDelete(null) }}>取り消す</Button></Stack></Modal>}
     </Screen>
   )

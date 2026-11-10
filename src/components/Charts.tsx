@@ -15,7 +15,7 @@ export function CategoryChart({
   const data = rawData.filter((row) => row.total > 0)
   const credits = rawData.filter((row) => row.total < 0)
   if (data.length === 0)
-    return <Typography color="text.secondary">正の支出データなし{credits.map((row) => ` / ${row.name}：返金超過 ${yen(-row.total)}`).join('')}</Typography>
+    return <Typography color="text.secondary">{credits.length > 0 ? '正の支出はありません' : 'この月の支出はまだありません'}{credits.map((row) => ` / ${row.name}：返金超過 ${yen(-row.total)}`).join('')}</Typography>
   const total = data.reduce((sum, item) => sum + item.total, 0)
   const selected = data.find((item) => item.name === selectedName) ?? null
   let angle = -90
@@ -122,8 +122,8 @@ export function DailyChart({
 }) {
   const [selected, setSelected] = useState<number | null>(null)
 
-  if (data.size === 0)
-    return <Typography color="text.secondary">支出データなし</Typography>
+  if ([...data.values()].every((value) => value === 0))
+    return <Typography color="text.secondary">この月の支出はまだありません</Typography>
 
   const max = Math.max(1, ...[...data.values()].map(Math.abs))
   const top = [...data.entries()].sort((a, b) => b[1] - a[1])[0]

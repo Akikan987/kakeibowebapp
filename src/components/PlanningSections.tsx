@@ -16,6 +16,7 @@ import {
   Typography,
 } from '@mui/material'
 import { Button, Card, Divider, Field, Modal, SectionHeader, yen } from './ui'
+import { useYenField } from './useYenField'
 import { DEFAULT_CASH_METHOD_ID } from '../db'
 import { useStore, type RecurringTemplateDraft } from '../store'
 import { TYPE_EXPENSE, TYPE_INCOME, type Budget, type RecurringTemplate } from '../types'
@@ -93,7 +94,15 @@ export function PlanningSections() {
     <Button variant="outline" startIcon={<AddRoundedIcon />} sx={{ mt: 1.5 }} onClick={() => setBudgetDraft({ category: '', amountYen: '' })}>予算を設定</Button>
 
     {templateDraft && <RecurringModal draft={templateDraft} onChange={setTemplateDraft} onClose={() => setTemplateDraft(null)} onSave={async () => { if (await s.saveRecurringTemplate(templateDraft)) setTemplateDraft(null) }} />}
-    {budgetDraft && <Modal title={`${s.month.month}月の予算を設定`} onClose={() => setBudgetDraft(null)}><Stack spacing={2}><FormControl fullWidth><InputLabel>対象</InputLabel><Select label="対象" value={budgetDraft.category} onChange={(event) => setBudgetDraft({ ...budgetDraft, category: event.target.value })}><MenuItem value="">月全体</MenuItem>{s.categories.map((category) => <MenuItem key={category.id} value={category.name}>{category.name}</MenuItem>)}</Select></FormControl><Field onCalculate={(value) => setBudgetDraft({ ...budgetDraft, amountYen: value })} label="予算額（円）" inputMode="numeric" value={budgetDraft.amountYen} onChange={(event) => setBudgetDraft({ ...budgetDraft, amountYen: event.target.value.replace(/[^0-9]/g, '') })} /><Stack direction="row" spacing={1.5}><Button variant="outline" onClick={() => setBudgetDraft(null)}>キャンセル</Button><Button onClick={async () => { if (await s.saveBudget(monthKey, budgetDraft.category, Number(budgetDraft.amountYen))) setBudgetDraft(null) }}>保存</Button></Stack></Stack></Modal>}
+    {budgetDraft && <BudgetModal
+      month={s.month.month}
+      draft={budgetDraft}
+      onChange={setBudgetDraft}
+      onClose={() => setBudgetDraft(null)}
+      onSave={async (amount) => {
+        if (await s.saveBudget(monthKey, budgetDraft.category, amount)) setBudgetDraft(null)
+      }}
+    />}
     {pendingTemplateDelete && <Modal title="定期項目を削除しますか？" onClose={() => setPendingTemplateDelete(null)}><Typography color="text.secondary">「{pendingTemplateDelete.title}」を削除します。登録済みの明細は残ります。</Typography><Stack direction="row" spacing={1.5} sx={{ mt: 3 }}><Button variant="outline" onClick={() => setPendingTemplateDelete(null)}>キャンセル</Button><Button color="#D32F2F" onClick={async () => { await s.deleteRecurringTemplate(pendingTemplateDelete); setPendingTemplateDelete(null) }}>削除</Button></Stack></Modal>}
     {pendingBudgetDelete && <Modal title="予算を削除しますか？" onClose={() => setPendingBudgetDelete(null)}><Stack direction="row" spacing={1.5}><Button variant="outline" onClick={() => setPendingBudgetDelete(null)}>キャンセル</Button><Button color="#D32F2F" onClick={async () => { await s.deleteBudget(pendingBudgetDelete); setPendingBudgetDelete(null) }}>削除</Button></Stack></Modal>}
   </>
@@ -109,8 +118,39 @@ function BudgetRow({ label, budget, spent, onEdit, onDelete }: { label: string; 
   </Box>
 }
 
+function BudgetModal({ month, draft, onChange, onClose, onSave }: {
+  month: number
+  draft: { category: string; amountYen: string }
+  onChange: (draft: { category: string; amountYen: string }) => void
+  onClose: () => void
+  onSave: (amount: number) => Promise<void>
+}) {
+  const s = useStore()
+  const amountField = useYenField(draft.amountYen, (amountYen) => onChange({ ...draft, amountYen }))
+  return <Modal title={`${month}月の予算を設定`} onClose={onClose}>
+    <Stack spacing={2}>
+      <FormControl fullWidth>
+        <InputLabel>対象</InputLabel>
+        <Select label="対象" value={draft.category} onChange={(event) => onChange({ ...draft, category: event.target.value })}>
+          <MenuItem value="">月全体</MenuItem>
+          {s.categories.map((category) => <MenuItem key={category.id} value={category.name}>{category.name}</MenuItem>)}
+        </Select>
+      </FormControl>
+      <Field label="予算額（円）" {...amountField.field} />
+      <Stack direction="row" spacing={1.5}>
+        <Button variant="outline" onClick={onClose}>キャンセル</Button>
+        <Button onClick={() => {
+          const amount = amountField.validate()
+          if (amount !== undefined) void onSave(amount)
+        }}>保存</Button>
+      </Stack>
+    </Stack>
+  </Modal>
+}
+
 function RecurringModal({ draft, onChange, onClose, onSave }: { draft: RecurringTemplateDraft; onChange: (draft: RecurringTemplateDraft) => void; onClose: () => void; onSave: () => Promise<void> }) {
   const s = useStore()
   const patch = (value: Partial<RecurringTemplateDraft>) => onChange({ ...draft, ...value })
-  return <Modal title={draft.editingId ? '定期項目を編集' : '定期項目を追加'} onClose={onClose}><Stack spacing={2}><Stack direction="row" spacing={1}><Button variant={draft.type === TYPE_EXPENSE ? 'primary' : 'outline'} onClick={() => patch({ type: TYPE_EXPENSE })}>支出</Button><Button variant={draft.type === TYPE_INCOME ? 'primary' : 'outline'} onClick={() => patch({ type: TYPE_INCOME })}>収入</Button></Stack><Field label="名前" value={draft.title} onChange={(event) => patch({ title: event.target.value })} placeholder="例: 家賃" /><Field onCalculate={(value) => patch({ amountYen: value })} label="金額（円）" inputMode="numeric" value={draft.amountYen} onChange={(event) => patch({ amountYen: event.target.value.replace(/[^0-9]/g, '') })} /><FormControl fullWidth><InputLabel>毎月の登録日</InputLabel><Select label="毎月の登録日" value={draft.dayOfMonth} onChange={(event) => patch({ dayOfMonth: Number(event.target.value) })}>{Array.from({ length: 31 }, (_, index) => index + 1).map((day) => <MenuItem key={day} value={day}>{day}日</MenuItem>)}</Select></FormControl><FormControl fullWidth><InputLabel>品目</InputLabel><Select label="品目" value={draft.category} onChange={(event) => patch({ category: event.target.value })}>{s.categories.map((category) => <MenuItem key={category.id} value={category.name}>{category.name}</MenuItem>)}</Select></FormControl>{draft.type === TYPE_EXPENSE && <FormControl fullWidth><InputLabel>決済方法</InputLabel><Select label="決済方法" value={draft.paymentMethodId} onChange={(event) => patch({ paymentMethodId: event.target.value })}>{s.paymentMethods.map((method) => <MenuItem key={method.id} value={method.id}>{method.name}</MenuItem>)}</Select></FormControl>}<FormControlLabel control={<Checkbox checked={draft.active} onChange={(event) => patch({ active: event.target.checked })} />} label="毎月の候補に表示する" /><Typography variant="caption" color="text.secondary">自動では明細を作らず、予算画面で「登録」を押した月だけ追加します。</Typography><Stack direction="row" spacing={1.5}><Button variant="outline" onClick={onClose}>キャンセル</Button><Button onClick={() => void onSave()}>保存</Button></Stack></Stack></Modal>
+  const amountField = useYenField(draft.amountYen, (amountYen) => patch({ amountYen }))
+  return <Modal title={draft.editingId ? '定期項目を編集' : '定期項目を追加'} onClose={onClose}><Stack spacing={2}><Stack direction="row" spacing={1}><Button variant={draft.type === TYPE_EXPENSE ? 'primary' : 'outline'} onClick={() => patch({ type: TYPE_EXPENSE })}>支出</Button><Button variant={draft.type === TYPE_INCOME ? 'primary' : 'outline'} onClick={() => patch({ type: TYPE_INCOME })}>収入</Button></Stack><Field label="名前" value={draft.title} onChange={(event) => patch({ title: event.target.value })} placeholder="例: 家賃" /><Field label="金額（円）" {...amountField.field} /><FormControl fullWidth><InputLabel>毎月の登録日</InputLabel><Select label="毎月の登録日" value={draft.dayOfMonth} onChange={(event) => patch({ dayOfMonth: Number(event.target.value) })}>{Array.from({ length: 31 }, (_, index) => index + 1).map((day) => <MenuItem key={day} value={day}>{day}日</MenuItem>)}</Select></FormControl><FormControl fullWidth><InputLabel>品目</InputLabel><Select label="品目" value={draft.category} onChange={(event) => patch({ category: event.target.value })}>{s.categories.map((category) => <MenuItem key={category.id} value={category.name}>{category.name}</MenuItem>)}</Select></FormControl>{draft.type === TYPE_EXPENSE && <FormControl fullWidth><InputLabel>決済方法</InputLabel><Select label="決済方法" value={draft.paymentMethodId} onChange={(event) => patch({ paymentMethodId: event.target.value })}>{s.paymentMethods.map((method) => <MenuItem key={method.id} value={method.id}>{method.name}</MenuItem>)}</Select></FormControl>}<FormControlLabel control={<Checkbox checked={draft.active} onChange={(event) => patch({ active: event.target.checked })} />} label="毎月の候補に表示する" /><Typography variant="caption" color="text.secondary">自動では明細を作らず、予算画面で「登録」を押した月だけ追加します。</Typography><Stack direction="row" spacing={1.5}><Button variant="outline" onClick={onClose}>キャンセル</Button><Button onClick={() => { if (amountField.validate() !== undefined) void onSave() }}>保存</Button></Stack></Stack></Modal>
 }

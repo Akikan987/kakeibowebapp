@@ -105,6 +105,7 @@ export function MonthSwitcher({ year, month, onPrevious, onNext, sx }: {
 
 type FieldProps = {
   label: string
+  inputRef?: React.Ref<HTMLInputElement>
   sx?: SxProps<Theme>
   error?: boolean
   helperText?: ReactNode
@@ -112,11 +113,12 @@ type FieldProps = {
   calculatorAllowNegative?: boolean
 } & Omit<InputHTMLAttributes<HTMLInputElement>, 'size'>
 
-export function Field({ label, sx, error, helperText, onCalculate, calculatorAllowNegative = false, ...props }: FieldProps) {
+export function Field({ label, inputRef, sx, error, helperText, onCalculate, calculatorAllowNegative = false, ...props }: FieldProps) {
   const [calculatorOpen, setCalculatorOpen] = useState(false)
   return (
     <><TextField
       label={label}
+      inputRef={inputRef}
       fullWidth
       error={error}
       helperText={helperText}

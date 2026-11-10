@@ -36,6 +36,7 @@ import { applySyncChanges, readSyncSnapshot } from './sync/local'
 import { reuseUnchangedRows } from './sync/records'
 import { indexSplits, memberBalances, monthlySummary } from './domain/ledger'
 import { clearDrafts, type ExpenseDraft } from './entries/draft'
+import { MAX_ENTRY_YEN, parseYenAmount } from './entries/amount'
 import { DuplicateFinancialMessageError, undoExpenseWrite, writeExpense } from './entries/persistence'
 import { saveCashAccount as persistCashAccount, saveTransfer as persistTransfer, saveRefund as persistRefund } from './finance/persistence'
 import { refundAdjustments, refundTotal } from './finance/ledger'
@@ -842,8 +843,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const saveExpense = useCallback(
     async (draft: ExpenseDraft) => {
-      const amount = Number(draft.amountYen)
-      if (!draft.amountYen.trim() || !Number.isSafeInteger(amount) || amount < 0 || amount > 2_000_000_000) {
+      const { amount } = parseYenAmount(draft.amountYen, MAX_ENTRY_YEN)
+      if (amount === undefined) {
         notify('金額を入力してください', 'error')
         return false
       }

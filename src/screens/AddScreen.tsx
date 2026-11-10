@@ -27,6 +27,8 @@ import { ReceiptSplitCalculator } from '../components/ReceiptSplitCalculator'
 import { SELF_PARTICIPANT, type ReceiptSplitDraft } from '../receiptSplit'
 import { emptyDraft, useStore, type ExpenseDraft } from '../store'
 import { draftStorageKey, findDuplicateExpenses, hasDraftContent, merchantSuggestions, readDraft, writeDraft } from '../entries/draft'
+import { MAX_ENTRY_YEN, parseYenAmount } from '../entries/amount'
+import { useYenField } from '../components/useYenField'
 import { PAYMENT_TYPES, PAYMENT_TYPE_LABELS, TYPE_EXPENSE, TYPE_INCOME, newId, now } from '../types'
 
 export function AddScreen({ initial, onDone, onGmailImport }: { initial?: ExpenseDraft | null; onDone: (source: string, expenseId: string) => void; onGmailImport: (draft: ExpenseDraft, gmailCandidateId: string) => void }) {
@@ -84,6 +86,8 @@ export function AddScreen({ initial, onDone, onGmailImport }: { initial?: Expens
     setDuplicateConfirmedDraft(null)
     setDraft((current) => ({ ...current, ...value }))
   }
+  const amountField = useYenField(draft.amountYen, (amountYen) => patch({ amountYen }), { max: MAX_ENTRY_YEN, refundHint: draft.type === TYPE_EXPENSE })
+
   const importGmailDraft = (gmailDraft: ExpenseDraft, _eventId?: string, candidateId?: string) => {
     if (!candidateId) return
     if (hasDraftContent(draft)) {
@@ -97,6 +101,7 @@ export function AddScreen({ initial, onDone, onGmailImport }: { initial?: Expens
   }
   const save = async (confirmed = false) => {
     if (savingRef.current) return
+    if (amountField.validate() === undefined) return
     if (!confirmed && duplicates.length > 0) { setDuplicateConfirmedDraft(draft); return }
     savingRef.current = true
     setSaving(true)
@@ -135,7 +140,7 @@ export function AddScreen({ initial, onDone, onGmailImport }: { initial?: Expens
 
   const isIncome = draft.type === TYPE_INCOME
   const accent = isIncome ? '#2E7D32' : '#D32F2F'
-  const amount = parseInt(draft.amountYen, 10) || 0
+  const amount = parseYenAmount(draft.amountYen, MAX_ENTRY_YEN).amount ?? 0
   const splitTotal = draft.splits.reduce((total, split) => total + (parseInt(split.amount, 10) || 0), 0)
   const fillEqualSplits = () => {
     if (amount <= 0) {
@@ -200,7 +205,7 @@ export function AddScreen({ initial, onDone, onGmailImport }: { initial?: Expens
       <Card><CardContent><Stack spacing={2}>
         <Field label="タイトル" value={draft.title} onChange={(e) => patch({ title: e.target.value })} placeholder="未入力なら「その他」" />
         {suggestions.length > 0 && <Box><Typography variant="caption" color="text.secondary">同じタイトルの過去の記録から（押したときだけ反映）</Typography>{suggestions.map((suggestion) => <Button key={`${suggestion.category}:${suggestion.paymentMethodId}`} variant="outline" sx={{ mt: 0.75 }} onClick={() => patch({ category: suggestion.category, ...(draft.type === TYPE_EXPENSE ? { paymentMethodId: suggestion.paymentMethodId } : {}) })}>{suggestion.category}{suggestion.paymentName && ` / ${suggestion.paymentName}`}を反映（{suggestion.count}件）</Button>)}</Box>}
-        <Field onCalculate={(value) => patch({ amountYen: value })} label="金額（円）" inputMode="numeric" value={draft.amountYen} onChange={(e) => patch({ amountYen: e.target.value.replace(/[^0-9]/g, '') })} />
+        <Field label="金額（円）" {...amountField.field} />
         <FormControl fullWidth>
           <InputLabel id="category-label">品目</InputLabel>
           <Select labelId="category-label" label="品目" value={draft.category} onChange={(e) => patch({ category: e.target.value })}>
