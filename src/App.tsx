@@ -237,7 +237,14 @@ export default function App() {
   useEffect(() => {
     const open = (event: Event) => {
       const shortcut = (event as CustomEvent<string>).detail
-      if (shortcut === 'add-expense') { setEditDraft(emptyDraft()); setAddReturnTab('home'); setTab('add') }
+      if (shortcut === 'add-expense') {
+        setNativeImport(null)
+        setGmailImport(null)
+        setEditDraft(emptyDraft())
+        setAddDraftRevision((revision) => revision + 1)
+        setAddReturnTab('home')
+        setTab('add')
+      }
       else if (shortcut === 'withdrawals') setTab('payments')
     }
     window.addEventListener('kakeibo:native-shortcut', open)
@@ -345,6 +352,7 @@ export default function App() {
             <AddScreen
               key={`${s.account?.uid ?? 'offline'}:${editDraft?.editingId ?? 'new'}:${addDraftRevision}`}
               initial={editDraft}
+              importKey={gmailImport ? `gmail:${gmailImport.id}` : nativeImport ? `native:${nativeImport.id}` : undefined}
               gmailFocusRequest={gmailFocusRequest ? { id: gmailFocusRequest, complete: () => setGmailFocusRequest(0) } : undefined}
               onGmailImport={(draft, gmailCandidateId) => {
                 setGmailFocusRequest(0)

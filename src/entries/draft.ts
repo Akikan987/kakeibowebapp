@@ -53,14 +53,26 @@ export function findDuplicateExpenses(draft: ExpenseDraft, expenses: Expense[]):
 export const hasDraftContent = (draft: ExpenseDraft) => !!(draft.title.trim() || draft.amountYen || draft.splits.length || draft.receiptSplit?.items.length)
 
 const draftPrefix = (owner: string) => `kakeibo:entry-draft:${encodeURIComponent(owner)}:`
-export const draftStorageKey = (owner: string, editingId: string | null) => `${draftPrefix(owner)}${encodeURIComponent(editingId ?? 'new')}`
+export const draftStorageKey = (owner: string, editingId: string | null, importKey?: string) =>
+  `${draftPrefix(owner)}${importKey ? `import:${encodeURIComponent(importKey)}` : encodeURIComponent(editingId ?? 'new')}`
 
-interface SavedDraft { version: 1; draft: ExpenseDraft; baseUpdatedAt: number | null }
+export function discardDraft(storage: Pick<Storage, 'removeItem'>, key: string): boolean {
+  try {
+    storage.removeItem(key)
+    return true
+  } catch { return false }
+}
+
+interface SavedDraft { version: 1; draft: ExpenseDraft; baseUpdatedAt: number | null; keepDetails?: true }
 
 /** Local-only and account-scoped. Never store a receipt image, API key, or token. */
-export function writeDraft(storage: Pick<Storage, 'setItem' | 'removeItem'>, key: string, draft: ExpenseDraft, baseUpdatedAt: number | null): boolean {
+export function writeDraft(storage: Pick<Storage, 'setItem' | 'removeItem'>, key: string, draft: ExpenseDraft, baseUpdatedAt: number | null, keepDetails = false): boolean {
   try {
-    if (hasDraftContent(draft)) storage.setItem(key, JSON.stringify({ version: 1, draft, baseUpdatedAt } satisfies SavedDraft))
+    if (hasDraftContent(draft) || keepDetails) {
+      const saved: SavedDraft = { version: 1, draft, baseUpdatedAt }
+      if (keepDetails) saved.keepDetails = true
+      storage.setItem(key, JSON.stringify(saved))
+    }
     else storage.removeItem(key)
     return true
   } catch { return false }
@@ -82,7 +94,7 @@ export function readDraft(storage: Pick<Storage, 'getItem'>, key: string, editin
       if (scratchpad) draft.receiptSplit = scratchpad
       else delete draft.receiptSplit
     }
-    return hasDraftContent(draft) ? draft : null
+    return hasDraftContent(draft) || saved.keepDetails === true ? draft : null
   } catch { return null }
 }
 

@@ -30,7 +30,7 @@ import { GmailImport } from '../components/GmailImport'
 import { ReceiptSplitCalculator } from '../components/ReceiptSplitCalculator'
 import { SELF_PARTICIPANT, type ReceiptSplitDraft } from '../receiptSplit'
 import { emptyDraft, useStore, type ExpenseDraft } from '../store'
-import { draftStorageKey, findDuplicateExpenses, hasDraftContent, merchantSuggestions, readDraft, writeDraft } from '../entries/draft'
+import { discardDraft, draftStorageKey, findDuplicateExpenses, hasDraftContent, merchantSuggestions, readDraft, writeDraft } from '../entries/draft'
 import { MAX_ENTRY_YEN, parseYenAmount } from '../entries/amount'
 import { useYenField } from '../components/useYenField'
 import { PAYMENT_TYPES, PAYMENT_TYPE_LABELS, TYPE_EXPENSE, TYPE_INCOME, newId, now } from '../types'
@@ -86,17 +86,20 @@ function EntrySaveBar({ children, disabled, onSave }: { children: ReactNode; dis
   </Box>
 }
 
-export function AddScreen({ initial, onDone, onGmailImport, gmailFocusRequest }: {
+export function AddScreen({ initial, importKey, onDone, onGmailImport, gmailFocusRequest }: {
   initial?: ExpenseDraft | null
+  importKey?: string
   onDone: (source: string, expenseId: string) => void
   onGmailImport: (draft: ExpenseDraft, gmailCandidateId: string) => void
   gmailFocusRequest?: { id: number; complete: () => void }
 }) {
   const s = useStore()
   const [draft, setDraft] = useState<ExpenseDraft>(() => initial ?? emptyDraft())
-  const storageKey = draftStorageKey(s.account?.uid ?? 'offline', initial?.editingId ?? null)
+  const storageKey = draftStorageKey(s.account?.uid ?? 'offline', initial?.editingId ?? null, importKey)
   const baseUpdatedAt = useRef(initial?.editingId ? s.expenses.find((row) => row.id === initial.editingId)?.updatedAt ?? null : null)
   const [recoverable, setRecoverable] = useState(() => readDraft(localStorage, storageKey, initial?.editingId ?? null, baseUpdatedAt.current))
+  const [confirmDiscard, setConfirmDiscard] = useState(false)
+  const [discardFailed, setDiscardFailed] = useState(false)
   const [dirty, setDirty] = useState(false)
   const [draftStorageFailed, setDraftStorageFailed] = useState(false)
   const finished = useRef(false)
@@ -108,7 +111,7 @@ export function AddScreen({ initial, onDone, onGmailImport, gmailFocusRequest }:
   useEffect(() => {
     if (!dirty || finished.current) return
     const persist = () => {
-      if (!finished.current) return writeDraft(localStorage, storageKey, draft, baseUpdatedAt.current)
+      if (!finished.current) return writeDraft(localStorage, storageKey, draft, baseUpdatedAt.current, true)
       return true
     }
     setDraftStorageFailed(!persist())
@@ -140,10 +143,9 @@ export function AddScreen({ initial, onDone, onGmailImport, gmailFocusRequest }:
     })
     return () => { active = false }
   }, [s.account?.token])
-  const patch = (value: Partial<ExpenseDraft>) => {
+  const patch = (value: Partial<ExpenseDraft>, markDirty = true) => {
     if (value.paymentMethodId !== undefined && value.cashAccountId === undefined) value.cashAccountId = s.paymentMethods.find((row) => row.id === value.paymentMethodId)?.cashAccountId ?? ''
-    setDirty(true)
-    setRecoverable(null)
+    if (markDirty) setDirty(true)
     setDuplicateConfirmedDraft(null)
     setDraft((current) => ({ ...current, ...value }))
   }
@@ -151,11 +153,11 @@ export function AddScreen({ initial, onDone, onGmailImport, gmailFocusRequest }:
 
   const importGmailDraft = (gmailDraft: ExpenseDraft, _eventId?: string, candidateId?: string) => {
     if (!candidateId) return
-    if (hasDraftContent(draft)) {
-      const saved = writeDraft(localStorage, storageKey, draft, baseUpdatedAt.current)
+    if (dirty) {
+      const saved = writeDraft(localStorage, storageKey, draft, baseUpdatedAt.current, true)
       const message = saved
-        ? '入力中の内容をこの端末の下書きに保存しました。Gmail候補に置き換えますか？'
-        : '入力中の内容をこの端末の下書きに保存できませんでした。それでもGmail候補に置き換えますか？'
+        ? '入力中の内容を下書きに保存しました。Gmail候補の入力へ切り替えますか？'
+        : '入力中の内容を下書きに保存できませんでした。それでもGmail候補の入力へ切り替えますか？'
       if (!window.confirm(message)) return
     }
     onGmailImport(gmailDraft, candidateId)
@@ -170,29 +172,57 @@ export function AddScreen({ initial, onDone, onGmailImport, gmailFocusRequest }:
       const expenseId = await s.saveExpense(draft)
       if (expenseId) {
         finished.current = true
-        try { localStorage.removeItem(storageKey) } catch { /* Saved record is not lost if localStorage is unavailable. */ }
+        discardDraft(localStorage, storageKey)
         onDone(draft.source, expenseId)
       }
     } finally { savingRef.current = false; if (mounted.current) setSaving(false) }
   }
-  const draftBanner = <>
-    {recoverable && <Alert severity="info" sx={{ mb: 2 }}>
-      <Typography variant="body2">前回の下書きがあります：{recoverable.title || '名称未入力'}{recoverable.amountYen && ` / ${recoverable.amountYen}円`}</Typography>
-      <Button variant="text" onClick={() => { setDraft(recoverable); setDirty(true); setRecoverable(null); setSplitExpanded(null) }}>下書きを復元する</Button>
-      <Typography variant="caption">復元せず入力を始めると、新しい下書きで上書きします。</Typography>
-    </Alert>}
-    {draftStorageFailed && <Alert severity="warning">この端末に下書きを保存できません。画面を閉じる前に明細を保存してください。</Alert>}
-  </>
+  if (recoverable) {
+    return <Screen>
+      <LargeTitle>{initial?.editingId ? '編集' : '記録する'}</LargeTitle>
+      <Card><CardContent>
+        <Stack spacing={1.5}>
+          <Typography component="h2" variant="h6">入力途中の下書きがあります</Typography>
+          <Typography variant="body2" color="text.secondary">
+            {recoverable.type === TYPE_INCOME ? '収入' : recoverable.type === TYPE_EXPENSE ? '支出' : '種類未選択'}
+            {' ・ '}{recoverable.title || 'タイトル未入力'}{' ・ '}
+            {recoverable.amountYen ? `${recoverable.amountYen}円` : '金額未入力'}
+          </Typography>
+          <Button onClick={() => {
+            setDraft(recoverable)
+            setDirty(true)
+            setRecoverable(null)
+            setSplitExpanded(null)
+          }}>下書きを続ける</Button>
+          <Button variant="outline" onClick={() => { setDiscardFailed(false); setConfirmDiscard(true) }}>下書きを破棄する</Button>
+        </Stack>
+      </CardContent></Card>
+      {confirmDiscard && <Modal title="下書きを破棄しますか？" onClose={() => setConfirmDiscard(false)}>
+        <Stack spacing={2}>
+          <Typography variant="body2">入力途中の内容をこの端末から削除します。</Typography>
+          {discardFailed && <Alert severity="error">下書きを削除できませんでした。もう一度お試しください。</Alert>}
+          <Stack direction="row" spacing={1.5}>
+            <Button variant="outline" onClick={() => setConfirmDiscard(false)}>キャンセル</Button>
+            <Button color="#D32F2F" onClick={() => {
+              if (!discardDraft(localStorage, storageKey)) { setDiscardFailed(true); return }
+              setConfirmDiscard(false)
+              setRecoverable(null)
+            }}>破棄する</Button>
+          </Stack>
+        </Stack>
+      </Modal>}
+      {s.account && !initial?.editingId && <GmailImport mode="candidates" onImport={importGmailDraft} focusRequest={gmailFocusRequest} />}
+    </Screen>
+  }
 
   if (!draft.type) {
     return (
       <Screen>
         <LargeTitle>記録する</LargeTitle>
-        {draftBanner}
         <Typography color="text.secondary" sx={{ mb: 3 }}>種類を選んでください。選んだ時点の日時を記録します。</Typography>
         <Stack spacing={2}>
-          <Button color="#2E7D32" sx={{ minHeight: 68, fontSize: 18 }} onClick={() => patch({ type: TYPE_INCOME, purchasedAtMillis: now() })}>収入を入力</Button>
-          <Button color="#D32F2F" sx={{ minHeight: 68, fontSize: 18 }} onClick={() => patch({ type: TYPE_EXPENSE, purchasedAtMillis: now() })}>支出を入力</Button>
+          <Button color="#2E7D32" sx={{ minHeight: 68, fontSize: 18 }} onClick={() => patch({ type: TYPE_INCOME, purchasedAtMillis: now() }, false)}>収入を入力</Button>
+          <Button color="#D32F2F" sx={{ minHeight: 68, fontSize: 18 }} onClick={() => patch({ type: TYPE_EXPENSE, purchasedAtMillis: now() }, false)}>支出を入力</Button>
         </Stack>
         {s.account && <GmailImport mode="candidates" onImport={importGmailDraft} focusRequest={gmailFocusRequest} />}
       </Screen>
@@ -254,11 +284,11 @@ export function AddScreen({ initial, onDone, onGmailImport, gmailFocusRequest }:
     <Screen>
       <Stack direction="row" alignItems="center" justifyContent="space-between">
         <LargeTitle>{draft.editingId ? '編集' : isIncome ? '収入を入力' : '支出を入力'}</LargeTitle>
-        {!draft.editingId && <Button variant="text" onClick={() => patch({ type: '' })} sx={{ width: 'auto' }}>種類を変更</Button>}
+        {!draft.editingId && <Button variant="text" onClick={() => patch({ type: '' }, false)} sx={{ width: 'auto' }}>種類を変更</Button>}
       </Stack>
 
-      {draftBanner}
-      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>{dirty && hasDraftContent(draft) && !draftStorageFailed ? '下書きをこの端末に保存しています。' : '入力途中の内容はこの端末の下書きに保存します。'} 画像は保存せず、別端末には同期しません。</Typography>
+      {draftStorageFailed && <Alert severity="warning" sx={{ mb: 2 }}>この端末に下書きを保存できません。画面を閉じる前に明細を保存してください。</Alert>}
+      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>{dirty && !draftStorageFailed ? '下書きをこの端末に保存しています。' : '入力途中の内容はこの端末の下書きに保存します。'} 画像は保存せず、別端末には同期しません。</Typography>
 
       <SectionHeader>内容</SectionHeader>
       <Card><CardContent><Stack spacing={2}>

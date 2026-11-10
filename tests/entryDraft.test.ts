@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { clearDrafts, draftStorageKey, findDuplicateExpenses, merchantSuggestions, readDraft, writeDraft, type ExpenseDraft } from '../src/entries/draft.ts'
+import { clearDrafts, discardDraft, draftStorageKey, findDuplicateExpenses, merchantSuggestions, readDraft, writeDraft, type ExpenseDraft } from '../src/entries/draft.ts'
 import type { Expense } from '../src/types.ts'
 
 const time = new Date(2026, 8, 24, 12).getTime()
@@ -60,6 +60,22 @@ test('下書きの空入力・破損・不正フィールド・保存不可を�
   writeDraft(store, 'new', { ...draft, title: '', amountYen: '', splits: [] }, null)
   assert.equal(store.getItem('new'), null)
   assert.equal(writeDraft({ ...store, setItem() { throw new Error('quota') } }, 'new', draft, null), false)
+})
+
+test('決済方法だけを選んだ下書きも復元でき、取込下書きの破棄は手入力に影響しない', () => {
+  const store = storage()
+  const manual = draftStorageKey('user-a', null)
+  const gmail = draftStorageKey('user-a', null, 'gmail:message-1')
+  const native = draftStorageKey('user-a', null, 'native:message-1')
+  const details = { ...draft, title: '', amountYen: '' }
+  assert.ok(writeDraft(store, manual, details, null, true))
+  assert.ok(writeDraft(store, gmail, { ...draft, title: 'Gmail候補' }, null))
+  assert.ok(writeDraft(store, native, { ...draft, title: '端末通知' }, null))
+  assert.ok(discardDraft(store, gmail))
+  assert.equal(readDraft(store, gmail, null, null), null)
+  assert.deepEqual(readDraft(store, manual, null, null), details)
+  assert.equal(readDraft(store, native, null, null)?.title, '端末通知')
+  assert.equal(discardDraft({ removeItem() { throw new Error('storage unavailable') } }, manual), false)
 })
 
 test('ログアウト時は対象アカウントの下書きだけを削除する', () => {
