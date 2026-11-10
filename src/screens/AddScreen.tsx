@@ -19,6 +19,7 @@ import {
   Select,
   Stack,
   Typography,
+  type SelectProps,
 } from '@mui/material'
 import { Button, Card, Field, LargeTitle, Modal, Screen, SectionHeader, fromLocalInput, toLocalInput, yen } from '../components/ui'
 import { apiReceiptConfig, type OcrResult } from '../api'
@@ -45,6 +46,45 @@ const optionStyle = {
   '&::before': { display: 'none' },
   '& .MuiAccordionSummary-root': { minHeight: 52, px: 2 },
 } as const
+
+type EntrySelect = 'category' | 'payment' | 'account'
+type EntryField = EntrySelect | 'date'
+
+function useEntryFieldNavigation() {
+  const [openField, setOpenField] = useState<EntrySelect | null>(null)
+  const fields = useRef<Partial<Record<EntrySelect, { focus: () => void } | null>>>({})
+  const dateRef = useRef<HTMLInputElement>(null)
+  const advance = useRef<{ after: EntrySelect; to: EntryField } | null>(null)
+
+  const open = (field: EntrySelect) => {
+    fields.current[field]?.focus()
+    setOpenField(field)
+  }
+  const selectProps = (field: EntrySelect): Pick<SelectProps<string>, 'open' | 'onOpen' | 'onClose' | 'inputRef' | 'MenuProps'> => ({
+    open: openField === field,
+    inputRef: (element: { focus: () => void } | null) => { fields.current[field] = element },
+    onOpen: () => { advance.current = null; open(field) },
+    onClose: () => setOpenField(null),
+    MenuProps: {
+      slotProps: { transition: { onExited: () => {
+        // Wait for the current menu to release focus before opening another one.
+        const pending = advance.current
+        if (pending?.after !== field) return
+        advance.current = null
+        if (pending.to === 'date') dateRef.current?.focus()
+        else open(pending.to)
+      } } },
+    },
+  })
+  return {
+    open,
+    selectProps,
+    dateRef,
+    advanceAfterSelection: (to: EntryField) => {
+      if (openField) advance.current = { after: openField, to }
+    },
+  }
+}
 
 function EntrySaveBar({ children, disabled, onSave }: { children: ReactNode; disabled: boolean; onSave: () => void }) {
   const [viewportOverlap, setViewportOverlap] = useState(0)
@@ -150,6 +190,7 @@ export function AddScreen({ initial, importKey, onDone, onGmailImport, gmailFocu
     setDraft((current) => ({ ...current, ...value }))
   }
   const amountField = useYenField(draft.amountYen, (amountYen) => patch({ amountYen }), { max: MAX_ENTRY_YEN, refundHint: draft.type === TYPE_EXPENSE })
+  const fieldNavigation = useEntryFieldNavigation()
 
   const importGmailDraft = (gmailDraft: ExpenseDraft, _eventId?: string, candidateId?: string) => {
     if (!candidateId) return
@@ -291,33 +332,71 @@ export function AddScreen({ initial, importKey, onDone, onGmailImport, gmailFocu
       <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>{dirty && !draftStorageFailed ? '下書きをこの端末に保存しています。' : '入力途中の内容はこの端末の下書きに保存します。'} 画像は保存せず、別端末には同期しません。</Typography>
 
       <SectionHeader>内容</SectionHeader>
+      {!isIncome && <Accordion disableGutters elevation={0} sx={{ ...optionStyle, mt: 0, mb: 1.5 }}>
+        <AccordionSummary expandIcon={<ExpandMoreRoundedIcon />} id="entry-receipt-toggle" aria-controls="entry-receipt-panel">
+          <Typography fontWeight={600}>レシートから入力</Typography>
+        </AccordionSummary>
+        <AccordionDetails>
+          <Stack spacing={1.5}>
+            <Typography variant="body2">AIが題名・合計金額・日付・品目・支払方法を読み取ります。商品ごとのお会計を計算したいときは「商品を読んで割り勘」を選んでください。</Typography>
+            {!configLoading && !aiAvailable && <Alert severity="info">{s.account ? 'AI読み取りは準備中、または設定を確認できません。通常の読み取りと手入力は利用できます。' : 'レシート読み取りにはログインが必要です。手入力はそのまま利用できます。'}</Alert>}
+            <Button disabled={reading || configLoading || !aiAvailable} startIcon={<CameraAltRoundedIcon />} onClick={() => { receiptMode.current = 'ai'; receiptItemsMode.current = false; receiptRef.current?.click() }}>{reading && receiptMode.current === 'ai' && !receiptItemsMode.current ? 'AIで読み取り中…' : 'AIでレシートを読み取る'}</Button>
+            <Button variant="outline" disabled={reading || configLoading || !aiAvailable} startIcon={<CalculateRoundedIcon />} onClick={() => { receiptMode.current = 'ai'; receiptItemsMode.current = true; receiptRef.current?.click() }}>{reading && receiptItemsMode.current ? '商品を読み取り中…' : '商品を読んで割り勘'}</Button>
+            <Button variant="text" disabled={reading || !s.account} onClick={() => { receiptMode.current = 'local'; receiptItemsMode.current = false; receiptRef.current?.click() }}>{reading && receiptMode.current === 'local' ? '読み取り中…' : '通常の読み取りを使う（外部AI送信なし）'}</Button>
+          </Stack>
+          <input ref={receiptRef} type="file" accept="image/*" hidden onChange={async (event) => {
+            const file = event.target.files?.[0]
+            event.target.value = ''
+            if (!file) return
+            if (receiptMode.current === 'ai' && !aiAvailable) return
+            setReading(true)
+            try {
+              const result = await s.readReceipt(file, receiptMode.current, receiptItemsMode.current)
+              if (result && mounted.current) { setReceiptWantsSplit(receiptItemsMode.current); setReceiptResult(result) }
+            } finally { if (mounted.current) setReading(false) }
+          }} />
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5 }}>AI読み取りでは、レシート画像と登録済みの品目名をOpenAIへ送信します。画像内の情報も送信されます。読み取りは誤ることがあります。カード末尾4桁は「決済」で登録できます。読み取れない項目は手入力してください。通常の読み取りは店名・金額・日付のみです。</Typography>
+          {receiptNotice && <Alert severity="info" sx={{ mt: 1.5 }}>{receiptNotice}</Alert>}
+        </AccordionDetails>
+      </Accordion>}
       <Card><CardContent><Stack spacing={2}>
         <Field
           label="金額（円）"
           autoFocus={!draft.editingId && !recoverable && !hasDraftContent(draft)}
           {...amountField.field}
         />
-        <Field label="タイトル" value={draft.title} onChange={(e) => patch({ title: e.target.value })} placeholder="未入力なら「その他」" />
+        <Field
+          label="タイトル"
+          value={draft.title}
+          onChange={(e) => patch({ title: e.target.value })}
+          placeholder="未入力なら「その他」"
+          enterKeyHint="next"
+          onKeyDown={(event) => {
+            if (event.key !== 'Enter' || event.nativeEvent.isComposing || event.keyCode === 229) return
+            event.preventDefault()
+            fieldNavigation.open('category')
+          }}
+        />
         {suggestions.length > 0 && <Box><Typography variant="caption" color="text.secondary">同じタイトルの過去の記録から（押したときだけ反映）</Typography>{suggestions.map((suggestion) => <Button key={`${suggestion.category}:${suggestion.paymentMethodId}`} variant="outline" sx={{ mt: 0.75 }} onClick={() => patch({ category: suggestion.category, ...(draft.type === TYPE_EXPENSE ? { paymentMethodId: suggestion.paymentMethodId } : {}) })}>{suggestion.category}{suggestion.paymentName && ` / ${suggestion.paymentName}`}を反映（{suggestion.count}件）</Button>)}</Box>}
         <FormControl fullWidth>
           <InputLabel id="category-label">品目</InputLabel>
-          <Select labelId="category-label" label="品目" value={draft.category} onChange={(e) => patch({ category: e.target.value })}>
-            {s.categories.map((category) => <MenuItem key={category.id} value={category.name}>{category.name}</MenuItem>)}
-            {!s.categories.some((category) => category.name === draft.category) && <MenuItem value={draft.category}>{draft.category}</MenuItem>}
+          <Select {...fieldNavigation.selectProps('category')} labelId="category-label" label="品目" value={draft.category} onChange={(e) => patch({ category: e.target.value })}>
+            {s.categories.map((category) => <MenuItem key={category.id} value={category.name} onClick={() => fieldNavigation.advanceAfterSelection(isIncome ? 'account' : 'payment')}>{category.name}</MenuItem>)}
+            {!s.categories.some((category) => category.name === draft.category) && <MenuItem value={draft.category} onClick={() => fieldNavigation.advanceAfterSelection(isIncome ? 'account' : 'payment')}>{draft.category}</MenuItem>}
           </Select>
         </FormControl>
         {!isIncome && (
           <Box>
             <FormControl fullWidth>
               <InputLabel id="payment-label">決済方法</InputLabel>
-              <Select labelId="payment-label" label="決済方法" value={draft.paymentMethodId} onChange={(e) => patch({ paymentMethodId: e.target.value })}>
-                {!draft.paymentMethodId && <MenuItem value="">選択してください</MenuItem>}
+              <Select {...fieldNavigation.selectProps('payment')} labelId="payment-label" label="決済方法" value={draft.paymentMethodId} onChange={(e) => patch({ paymentMethodId: e.target.value })}>
+                {!draft.paymentMethodId && <MenuItem value="" onClick={() => fieldNavigation.advanceAfterSelection('account')}>選択してください</MenuItem>}
                 {PAYMENT_TYPES.flatMap((type) => {
                   const methods = s.paymentMethods.filter((method) => method.type === type)
                   if (methods.length === 0) return []
                   return [
                     <ListSubheader key={`${type}-header`}>{PAYMENT_TYPE_LABELS[type]}</ListSubheader>,
-                    ...methods.map((method) => <MenuItem key={method.id} value={method.id}>{method.name}{method.cardLastFour ? `（末尾 ${method.cardLastFour}）` : ''}</MenuItem>),
+                    ...methods.map((method) => <MenuItem key={method.id} value={method.id} onClick={() => fieldNavigation.advanceAfterSelection(type === 'credit' || type === 'prepaid' ? 'date' : 'account')}>{method.name}{method.cardLastFour ? `（末尾 ${method.cardLastFour}）` : ''}</MenuItem>),
                   ]
                 })}
               </Select>
@@ -330,40 +409,18 @@ export function AddScreen({ initial, importKey, onDone, onGmailImport, gmailFocu
             )}
           </Box>
         )}
-        {(isIncome || !selectedPayment || !['credit', 'prepaid'].includes(selectedPayment.type)) && <CashAccountSelect label={isIncome ? '入金先の口座・財布' : '支出元の口座・財布'} value={draft.cashAccountId ?? (draft.editingId ? s.expenses.find((row) => row.id === draft.editingId)?.cashAccountId ?? '' : isIncome ? '' : selectedPayment?.cashAccountId ?? '')} onChange={(cashAccountId) => patch({ cashAccountId })} />}
-        <Field label="記録日時" type="datetime-local" value={toLocalInput(draft.purchasedAtMillis)} onChange={(e) => patch({ purchasedAtMillis: fromLocalInput(e.target.value) })} />
+        {(isIncome || !selectedPayment || !['credit', 'prepaid'].includes(selectedPayment.type)) && <CashAccountSelect
+          label={isIncome ? '入金先の口座・財布' : '支出元の口座・財布'}
+          value={draft.cashAccountId ?? (draft.editingId ? s.expenses.find((row) => row.id === draft.editingId)?.cashAccountId ?? '' : isIncome ? '' : selectedPayment?.cashAccountId ?? '')}
+          onChange={(cashAccountId) => patch({ cashAccountId })}
+          selectProps={fieldNavigation.selectProps('account')}
+          onSelect={() => fieldNavigation.advanceAfterSelection('date')}
+        />}
+        <Field label="記録日時" type="datetime-local" inputRef={fieldNavigation.dateRef} value={toLocalInput(draft.purchasedAtMillis)} onChange={(e) => patch({ purchasedAtMillis: fromLocalInput(e.target.value) })} />
       </Stack></CardContent></Card>
 
       {!isIncome && (
         <>
-          <Accordion disableGutters elevation={0} sx={optionStyle}>
-            <AccordionSummary expandIcon={<ExpandMoreRoundedIcon />} id="entry-receipt-toggle" aria-controls="entry-receipt-panel">
-              <Typography fontWeight={600}>レシートから入力</Typography>
-            </AccordionSummary>
-            <AccordionDetails>
-              <Stack spacing={1.5}>
-                <Typography variant="body2">AIが題名・合計金額・日付・品目・支払方法を読み取ります。商品ごとのお会計を計算したいときは「商品を読んで割り勘」を選んでください。</Typography>
-                {!configLoading && !aiAvailable && <Alert severity="info">{s.account ? 'AI読み取りは準備中、または設定を確認できません。通常の読み取りと手入力は利用できます。' : 'レシート読み取りにはログインが必要です。手入力はそのまま利用できます。'}</Alert>}
-                <Button disabled={reading || configLoading || !aiAvailable} startIcon={<CameraAltRoundedIcon />} onClick={() => { receiptMode.current = 'ai'; receiptItemsMode.current = false; receiptRef.current?.click() }}>{reading && receiptMode.current === 'ai' && !receiptItemsMode.current ? 'AIで読み取り中…' : 'AIでレシートを読み取る'}</Button>
-                <Button variant="outline" disabled={reading || configLoading || !aiAvailable} startIcon={<CalculateRoundedIcon />} onClick={() => { receiptMode.current = 'ai'; receiptItemsMode.current = true; receiptRef.current?.click() }}>{reading && receiptItemsMode.current ? '商品を読み取り中…' : '商品を読んで割り勘'}</Button>
-                <Button variant="text" disabled={reading || !s.account} onClick={() => { receiptMode.current = 'local'; receiptItemsMode.current = false; receiptRef.current?.click() }}>{reading && receiptMode.current === 'local' ? '読み取り中…' : '通常の読み取りを使う（外部AI送信なし）'}</Button>
-              </Stack>
-              <input ref={receiptRef} type="file" accept="image/*" hidden onChange={async (event) => {
-                const file = event.target.files?.[0]
-                event.target.value = ''
-                if (!file) return
-                if (receiptMode.current === 'ai' && !aiAvailable) return
-                setReading(true)
-                try {
-                  const result = await s.readReceipt(file, receiptMode.current, receiptItemsMode.current)
-                  if (result && mounted.current) { setReceiptWantsSplit(receiptItemsMode.current); setReceiptResult(result) }
-                } finally { if (mounted.current) setReading(false) }
-              }} />
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5 }}>AI読み取りでは、レシート画像と登録済みの品目名をOpenAIへ送信します。画像内の情報も送信されます。読み取りは誤ることがあります。カード末尾4桁は「決済」で登録できます。読み取れない項目は手入力してください。通常の読み取りは店名・金額・日付のみです。</Typography>
-              {receiptNotice && <Alert severity="info" sx={{ mt: 1.5 }}>{receiptNotice}</Alert>}
-            </AccordionDetails>
-          </Accordion>
-
           <Accordion disableGutters elevation={0} sx={optionStyle} expanded={splitExpanded ?? (draft.splits.length > 0 || !!draft.receiptSplit?.items.length)} onChange={(_, expanded) => setSplitExpanded(expanded)}>
             <AccordionSummary expandIcon={<ExpandMoreRoundedIcon />} id="entry-split-toggle" aria-controls="entry-split-panel">
               <Typography fontWeight={600}>割り勘（他の人の負担）</Typography>
