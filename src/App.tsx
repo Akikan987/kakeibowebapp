@@ -18,6 +18,7 @@ import {
   IconButton,
   Paper,
   Snackbar,
+  Skeleton,
   Toolbar,
   Tooltip,
   Typography,
@@ -34,6 +35,8 @@ import { BACK_EXIT_WINDOW_MS, createBackNavigation } from './backNavigation'
 import { requestSectionBack } from './sectionNavigation'
 import { nativeNotificationCommand } from './native/notifications'
 import { createGmailCompletion, GMAIL_COMPLETION_KEY, gmailCandidateAction, gmailCompletionPending, gmailOpenReason, type GmailOpenReason } from './imports/gmail'
+import { prefetchScreenAssets } from './screenPrefetch'
+import { isHybridNative } from './native/runtime'
 
 const AddScreen = lazy(() => import('./screens/AddScreen').then((module) => ({ default: module.AddScreen })))
 const HomeScreen = lazy(() => import('./screens/HomeScreen').then((module) => ({ default: module.HomeScreen })))
@@ -45,6 +48,7 @@ const SplitScreen = lazy(() => import('./screens/SplitScreen').then((module) => 
 
 type Tab = 'home' | 'planning' | 'list' | 'add' | 'payments' | 'split' | 'settings'
 type MainTab = Exclude<Tab, 'add' | 'settings'>
+type SettingsDestination = 'index' | 'integrations' | 'data'
 
 const LAST_TAB_KEY = 'kakeibo:last-main-tab'
 const MAIN_TABS: MainTab[] = ['home', 'planning', 'list', 'payments', 'split']
@@ -78,7 +82,7 @@ export default function App() {
   const [tab, setTab] = useState<Tab>(initialTab)
   const [settingsReturnTab, setSettingsReturnTab] = useState<Exclude<Tab, 'settings'>>(shortcutDraft ? lastTab : initialTab)
   const [sectionParentLabel, setSectionParentLabel] = useState<string | null>(null)
-  const [settingsPageRequest, setSettingsPageRequest] = useState<{ section: 'index' | 'integrations'; revision: number }>({ section: 'index', revision: 0 })
+  const [settingsPageRequest, setSettingsPageRequest] = useState<{ section: SettingsDestination; revision: number }>({ section: 'index', revision: 0 })
   const [addReturnTab, setAddReturnTab] = useState<MainTab>(lastTab)
   const [editDraft, setEditDraft] = useState<ExpenseDraft | null>(shortcutDraft)
   const [addDraftRevision, setAddDraftRevision] = useState(0)
@@ -118,7 +122,7 @@ export default function App() {
     setTab(readLastTab())
   }, [s.account?.uid])
 
-  const openSettings = (section: 'index' | 'integrations' = 'index') => {
+  const openSettings = (section: SettingsDestination = 'index') => {
     setSettingsPageRequest((request) => ({ section, revision: request.revision + 1 }))
     if (tab !== 'settings') setSettingsReturnTab(tab)
     setTab('settings')
@@ -220,6 +224,9 @@ export default function App() {
 
   const backEnabled = s.hasEntered && !socialCallback
   useEffect(() => {
+    if (backEnabled && import.meta.env.PROD && !isHybridNative()) return prefetchScreenAssets()
+  }, [backEnabled])
+  useEffect(() => {
     if (!backEnabled) {
       backNavigation.current?.release()
       backNavigation.current = null
@@ -312,9 +319,14 @@ export default function App() {
   const backParent = sectionParentLabel ?? (tab === 'settings'
     ? TABS.find(({ key }) => key === settingsReturnTab)?.label ?? '入力画面'
     : null)
+  const showAddButton = MAIN_TABS.includes(tab as MainTab)
 
   return (
-    <Box sx={{ '--kakeibo-nav-clearance': 'calc(4.5rem + 8px)', minHeight: '100dvh', pb: 'calc(6.625rem + env(safe-area-inset-bottom))' }}>
+    <Box sx={{
+      '--kakeibo-nav-clearance': 'calc(4.5rem + 8px)',
+      minHeight: '100dvh',
+      pb: `calc(${showAddButton ? '9.5rem' : '6.625rem'} + env(safe-area-inset-bottom))`,
+    }}>
       <AppBar
         position="sticky"
         color="transparent"
@@ -338,19 +350,21 @@ export default function App() {
           <Typography variant="h6" color="text.primary" sx={{ flex: 1 }}>
             家計簿
           </Typography>
-          <Typography
+          {s.loggedIn ? <Typography
             variant="caption"
             color={s.loggedIn && s.syncError ? 'error.main' : 'text.secondary'}
             aria-live="polite"
           >
-            {!s.loggedIn ? 'この端末に保存' : s.syncing
+            {s.syncing
               ? '同期中…'
               : s.syncError && s.hasPendingChanges
                 ? '未同期（接続待ち）'
                 : s.hasPendingChanges
                   ? '未同期'
                   : ''}
-          </Typography>
+          </Typography> : <MuiButton size="small" color="inherit" onClick={() => openSettings('data')} sx={{ minHeight: 44, color: 'text.secondary' }}>
+            この端末に保存
+          </MuiButton>}
           {tab !== 'settings' && <Tooltip title="設定">
             <IconButton
               aria-label="設定を開く"
@@ -366,7 +380,13 @@ export default function App() {
 
       <Container component="main" maxWidth="sm" disableGutters>
         {gmailCompletionBanner}
-        <Suspense fallback={<Box sx={{ p: 4, textAlign: 'center' }}><Typography color="text.secondary">画面を読み込み中…</Typography></Box>}>
+        <Suspense fallback={
+          <Box role="status" aria-label="画面を読み込み中" sx={{ px: { xs: 2.5, sm: 4 }, pt: 3 }}>
+            <Typography component="h1" variant="h4" sx={{ mb: 2 }}>{TABS.find(({ key }) => key === tab)?.label ?? (tab === 'settings' ? '設定' : '記録する')}</Typography>
+            <Skeleton animation={false} variant="rounded" height={54} sx={{ mb: 2, borderRadius: '24px' }} />
+            <Skeleton animation={false} variant="rounded" height={144} sx={{ borderRadius: '24px' }} />
+          </Box>
+        }>
           {tab === 'home' && <HomeScreen onAddExpense={() => openEntry('home', true)} />}
           {tab === 'planning' && <PlanningScreen />}
           {tab === 'list' && (
@@ -462,12 +482,13 @@ export default function App() {
                 key={item.key}
                 value={item.key}
                 label={item.label}
+                aria-current={tab === item.key ? 'page' : undefined}
                 icon={item.icon}
                 sx={{ minWidth: 0, px: 0.5 }}
               />
             ))}
           </BottomNavigation>
-          {MAIN_TABS.includes(tab as MainTab) && <Fab
+          {showAddButton && <Fab
             color="primary"
             size="medium"
             aria-label="収入・支出を追加"

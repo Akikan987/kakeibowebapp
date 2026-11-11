@@ -34,6 +34,7 @@ import { emptyDraft, useStore, type ExpenseDraft } from '../store'
 import { discardDraft, draftStorageKey, findDuplicateExpenses, hasDraftContent, merchantSuggestions, readDraft, writeDraft } from '../entries/draft'
 import { MAX_ENTRY_YEN, parseYenAmount } from '../entries/amount'
 import { useYenField } from '../components/useYenField'
+import { listCategoryNames } from '../domain/categories'
 import { PAYMENT_TYPES, PAYMENT_TYPE_LABELS, TYPE_EXPENSE, TYPE_INCOME, newId, now } from '../types'
 
 const optionStyle = {
@@ -48,6 +49,12 @@ const optionStyle = {
 } as const
 
 type EntrySelect = 'category' | 'payment' | 'account'
+
+// Select clones every child as an option. Ignore those injected props for headings.
+function PaymentGroupHeader({ children }: { children: ReactNode }) {
+  return <ListSubheader role="presentation">{children}</ListSubheader>
+}
+PaymentGroupHeader.muiSkipListHighlight = true
 type EntryField = EntrySelect | 'date'
 
 function useEntryFieldNavigation() {
@@ -412,8 +419,7 @@ export function AddScreen({ initial, importKey, onDone, onDiscard, onGmailImport
         <FormControl fullWidth>
           <InputLabel id="category-label">品目</InputLabel>
           <Select {...fieldNavigation.selectProps('category')} labelId="category-label" label="品目" value={draft.category} onChange={(e) => patch({ category: e.target.value })}>
-            {s.categories.map((category) => <MenuItem key={category.id} value={category.name} onClick={() => fieldNavigation.advanceAfterSelection(isIncome ? 'account' : 'payment')}>{category.name}</MenuItem>)}
-            {!s.categories.some((category) => category.name === draft.category) && <MenuItem value={draft.category} onClick={() => fieldNavigation.advanceAfterSelection(isIncome ? 'account' : 'payment')}>{draft.category}</MenuItem>}
+            {listCategoryNames(s.categories, draft.type, draft.category).map((name) => <MenuItem key={name} value={name} onClick={() => fieldNavigation.advanceAfterSelection(isIncome ? 'account' : 'payment')}>{name}</MenuItem>)}
           </Select>
         </FormControl>
         {!isIncome && (
@@ -426,7 +432,7 @@ export function AddScreen({ initial, importKey, onDone, onDiscard, onGmailImport
                   const methods = s.paymentMethods.filter((method) => method.type === type)
                   if (methods.length === 0) return []
                   return [
-                    <ListSubheader key={`${type}-header`}>{PAYMENT_TYPE_LABELS[type]}</ListSubheader>,
+                    <PaymentGroupHeader key={`${type}-header`}>{PAYMENT_TYPE_LABELS[type]}</PaymentGroupHeader>,
                     ...methods.map((method) => <MenuItem key={method.id} value={method.id} onClick={() => fieldNavigation.advanceAfterSelection(type === 'credit' || type === 'prepaid' ? 'date' : 'account')}>{method.name}{method.cardLastFour ? `（末尾 ${method.cardLastFour}）` : ''}</MenuItem>),
                   ]
                 })}

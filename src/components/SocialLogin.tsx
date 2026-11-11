@@ -74,15 +74,16 @@ export function SocialLogin({ token, disabled = false, onBusyChange }: { token?:
     {!token && <Button onClick={() => window.dispatchEvent(new Event('kakeibo:native-complete'))}>ブラウザーで許可済み：ログインを確認</Button>}
     {error && <Alert severity="error">{error}</Alert>}
   </Stack>
+  const visibleProviders = providers.filter((provider) => provider.enabled || linked.includes(provider.id))
   return <Stack spacing={1.5}>
     <Typography variant="subtitle2">{token ? '外部サービスとの連携' : '外部サービスで続ける'}</Typography>
-    {loading ? <Box role="status" sx={{ textAlign: 'center', p: 2 }}><CircularProgress size={22} aria-label="ログイン方法を読み込み中" /></Box> :
+    {loading ? <Box role="status" sx={{ textAlign: 'center', p: 2 }}><CircularProgress size={22} aria-label="ログイン方法を読み込み中" /></Box> : visibleProviders.length > 0 &&
       <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 1 }}>
-        {providers.map((provider) => <Button key={provider.id} variant="outlined" disabled={busy || disabled || (native && !linked.includes(provider.id)) || (!provider.enabled && !linked.includes(provider.id))}
+        {visibleProviders.map((provider) => <Button key={provider.id} variant="outlined" disabled={busy || disabled || (native && !linked.includes(provider.id))}
           sx={{ minHeight: 48, textTransform: 'none', borderColor: 'divider', color: 'text.primary' }}
           onClick={() => { if (token) { setSelection(provider.id); setPassword(''); setError('') } else void start(provider.id) }}>
           <Stack spacing={0.25}><span>{provider.name}</span><Typography variant="caption" color="text.secondary">
-            {linked.includes(provider.id) ? '連携済み・解除' : !provider.enabled ? '準備中' : token ? '連携する' : 'ログイン / 登録'}
+            {linked.includes(provider.id) ? '連携済み・解除' : token ? '連携する' : 'ログイン / 登録'}
           </Typography></Stack>
         </Button>)}
       </Box>}

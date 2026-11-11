@@ -11,9 +11,9 @@ import {
   type PrepaidCharge,
   type RecurringTemplate,
   type Settlement,
-  newId,
   now,
 } from './types.ts'
+import { expandedExpenseCategories, starterCategories } from './domain/categories.ts'
 
 /**
  * ブラウザ内のローカルDB（IndexedDB）。
@@ -79,40 +79,54 @@ export class KakeiboDB extends Dexie {
 
 export const db = new KakeiboDB()
 
-const DEFAULT_CATEGORIES = ['食費', '日用品', '交通', '娯楽', 'その他']
 export const DEFAULT_CASH_METHOD_ID = 'e7147cce-f204-4d15-8880-000000000001'
 export const DEFAULT_OTHER_METHOD_ID = 'e7147cce-f204-4d15-8880-000000000002'
 
-/** 名前から決まる固定ID（端末をまたいでも既定品目が重複しない） */
-async function stableCategoryId(name: string): Promise<string> {
-  const data = new TextEncoder().encode(`kakeibo-category:${name}`)
-  if (crypto?.subtle) {
-    const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', data))
-    const hex = Array.from(hash.slice(0, 16))
-      .map((b) => b.toString(16).padStart(2, '0'))
-      .join('')
-    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`
-  }
-  return newId()
+/** 初回のみ既定の品目を投入 */
+export async function seedCategoriesIfEmpty(expanded = false, database = db) {
+  const defaults = expanded ? [...starterCategories, ...expandedExpenseCategories] : starterCategories
+  return database.transaction('rw', database.categories, async () => {
+    if (await database.categories.count() > 0) return false
+    const updatedAt = now()
+    await database.categories.bulkPut(defaults.map((category, position) => ({ ...category, position, updatedAt, deleted: false })))
+    return true
+  })
 }
 
-/** 初回のみ既定の品目を投入 */
-export async function seedCategoriesIfEmpty() {
-  const count = await db.categories.count()
-  if (count > 0) return
-  const ts = now()
-  const rows: Category[] = []
-  for (let i = 0; i < DEFAULT_CATEGORIES.length; i++) {
-    const name = DEFAULT_CATEGORIES[i]
-    rows.push({
-      id: await stableCategoryId(name),
-      name,
-      position: i,
-      updatedAt: ts,
-      deleted: false,
-    })
-  }
-  await db.categories.bulkPut(rows)
+/** Explicit registration only: retain guest edits and tombstones while adding missing defaults. */
+export async function seedNewAccountCategories(database = db) {
+  await database.transaction('rw', database.categories, async () => {
+    const categories = await database.categories.toArray()
+    const ids = new Set(categories.map((row) => row.id))
+    const names = new Set(categories.map((row) => row.name))
+    let position = Math.max(-1, ...categories.map((row) => row.position)) + 1
+    const updatedAt = now()
+    const missing = [...starterCategories, ...expandedExpenseCategories]
+      .filter((preset) => !ids.has(preset.id) && !names.has(preset.name))
+      .map((preset) => ({ ...preset, position: position++, updatedAt, deleted: false }))
+    await database.categories.bulkPut(missing)
+  })
+}
+
+/** Don't add untouched guest presets to an existing account during the first sync. */
+export async function removeUnusedGuestPresets(database = db, seededAt?: number) {
+  await database.transaction('rw', [
+    database.categories, database.expenses, database.recurringTemplates, database.budgets, database.expenseRefunds,
+  ], async () => {
+    const categories = await database.categories.toArray()
+    const seedTimes = seededAt !== undefined ? new Set([seededAt]) : new Set(starterCategories.flatMap((preset, position) => categories
+      .filter((row) => row.id === preset.id && row.name === preset.name && row.position === position && !row.deleted)
+      .map((row) => row.updatedAt)))
+    const unusedCandidates = [...starterCategories, ...expandedExpenseCategories].flatMap((preset, position) => categories.filter((row) =>
+      row.id === preset.id && row.name === preset.name && row.position === position && seedTimes.has(row.updatedAt) && !row.deleted,
+    ))
+    if (unusedCandidates.length === 0) return
+    const ledger = await Promise.all([
+      database.expenses.toArray(), database.recurringTemplates.toArray(), database.budgets.toArray(), database.expenseRefunds.toArray(),
+    ])
+    const used = new Set(ledger.flatMap((table) => table.filter((row) => !row.deleted).map((row) => row.category)))
+    await database.categories.bulkDelete(unusedCandidates.filter((category) => !used.has(category.name)).map((category) => category.id))
+  })
 }
 
 /** 汎用の現金・その他だけを初期投入。カード類は名前と締め日を利用者が登録する。 */
@@ -170,7 +184,7 @@ export async function dedupeCategories(): Promise<boolean> {
 }
 
 /** ローカルを全消去（別アカウントでログインした時など） */
-export async function clearLocalData() {
+export async function clearLocalData(expandedCategories: boolean | null = false) {
   await db.transaction(
     'rw',
     [
@@ -202,7 +216,7 @@ export async function clearLocalData() {
       ])
     },
   )
-  await seedCategoriesIfEmpty()
+  if (expandedCategories !== null) await seedCategoriesIfEmpty(expandedCategories)
   await seedPaymentMethodsIfEmpty()
 }
 

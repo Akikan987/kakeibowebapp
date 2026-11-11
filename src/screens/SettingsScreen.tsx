@@ -38,7 +38,7 @@ const sectionTitles: Record<SettingsSection, string> = {
 export function SettingsScreen({ onImport, onOpenGmailCandidates, requestedSection, requestRevision, onParentChange }: {
   onImport: (draft: ExpenseDraft, eventId?: string, gmailCandidateId?: string) => void
   onOpenGmailCandidates: () => void
-  requestedSection?: 'index' | 'integrations'
+  requestedSection?: 'index' | 'integrations' | 'data'
   requestRevision?: number
   onParentChange: (label: string | null) => void
 }) {

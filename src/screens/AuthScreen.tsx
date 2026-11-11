@@ -2,11 +2,12 @@ import { useState } from 'react'
 import CalculateRoundedIcon from '@mui/icons-material/CalculateRounded'
 import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded'
 import VisibilityOffRoundedIcon from '@mui/icons-material/VisibilityOffRounded'
-import { Alert, Avatar, Box, Button, Container, Divider, IconButton, InputAdornment, Paper, Stack, Tab, Tabs, TextField, Typography } from '@mui/material'
+import { Alert, Avatar, Box, Button, Container, Divider, IconButton, InputAdornment, Link, Paper, Stack, Tab, Tabs, TextField, Typography } from '@mui/material'
 import { SocialLogin, socialError } from '../components/SocialLogin'
 import { apiConfirmRegistration, apiSocialRegister } from '../api'
 import { useStore } from '../store'
 import { glassSurface } from '../glass'
+import { APP_ORIGIN, isHybridNative } from '../native/runtime'
 
 type Step = 'login' | 'register' | 'verifyRegistration' | 'resetRequest' | 'resetConfirm'
 
@@ -39,6 +40,7 @@ export function AuthScreen({ socialSignup = false, onCancel }: { socialSignup?: 
   const go = (next: Step) => { s.clearMessage(); setError(''); setPassword(''); setPasswordConfirm(''); setStep(next) }
   const mismatch = passwordConfirm !== '' && password !== passwordConfirm
   const creating = step === 'register' || step === 'resetConfirm'
+  const legalBase = isHybridNative() ? APP_ORIGIN : ''
   const submit = async () => {
     if (busy || (creating && (!passwordConfirm || password !== passwordConfirm))) return
     setBusy(true)
@@ -55,7 +57,7 @@ export function AuthScreen({ socialSignup = false, onCancel }: { socialSignup?: 
       }
       if (step === 'verifyRegistration') {
         const account = await apiConfirmRegistration(verificationId, code)
-        await s.acceptSocialAccount(account)
+        await s.acceptSocialAccount(account, true)
         if (socialSignup) onCancel?.()
       }
       if (step === 'resetRequest' && await s.requestReset(email)) go('resetConfirm')
@@ -93,12 +95,13 @@ export function AuthScreen({ socialSignup = false, onCancel }: { socialSignup?: 
               <Typography variant="body2" color="text.secondary">確認コードを送信しました。メールアドレスを確認して、6桁のコードを入力してください。</Typography>
               <TextField label="メールアドレス" value={email} fullWidth slotProps={{ htmlInput: { readOnly: true } }} />
             </>}
-            {step === 'register' && <TextField label="電話番号" type="tel" required autoComplete="tel" value={phone} onChange={(e) => setPhone(e.target.value)} slotProps={{ htmlInput: { maxLength: 32 } }} />}
+            {step === 'register' && <TextField label="電話番号（任意）" type="tel" autoComplete="tel" value={phone} onChange={(e) => setPhone(e.target.value)} helperText="入力すると電話番号でもログインできます。" slotProps={{ htmlInput: { maxLength: 32 } }} />}
             {step === 'resetRequest' && <Typography variant="body2" color="text.secondary">登録したメールアドレスへ、再設定用の6桁コードを送ります。</Typography>}
             {(step === 'resetConfirm' || step === 'verifyRegistration') && <TextField label="メールに届いた6桁コード" required autoComplete="one-time-code" value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} slotProps={{ htmlInput: { inputMode: 'numeric', pattern: '[0-9]{6}', maxLength: 6 } }} />}
             {step !== 'resetRequest' && step !== 'verifyRegistration' && <PasswordField label={step === 'resetConfirm' ? '新しいパスワード' : 'パスワード'} value={password} onChange={setPassword} creating={creating} />}
             {creating && <PasswordField label="パスワード（確認）" value={passwordConfirm} onChange={setPasswordConfirm} creating confirm error={mismatch} />}
             {error && <Alert severity="error">{error}</Alert>}
+            {step === 'register' && <Typography variant="caption" color="text.secondary">登録前に、下の利用規約とプライバシーポリシーをご確認ください。</Typography>}
             <Button type="submit" variant="contained" size="large" disabled={busy || (creating && (!passwordConfirm || mismatch)) || (step === 'verifyRegistration' && code.length !== 6)} sx={{ minHeight: 48 }}>
               {busy ? '処理中…' : step === 'login' ? 'ログイン' : step === 'register' ? '登録してはじめる' : step === 'verifyRegistration' ? '確認して登録を完了' : step === 'resetRequest' ? 'コードを送る' : 'パスワードを再設定'}
             </Button>
@@ -121,5 +124,9 @@ export function AuthScreen({ socialSignup = false, onCancel }: { socialSignup?: 
         </Box>
       </Stack>
     </Paper>
+    <Stack component="nav" aria-label="利用条件" direction="row" useFlexGap flexWrap="wrap" justifyContent="center" spacing={2.5} sx={{ mt: 1 }}>
+      <Link href={`${legalBase}/pr/terms.html`} target="_blank" rel="noopener noreferrer" variant="body2" sx={{ display: 'inline-flex', alignItems: 'center', minHeight: 44 }}>利用規約</Link>
+      <Link href={`${legalBase}/pr/privacy.html`} target="_blank" rel="noopener noreferrer" variant="body2" sx={{ display: 'inline-flex', alignItems: 'center', minHeight: 44 }}>プライバシーポリシー</Link>
+    </Stack>
   </Container>
 }

@@ -198,9 +198,13 @@ function WithdrawalCalendar({ year, month, withdrawals, selectedDay, onSelectDay
   onMoveMonth: (offset: number) => void
 }) {
   const daysInMonth = new Date(year, month + 1, 0).getDate()
-  const mondayOffset = (new Date(year, month, 1).getDay() + 6) % 7
+  const sundayOffset = new Date(year, month, 1).getDay()
+  const now = new Date()
+  const today = now.getFullYear() === year && now.getMonth() === month ? now.getDate() : null
+  const weekdays = ['日', '月', '火', '水', '木', '金', '土']
+  const weekdayColor = (index: number) => index === 0 ? 'error.main' : index === 6 ? 'primary.main' : 'text.primary'
   const cells = [
-    ...Array.from({ length: mondayOffset }, () => null),
+    ...Array.from({ length: sundayOffset }, () => null),
     ...Array.from({ length: daysInMonth }, (_, index) => index + 1),
   ]
   return <Card>
@@ -210,20 +214,30 @@ function WithdrawalCalendar({ year, month, withdrawals, selectedDay, onSelectDay
       <IconButton aria-label="カレンダーの次の月" onClick={() => onMoveMonth(1)}><ChevronRightRoundedIcon /></IconButton>
     </Stack>
     <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', px: 1.5, pb: 2 }}>
-      {['月', '火', '水', '木', '金', '土', '日'].map((label) => <Typography key={label} variant="caption" color="text.secondary" align="center" sx={{ py: 0.75 }}>{label}</Typography>)}
+      {weekdays.map((label, index) => <Typography key={label} variant="caption" color={weekdayColor(index)} align="center" sx={{ py: 0.75 }}>{label}</Typography>)}
       {cells.map((day, index) => {
         if (day === null) return <Box key={`empty-${index}`} />
         const items = withdrawals.get(day) ?? []
         const total = items.reduce((sum, item) => sum + item.amountYen, 0)
+        const selected = selectedDay === day
         return <MuiButton
           key={day}
-          aria-label={`${month + 1}月${day}日${total > 0 ? ` 引き落とし${yen(total)}` : ''}`}
+          aria-label={`${month + 1}月${day}日${items.length ? ` 引き落とし${yen(total)}` : ''}`}
+          aria-current={today === day ? 'date' : undefined}
+          aria-pressed={selected}
           onClick={() => onSelectDay(day)}
-          variant={selectedDay === day ? 'contained' : 'text'}
-          sx={{ minWidth: 0, height: 58, px: 0.25, py: 0.5, borderRadius: 2, flexDirection: 'column', lineHeight: 1.1 }}
+          variant={selected ? 'contained' : 'text'}
+          sx={{
+            minWidth: 0, minHeight: 54, px: 0.25, py: 0.5, borderRadius: 2, flexDirection: 'column', lineHeight: 1.1,
+            border: '1px solid', borderColor: today === day ? (selected ? 'primary.contrastText' : 'primary.main') : 'transparent',
+            color: selected ? 'primary.contrastText' : weekdayColor(index % 7),
+          }}
         >
           <Typography variant="body2" component="span">{day}</Typography>
-          {total > 0 && <Typography variant="caption" component="span" color={selectedDay === day ? 'inherit' : 'error.main'} sx={{ fontSize: '0.63rem', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis' }}>{yen(total)}</Typography>}
+          {items.length > 0 && <>
+            <Typography variant="caption" component="span" noWrap color={selected ? 'inherit' : 'text.secondary'} sx={{ fontSize: '0.6rem', letterSpacing: '-0.02em', maxWidth: '100%', overflowWrap: 'normal' }}>{yen(total)}</Typography>
+            <Box component="span" aria-hidden="true" sx={{ width: 4, height: 4, borderRadius: '50%', bgcolor: selected ? 'currentColor' : 'primary.main', mt: 0.25 }} />
+          </>}
         </MuiButton>
       })}
     </Box>
@@ -271,7 +285,7 @@ function PaymentMethodModal({ draft, networkOptions, canDelete, onDelete, onChan
 
   return <Modal title={draft.editingId ? '決済方法を編集' : '決済方法を追加'} onClose={onClose}><Stack spacing={2}>
     <FormControl fullWidth><InputLabel>種類</InputLabel><Select label="種類" value={draft.type} onChange={(event) => patch({ type: event.target.value as PaymentMethodDraft['type'] })}>{PAYMENT_TYPES.map((type) => <MenuItem key={type} value={type}>{PAYMENT_TYPE_LABELS[type]}</MenuItem>)}</Select></FormControl>
-    <Field label={draft.type === 'credit' ? 'カード名から検索' : '名前'} value={draft.name} onChange={(event) => patch({ name: event.target.value })} placeholder={draft.type === 'credit' ? '例: 楽天カード' : '例: Suica'} />
+    <Field label={draft.type === 'credit' ? 'カード名' : '名前'} value={draft.name} onChange={(event) => patch({ name: event.target.value })} placeholder={draft.type === 'credit' ? '例: 楽天カード' : '例: Suica'} helperText={draft.type === 'credit' ? 'カード名から検索して、締め日と引き落とし日の候補を表示します。' : undefined} />
     {draft.type !== 'prepaid' && <><CashAccountSelect label={draft.type === 'credit' ? '既定の引き落とし口座' : '既定の支出元口座・財布'} value={draft.cashAccountId ?? ''} onChange={(cashAccountId) => patch({ cashAccountId })} /><Typography variant="caption">変更は今後の記録の初期値に使います。過去の入出金の口座は自動で移しません。</Typography></>}
     {draft.type !== 'cash' && <>
       <Field label="カード末尾4桁（任意）" inputMode="numeric" value={draft.cardLastFour} onChange={(event) => patch({ cardLastFour: event.target.value.replace(/[^0-9]/g, '').slice(0, 4) })} placeholder="例: 0123" />

@@ -236,22 +236,23 @@ export function ListScreen({ onAddExpense, onEdit, onDuplicate }: {
               </CardContent>
             </Card>
           ) : (
-            <Stack spacing={1.25} sx={{ mt: 1 }}>
+            <Stack spacing={0.75} sx={{ mt: 1 }}>
               {historyDays.map((day) => (
                 <Card key={day.dateMillis}>
-                  <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1} useFlexGap flexWrap="wrap" sx={{ px: 2, py: 1, bgcolor: 'action.hover' }}>
+                  {day.expenses.length > 1 && <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1} useFlexGap flexWrap="wrap" sx={{ px: 2, py: 0.5, bgcolor: 'action.hover' }}>
                     <Typography component="h2" variant="subtitle2" fontWeight={700}>
                       {historyDate.format(day.dateMillis)}
                     </Typography>
                     <Typography variant="caption" color="text.secondary" sx={{ fontVariantNumeric: 'tabular-nums' }}>
                       {day.hasExpense ? `本人負担（返金前） ${yen(day.expenseTotal)}` : `収入 ${yen(day.incomeTotal)}`}
                     </Typography>
-                  </Stack>
+                  </Stack>}
                   <List disablePadding aria-label={historyDate.format(day.dateMillis)}>
                     {day.expenses.map((expense) => {
                       const isIncome = expense.type === TYPE_INCOME
                       const split = s.splitSumOf(expense.id)
                       const details = [
+                        day.expenses.length === 1 && historyDate.format(day.dateMillis),
                         expense.category,
                         !isIncome && s.paymentMethodName(expense.paymentMethodId),
                         split > 0 && `本人 ${yen(s.netAmount(expense))}（割り勘 ${yen(split)}）`,
@@ -324,7 +325,7 @@ export function ListScreen({ onAddExpense, onEdit, onDuplicate }: {
           </MenuItem>
         )}
         {menuExpense && (
-          <MenuItem onClick={() => { setEntryMenu(null); setPendingDelete(menuExpense) }} sx={{ color: 'error.main' }}>
+          <MenuItem aria-label={`${menuExpense.title}を削除`} onClick={() => { setEntryMenu(null); setPendingDelete(menuExpense) }} sx={{ color: 'error.main' }}>
             <ListItemIcon sx={{ color: 'inherit' }}><DeleteOutlineRoundedIcon fontSize="small" /></ListItemIcon>削除
           </MenuItem>
         )}

@@ -11,6 +11,8 @@ export function HomeScreen({ onAddExpense }: { onAddExpense: () => void }) {
   const daysInMonth = new Date(month.year, month.month, 0).getDate()
   const monthStart = new Date(month.year, month.month - 1, 1).getTime()
   const monthEnd = new Date(month.year, month.month, 1).getTime()
+  const today = new Date()
+  const todayInMonth = today.getFullYear() === month.year && today.getMonth() === month.month - 1 ? today.getDate() : undefined
   const hasMonthlyRecords = summary.dailyTotals.size > 0 || s.expenses.some(
     (expense) => expense.purchasedAtMillis >= monthStart && expense.purchasedAtMillis < monthEnd,
   )
@@ -38,7 +40,7 @@ export function HomeScreen({ onAddExpense }: { onAddExpense: () => void }) {
 
       {hasMonthlyRecords ? <>
         <SectionHeader>支出：日付別</SectionHeader>
-        <Card><CardContent><DailyChart data={summary.dailyTotals} daysInMonth={daysInMonth} /></CardContent></Card>
+        <Card><CardContent><DailyChart key={`${month.year}-${month.month}`} data={summary.dailyTotals} daysInMonth={daysInMonth} today={todayInMonth} /></CardContent></Card>
 
         <SectionHeader>支出：品目別</SectionHeader>
         <Card><CardContent><CategoryChart data={summary.categoryTotals} /></CardContent></Card>

@@ -61,6 +61,8 @@ import {
   db,
   dedupeCategories,
   seedCategoriesIfEmpty,
+  removeUnusedGuestPresets,
+  seedNewAccountCategories,
   seedPaymentMethodsIfEmpty,
 } from './db'
 import { computeCardWithdrawals, computePrepaidBalances } from './payments'
@@ -215,7 +217,7 @@ interface Store {
   notify: (text: string, kind?: 'ok' | 'error') => void
   // 認証
   login: (identifier: string, password: string) => Promise<void>
-  acceptSocialAccount: (account: Account) => Promise<void>
+  acceptSocialAccount: (account: Account, isNewAccount?: boolean) => Promise<void>
   register: (
     phone: string,
     email: string,
@@ -510,7 +512,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const sessionUpgradeAttempts = useRef(new Set<string>())
   useEffect(() => {
     void (async () => {
-      await seedCategoriesIfEmpty()
+      const anonymous = !readAccount() && !localStorage.getItem(LS_OWNER)
+      const seeded = anonymous ? await seedCategoriesIfEmpty(true) : false
+      if (anonymous && seeded) {
+        const defaults = await db.categories.toArray()
+        localStorage.setItem('kakeibo.guestCategoryPresets', String(defaults[0]?.updatedAt ?? '1'))
+      }
       await seedPaymentMethodsIfEmpty()
       await reload()
       let savedAccount = readAccount()
@@ -561,10 +568,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // ---------------- 認証 ----------------
 
   const applyLogin = useCallback(
-    async (acc: Account) => {
+    async (acc: Account, isNewAccount = false) => {
       const owner = localStorage.getItem(LS_OWNER) ?? ''
       // 別アカウントのローカルが残っている場合のみ消す
-      if (owner && owner !== acc.uid) await clearLocalData()
+      if (owner && owner !== acc.uid) await clearLocalData(isNewAccount ? true : null)
+      const guestSeededAt = Number(localStorage.getItem('kakeibo.guestCategoryPresets'))
+      if (!owner && !isNewAccount && guestSeededAt > 0) {
+        await removeUnusedGuestPresets(db, guestSeededAt > 1 ? guestSeededAt : undefined)
+      }
+      if (isNewAccount) await seedNewAccountCategories()
+      localStorage.removeItem('kakeibo.guestCategoryPresets')
       localStorage.setItem(LS_ACCOUNT, JSON.stringify(acc))
       localStorage.setItem(LS_OWNER, acc.uid)
       localStorage.setItem(LS_OFFLINE, '0')
@@ -615,9 +628,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [applyLogin, notify],
   )
 
-  const acceptSocialAccount = useCallback(async (acc: Account) => {
+  const acceptSocialAccount = useCallback(async (acc: Account, isNewAccount = false) => {
     pendingLoginSync.current = true
-    await applyLogin(acc)
+    await applyLogin(acc, isNewAccount)
     notify('ログインしました')
   }, [applyLogin, notify])
 
@@ -807,7 +820,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (!token || !currentPassword) return false
       try {
         await apiDeleteAccount(token, currentPassword)
-        await clearLocalData()
+        await clearLocalData(true)
+        const defaults = await db.categories.toArray()
+        localStorage.setItem('kakeibo.guestCategoryPresets', String(defaults[0]?.updatedAt ?? '1'))
         if (account?.uid) clearDrafts(localStorage, account.uid)
         localStorage.removeItem(LS_ACCOUNT)
         localStorage.removeItem(LS_OWNER)
@@ -1324,6 +1339,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const title = draft.title.trim()
       if (!title || !Number.isFinite(amountYen) || amountYen <= 0) {
         notify('定期項目の名前と金額を入力してください', 'error')
+        return false
+      }
+      if (!draft.category.trim()) {
+        notify('品目を選んでください', 'error')
         return false
       }
       if (draft.dayOfMonth < 1 || draft.dayOfMonth > 31) {

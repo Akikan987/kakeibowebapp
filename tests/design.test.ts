@@ -63,7 +63,8 @@ test('拡大を許可し、Androidの単一theme-colorと安全領域を維持�
   assert.match(theme, /useMediaQuery\('\(prefers-reduced-motion: reduce\)'\)/)
   const app = source('src/App.tsx')
   assert.match(app, /minHeight: '4.5rem', height: 'auto'/)
-  assert.match(app, /6.625rem \+ env\(safe-area-inset-bottom\)/)
+  assert.match(app, /showAddButton \? '9.5rem' : '6.625rem'/)
+  assert.match(app, /\+ env\(safe-area-inset-bottom\)/)
 })
 
 test('動きを抑える設定はポータルも含めて適用し、本文のコピーを妨げない', () => {

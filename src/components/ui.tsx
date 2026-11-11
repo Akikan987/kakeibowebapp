@@ -224,6 +224,7 @@ export function Toast({
         severity={kind === 'error' ? 'error' : 'success'}
         variant="filled"
         onClose={onDone}
+        closeText="閉じる"
         action={action && <MuiButton color="inherit" size="small" onClick={action.onClick}>{action.label}</MuiButton>}
         sx={{ width: '100%', borderRadius: 2 }}
       >

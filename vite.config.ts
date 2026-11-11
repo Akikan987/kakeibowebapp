@@ -1,9 +1,24 @@
-import { defineConfig } from 'vite'
+import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
 const buildId = Date.now().toString(36)
+
+function screenAssetManifest(): Plugin {
+  const orderedScreens = ['AddScreen', 'ListScreen', 'PlanningScreen', 'SplitScreen', 'SettingsScreen', 'PaymentsScreen']
+  return {
+    name: 'screen-asset-manifest',
+    apply: 'build',
+    generateBundle(_options, bundle) {
+      const paths = orderedScreens.flatMap((name) => {
+        const chunk = Object.values(bundle).find((entry) => entry.type === 'chunk' && entry.name === name && entry.isDynamicEntry)
+        return chunk ? [chunk.fileName] : []
+      })
+      this.emitFile({ type: 'asset', fileName: 'screen-assets.json', source: JSON.stringify(paths) })
+    },
+  }
+}
 
 export default defineConfig(({ mode }) => ({
   publicDir: mode === 'native' ? false : 'public',
@@ -36,6 +51,7 @@ export default defineConfig(({ mode }) => ({
   plugins: [
     react(),
     tailwindcss(),
+    screenAssetManifest(),
     VitePWA({
       disable: mode === 'native',
       // Cloudflareに古いsw.jsが残っても、ビルド固有URLで必ず新版を確認する

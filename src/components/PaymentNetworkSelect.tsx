@@ -51,6 +51,9 @@ export function PaymentNetworkSelect({ value, options = [], onChange }: Props) {
   }
 
   return <Autocomplete<PaymentNetwork, true, false, true>
+      openText="候補を開く"
+      closeText="候補を閉じる"
+      clearText="クリア"
     multiple
     freeSolo
     forcePopupIcon
