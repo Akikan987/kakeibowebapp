@@ -230,32 +230,15 @@ export function AddScreen({ initial, importKey, onDone, onDiscard, onGmailImport
       }
     } finally { savingRef.current = false; if (mounted.current) setSaving(false) }
   }
-  const requestDiscard = () => {
-    setDiscardFailed(false)
-    setConfirmDiscard(true)
+  const discardInput = () => {
+    if (savingRef.current || finished.current) return
+    if (!discardDraft(localStorage, storageKey)) {
+      s.notify('下書きを削除できませんでした。もう一度お試しください。', 'error')
+      return
+    }
+    finished.current = true
+    onDiscard()
   }
-  const discardDialog = confirmDiscard && <Modal
-    title={recoverable ? '下書きを破棄しますか？' : '入力を破棄しますか？'}
-    onClose={() => setConfirmDiscard(false)}
-  >
-    <Stack spacing={2}>
-      <Typography variant="body2">入力途中の内容をこの端末から削除します。</Typography>
-      {discardFailed && <Alert severity="error">下書きを削除できませんでした。もう一度お試しください。</Alert>}
-      <Stack direction="row" spacing={1.5}>
-        <Button variant="outline" onClick={() => setConfirmDiscard(false)}>キャンセル</Button>
-        <Button color="#D32F2F" onClick={() => {
-          if (!discardDraft(localStorage, storageKey)) { setDiscardFailed(true); return }
-          setConfirmDiscard(false)
-          if (recoverable) {
-            setRecoverable(null)
-          } else {
-            finished.current = true
-            onDiscard()
-          }
-        }}>破棄する</Button>
-      </Stack>
-    </Stack>
-  </Modal>
 
   if (recoverable) {
     return <Screen>
@@ -274,10 +257,29 @@ export function AddScreen({ initial, importKey, onDone, onDiscard, onGmailImport
             setRecoverable(null)
             setSplitExpanded(null)
           }}>下書きを続ける</Button>
-          <Button variant="outline" onClick={requestDiscard}>下書きを破棄する</Button>
+          <Button variant="outline" onClick={() => {
+            setDiscardFailed(false)
+            setConfirmDiscard(true)
+          }}>下書きを破棄する</Button>
         </Stack>
       </CardContent></Card>
-      {discardDialog}
+      {confirmDiscard && <Modal title="下書きを破棄しますか？" onClose={() => setConfirmDiscard(false)}>
+        <Stack spacing={2}>
+          <Typography variant="body2">入力途中の内容をこの端末から削除します。</Typography>
+          {discardFailed && <Alert severity="error">下書きを削除できませんでした。もう一度お試しください。</Alert>}
+          <Stack direction="row" spacing={1.5}>
+            <Button variant="outline" onClick={() => setConfirmDiscard(false)}>キャンセル</Button>
+            <Button color="#D32F2F" onClick={() => {
+              if (!discardDraft(localStorage, storageKey)) {
+                setDiscardFailed(true)
+                return
+              }
+              setConfirmDiscard(false)
+              setRecoverable(null)
+            }}>破棄する</Button>
+          </Stack>
+        </Stack>
+      </Modal>}
       {s.account && !initial?.editingId && <GmailImport mode="candidates" onImport={importGmailDraft} focusRequest={gmailFocusRequest} />}
     </Screen>
   }
@@ -495,10 +497,9 @@ export function AddScreen({ initial, importKey, onDone, onDiscard, onGmailImport
 
       {duplicates.length > 0 && <Alert severity="warning" sx={{ mt: 2 }}>同じ日・金額{isIncome ? '' : '・決済方法'}の記録が{duplicates.length}件あります。保存前に重複を確認してください。</Alert>}
       {s.account && !draft.editingId && !isIncome && <GmailImport mode="candidates" onImport={importGmailDraft} focusRequest={gmailFocusRequest} />}
-      <EntrySaveBar disabled={reading || saving} onSave={() => void save()} onDiscard={requestDiscard}>
+      <EntrySaveBar disabled={reading || saving} onSave={() => void save()} onDiscard={discardInput}>
         {saving ? '保存中…' : draft.editingId ? '更新' : '保存'}
       </EntrySaveBar>
-      {discardDialog}
       {duplicateConfirmedDraft && <Modal title="同じ内容の記録があります" onClose={() => setDuplicateConfirmedDraft(null)}><Stack spacing={1.5}>
         <Typography>同日・同額{isIncome ? '' : '・同じ決済方法'}の記録です。別の買い物なら、そのまま保存できます。自動では統合・削除しません。</Typography>
         {findDuplicateExpenses(duplicateConfirmedDraft, s.expenses).slice(0, 5).map((row) => <Typography key={row.id}>{row.title} ・ {yen(row.amountYen)} ・ {new Date(row.purchasedAtMillis).toLocaleString('ja-JP')}</Typography>)}
