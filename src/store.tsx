@@ -37,7 +37,7 @@ import { reuseUnchangedRows } from './sync/records'
 import { indexSplits, memberBalances, monthlySummary } from './domain/ledger'
 import { clearDrafts, type ExpenseDraft } from './entries/draft'
 import { MAX_ENTRY_YEN, parseYenAmount } from './entries/amount'
-import { DuplicateFinancialMessageError, undoExpenseWrite, writeExpense } from './entries/persistence'
+import { deleteExpenseWrite, DuplicateFinancialMessageError, ExpenseChangedError, undoExpenseWrite, writeExpense, type ExpenseUndo } from './entries/persistence'
 import { saveCashAccount as persistCashAccount, saveTransfer as persistTransfer, saveRefund as persistRefund } from './finance/persistence'
 import { refundAdjustments, refundTotal } from './finance/ledger'
 import { validateFinance } from './finance/validation'
@@ -841,6 +841,31 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   // ---------------- 明細 ----------------
 
+  const offerExpenseUndo = useCallback((ticket: ExpenseUndo, operation: '保存' | '削除') => {
+    const owner = account?.uid ?? 'offline'
+    const epoch = sessionEpoch.current
+    let undoing = false
+    setMessage({
+      text: `${operation}しました`,
+      kind: 'ok',
+      action: { label: '取り消す', onClick: () => {
+        if (undoing || sessionEpoch.current !== epoch || (readAccount()?.uid ?? 'offline') !== owner) return
+        undoing = true
+        void (async () => {
+          try {
+            if (!await undoExpenseWrite(ticket)) {
+              notify(`${operation}後に明細が変更・再登録されたため取り消せません。履歴を確認してください`, 'error')
+              return
+            }
+            await reload()
+            notify(`直前の${operation}を取り消しました`)
+            autoSync()
+          } catch { notify('取り消せませんでした。履歴を確認してください', 'error') }
+        })()
+      } },
+    })
+  }, [account?.uid, autoSync, notify, reload])
+
   const saveExpense = useCallback(
     async (draft: ExpenseDraft) => {
       const { amount } = parseYenAmount(draft.amountYen, MAX_ENTRY_YEN)
@@ -928,24 +953,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           deleted: false,
         })) : [])
         await reload()
-        const savedOwner = account?.uid ?? 'offline'
-        let undoing = false
-        setMessage({ text: '保存しました', kind: 'ok', action: { label: '取り消す', onClick: () => {
-          if (undoing) return
-          undoing = true
-          void (async () => {
-            try {
-              if ((readAccount()?.uid ?? 'offline') !== savedOwner) return
-              if (!await undoExpenseWrite(ticket)) {
-                notify('保存後に変更されたため取り消せません。履歴から確認してください', 'error')
-                return
-              }
-              await reload()
-              notify('直前の保存を取り消しました')
-              autoSync()
-            } catch { notify('取り消せませんでした。履歴を確認してください', 'error') }
-          })()
-        } } })
+        offerExpenseUndo(ticket, '保存')
         autoSync()
         return id
       } catch (error) {
@@ -953,19 +961,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         return false
       }
     },
-    [account?.uid, autoSync, cashAccounts, expenseRefunds, expenses, members, notify, paymentMethods, prepaidCharges, reload],
+    [autoSync, cashAccounts, expenseRefunds, expenses, members, notify, offerExpenseUndo, paymentMethods, prepaidCharges, reload],
   )
 
   const deleteExpense = useCallback(
     async (e: Expense) => {
       if (expenseRefunds.some((row) => row.expenseId === e.id)) { notify('返金記録がある明細は削除できません。先に返金記録を確認してください', 'error'); return }
-      try { await writeExpense({ ...e, deleted: true, updatedAt: now() }, []) }
-      catch { notify('返金記録がある明細は削除できません', 'error'); return }
-      await reload()
-      notify('削除しました')
-      autoSync()
+      try {
+        const ticket = await deleteExpenseWrite(e)
+        await reload()
+        offerExpenseUndo(ticket, '削除')
+        autoSync()
+      } catch (error) {
+        notify(error instanceof ExpenseChangedError ? error.message : '削除できませんでした。履歴を確認して再試行してください', 'error')
+      }
     },
-    [autoSync, expenseRefunds, notify, reload],
+    [autoSync, expenseRefunds, notify, offerExpenseUndo, reload],
   )
 
   const splitIndex = useMemo(() => indexSplits(expenses, splits), [expenses, splits])

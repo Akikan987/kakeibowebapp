@@ -254,7 +254,7 @@ export function ListScreen({ onEdit, onDuplicate }: {
           )}
           <Stack direction="row" spacing={1.5}>
             <Button variant="outline" onClick={() => setPendingDelete(null)}>キャンセル</Button>
-            <Button color="#D32F2F" onClick={async () => { await s.deleteExpense(pendingDelete); setPendingDelete(null) }}>削除</Button>
+            <Button color="#D32F2F" onClick={() => { setPendingDelete(null); void s.deleteExpense(pendingDelete) }}>削除</Button>
           </Stack>
         </Modal>
       )}
