@@ -42,9 +42,9 @@ const emptyCharge = (prepaidMethodId: string): PrepaidChargeDraft => ({ prepaidM
 const dayLabel = (day: number) => (day === 31 ? '月末' : `${day}日`)
 const fullDate = (millis: number) => new Date(millis).toLocaleDateString('ja-JP', { year: 'numeric', month: 'long', day: 'numeric' })
 
-export function PaymentsScreen() {
+export function PaymentsScreen({ onParentChange }: { onParentChange: (label: string | null) => void }) {
   const s = useStore()
-  const { section, openSection, goBack } = useSectionNavigation<'overview' | 'calendar' | 'methods' | 'accounts' | 'charges'>('overview')
+  const { section, openSection } = useSectionNavigation<'overview' | 'calendar' | 'methods' | 'accounts' | 'charges'>('overview')
   const [methodDraft, setMethodDraft] = useState<PaymentMethodDraft | null>(null)
   const [chargeDraft, setChargeDraft] = useState<PrepaidChargeDraft | null>(null)
   const [pendingMethodDelete, setPendingMethodDelete] = useState<PaymentMethod | null>(null)
@@ -99,10 +99,6 @@ export function PaymentsScreen() {
     closeTransientState()
     openSection(next)
   }
-  const backToOverview = () => {
-    closeTransientState()
-    goBack()
-  }
   useEffect(() => { closeTransientState() }, [section])
 
   return (
@@ -134,7 +130,7 @@ export function PaymentsScreen() {
           <NavigationRow title="チャージ履歴" description="プリペイドへのチャージ記録" icon={<HistoryRoundedIcon />} badge={s.prepaidCharges.length} onClick={() => navigateTo('charges')} />
         </Card>
       </> : <>
-        <SectionPageHeader title={{ calendar: '引き落としカレンダー', methods: 'カード・決済方法', accounts: '口座・財布', charges: 'チャージ履歴' }[section]} parentLabel="決済" onBack={backToOverview} />
+        <SectionPageHeader title={{ calendar: '引き落としカレンダー', methods: 'カード・決済方法', accounts: '口座・財布', charges: 'チャージ履歴' }[section]} parentLabel="決済" onParentChange={onParentChange} />
         {section === 'calendar' && <>
           <WithdrawalCalendar year={calendarMonth.year} month={calendarMonth.month} withdrawals={calendarWithdrawals} selectedDay={selectedCalendarDay} onSelectDay={setSelectedCalendarDay} onMoveMonth={moveCalendarMonth} />
           {selectedCalendarDay !== null && <Card sx={{ mt: 1.5 }}>

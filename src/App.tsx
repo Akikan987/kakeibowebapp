@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
 import CreditCardRoundedIcon from '@mui/icons-material/CreditCardRounded'
@@ -77,6 +77,7 @@ export default function App() {
   const initialTab: Tab = shortcutDraft ? 'add' : shortcut === 'withdrawals' ? 'payments' : lastTab
   const [tab, setTab] = useState<Tab>(initialTab)
   const [settingsReturnTab, setSettingsReturnTab] = useState<Exclude<Tab, 'settings'>>(shortcutDraft ? lastTab : initialTab)
+  const [sectionParentLabel, setSectionParentLabel] = useState<string | null>(null)
   const [settingsPageRequest, setSettingsPageRequest] = useState<{ section: 'index' | 'integrations'; revision: number }>({ section: 'index', revision: 0 })
   const [addReturnTab, setAddReturnTab] = useState<MainTab>(lastTab)
   const [editDraft, setEditDraft] = useState<ExpenseDraft | null>(shortcutDraft)
@@ -98,6 +99,14 @@ export default function App() {
   const [exitHint, setExitHint] = useState(false)
   const currentTab = useRef(tab)
   currentTab.current = tab
+  const settingsReturnTabRef = useRef(settingsReturnTab)
+  settingsReturnTabRef.current = settingsReturnTab
+  const goBackWithinScreen = useCallback(() => {
+    if (requestSectionBack(window)) return true
+    if (currentTab.current !== 'settings') return false
+    setTab(settingsReturnTabRef.current)
+    return true
+  }, [])
   const backNavigation = useRef<ReturnType<typeof createBackNavigation> | null>(null)
   const previousOwner = useRef(s.account?.uid)
   useEffect(() => {
@@ -206,7 +215,7 @@ export default function App() {
       history: window.history,
       clock: { setTimeout: (callback, delay) => window.setTimeout(callback, delay), clearTimeout: (id) => window.clearTimeout(id) },
       isHome: () => currentTab.current === 'home',
-      goBackWithinScreen: () => requestSectionBack(window),
+      goBackWithinScreen,
       goHome: () => {
         currentTab.current = 'home'
         setEditDraft(null)
@@ -226,7 +235,7 @@ export default function App() {
       window.removeEventListener('pageshow', resume)
       controller.stop()
     }
-  }, [backEnabled])
+  }, [backEnabled, goBackWithinScreen])
 
   useEffect(() => { backNavigation.current?.screenChanged() }, [tab])
 
@@ -285,6 +294,10 @@ export default function App() {
     )
   }
 
+  const backParent = sectionParentLabel ?? (tab === 'settings'
+    ? TABS.find(({ key }) => key === settingsReturnTab)?.label ?? '入力画面'
+    : null)
+
   return (
     <Box sx={{ '--kakeibo-nav-clearance': 'calc(4.5rem + 8px)', minHeight: '100dvh', pb: 'calc(6.625rem + env(safe-area-inset-bottom))' }}>
       <AppBar
@@ -299,6 +312,14 @@ export default function App() {
         })}
       >
         <Toolbar sx={{ minHeight: '56px !important', maxWidth: 720, width: '100%', mx: 'auto' }}>
+          {backParent && <Tooltip title={`${backParent}に戻る`}>
+            <IconButton
+              aria-label={`${backParent}に戻る`}
+              color="inherit"
+              onClick={goBackWithinScreen}
+              sx={{ mr: 1, width: 44, height: 44 }}
+            ><ArrowBackRoundedIcon /></IconButton>
+          </Tooltip>}
           <Typography variant="h6" color="text.primary" sx={{ flex: 1 }}>
             家計簿
           </Typography>
@@ -315,20 +336,16 @@ export default function App() {
                   ? '未同期'
                   : ''}
           </Typography>
-          <Tooltip title={tab === 'settings' ? '戻る' : '設定'}>
+          {tab !== 'settings' && <Tooltip title="設定">
             <IconButton
-              aria-label={tab === 'settings' ? '設定から戻る' : '設定を開く'}
+              aria-label="設定を開く"
               color="inherit"
-              onClick={() => {
-                if (tab === 'settings') {
-                  if (!requestSectionBack(window)) setTab(settingsReturnTab)
-                } else openSettings()
-              }}
+              onClick={() => openSettings()}
               sx={{ ml: 1, bgcolor: 'action.hover', border: '1px solid', borderColor: 'divider' }}
             >
-              {tab === 'settings' ? <ArrowBackRoundedIcon /> : <SettingsRoundedIcon />}
+              <SettingsRoundedIcon />
             </IconButton>
-          </Tooltip>
+          </Tooltip>}
         </Toolbar>
       </AppBar>
 
@@ -381,9 +398,9 @@ export default function App() {
               }}
             />
           )}
-          {tab === 'payments' && <PaymentsScreen />}
-          {tab === 'split' && <SplitScreen />}
-          {tab === 'settings' && <SettingsScreen requestedSection={settingsPageRequest.section} requestRevision={settingsPageRequest.revision} onImport={(draft, eventId, gmailCandidateId) => {
+          {tab === 'payments' && <PaymentsScreen onParentChange={setSectionParentLabel} />}
+          {tab === 'split' && <SplitScreen onParentChange={setSectionParentLabel} />}
+          {tab === 'settings' && <SettingsScreen requestedSection={settingsPageRequest.section} requestRevision={settingsPageRequest.revision} onParentChange={setSectionParentLabel} onImport={(draft, eventId, gmailCandidateId) => {
             setEditDraft(draft)
             setNativeImport(eventId ? { id: eventId, source: draft.source, owner: s.account?.uid ?? 'offline' } : null)
             setGmailImport(gmailCandidateId && s.account?.uid ? { id: gmailCandidateId, source: draft.source, owner: s.account.uid } : null)

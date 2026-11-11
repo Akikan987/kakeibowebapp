@@ -25,11 +25,26 @@ import type { ExpenseDraft } from '../entries/draft'
 import { useAppTheme, type AppThemeMode } from '../theme'
 
 type SettingsSection = 'index' | 'account' | 'appearance' | 'categories' | 'integrations' | 'data' | 'danger'
+const sectionTitles: Record<SettingsSection, string> = {
+  index: '設定',
+  account: 'アカウント',
+  appearance: '表示テーマ',
+  categories: '品目',
+  integrations: '連携・通知',
+  data: 'データ管理',
+  danger: 'アカウントの削除',
+}
 
-export function SettingsScreen({ onImport, onOpenGmailCandidates, requestedSection, requestRevision }: { onImport: (draft: ExpenseDraft, eventId?: string, gmailCandidateId?: string) => void; onOpenGmailCandidates: () => void; requestedSection?: 'index' | 'integrations'; requestRevision?: number }) {
+export function SettingsScreen({ onImport, onOpenGmailCandidates, requestedSection, requestRevision, onParentChange }: {
+  onImport: (draft: ExpenseDraft, eventId?: string, gmailCandidateId?: string) => void
+  onOpenGmailCandidates: () => void
+  requestedSection?: 'index' | 'integrations'
+  requestRevision?: number
+  onParentChange: (label: string | null) => void
+}) {
   const s = useStore()
   const appTheme = useAppTheme()
-  const { section, openSection, goBack } = useSectionNavigation<SettingsSection>('index')
+  const { section, parentSection, openSection } = useSectionNavigation<SettingsSection>('index')
   const [newCategory, setNewCategory] = useState('')
   const [renameTarget, setRenameTarget] = useState<Category | null>(null)
   const [renameText, setRenameText] = useState('')
@@ -117,7 +132,7 @@ export function SettingsScreen({ onImport, onOpenGmailCandidates, requestedSecti
           <NavigationRow title="データ管理" description="端末保存・更新・バックアップ" onClick={() => openSection('data')} />
         </Card>
       </> : <>
-        <SectionPageHeader title={{ account: 'アカウント', appearance: '表示テーマ', categories: '品目', integrations: '連携・通知', data: 'データ管理', danger: 'アカウントの削除' }[section]} parentLabel={section === 'danger' ? 'アカウント' : '設定'} onBack={goBack} />
+        <SectionPageHeader title={sectionTitles[section]} parentLabel={sectionTitles[parentSection]} onParentChange={onParentChange} />
 
         {section === 'account' && <>
           <SectionHeader>プロフィール・同期</SectionHeader>

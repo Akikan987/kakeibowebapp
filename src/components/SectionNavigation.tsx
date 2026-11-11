@@ -1,8 +1,7 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded'
-import { Box, Chip, ListItemButton, Stack, Typography } from '@mui/material'
-import { Button, LargeTitle } from './ui'
+import { Box, Chip, ListItemButton, Typography } from '@mui/material'
+import { LargeTitle } from './ui'
 import { SECTION_BACK_EVENT } from '../sectionNavigation'
 
 export function useSectionNavigation<T extends string>(root: T) {
@@ -44,7 +43,7 @@ export function useSectionNavigation<T extends string>(root: T) {
     return () => window.cancelAnimationFrame(frame)
   }, [section])
   const parentSection = trail.current[Math.max(0, trail.current.length - 2)] ?? root
-  return { section, parentSection, openSection, goBack }
+  return { section, parentSection, openSection }
 }
 
 export function NavigationRow({ title, description, onClick, icon, badge }: {
@@ -61,11 +60,15 @@ export function NavigationRow({ title, description, onClick, icon, badge }: {
   </ListItemButton>
 }
 
-export function SectionPageHeader({ title, onBack, parentLabel = '一覧' }: {
-  title: string; onBack: () => void; parentLabel?: string
+export function SectionPageHeader({ title, parentLabel, onParentChange }: {
+  title: string
+  parentLabel: string
+  onParentChange: (label: string | null) => void
 }) {
-  return <Stack alignItems="flex-start" sx={{ pt: 2 }}>
-    <Button variant="text" startIcon={<ArrowBackRoundedIcon />} onClick={onBack} sx={{ width: 'auto', ml: -1 }}> {parentLabel}に戻る</Button>
-    <LargeTitle>{title}</LargeTitle>
-  </Stack>
+  useLayoutEffect(() => {
+    onParentChange(parentLabel)
+    return () => onParentChange(null)
+  }, [onParentChange, parentLabel])
+
+  return <LargeTitle>{title}</LargeTitle>
 }

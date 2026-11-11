@@ -73,9 +73,9 @@ function SettlementDialog({ target, onClose }: { target: MemberBalance; onClose:
   </Modal>
 }
 
-export function SplitScreen() {
+export function SplitScreen({ onParentChange }: { onParentChange: (label: string | null) => void }) {
   const s = useStore()
-  const { section, parentSection, openSection, goBack } = useSectionNavigation<'overview' | 'members' | 'sharing' | 'history'>('overview')
+  const { section, parentSection, openSection } = useSectionNavigation<'overview' | 'members' | 'sharing' | 'history'>('overview')
   const [newMember, setNewMember] = useState('')
   const [renameTarget, setRenameTarget] = useState<Member | null>(null)
   const [renameText, setRenameText] = useState('')
@@ -95,7 +95,7 @@ export function SplitScreen() {
 
   return (
     <Screen>
-      {section === 'overview' ? <LargeTitle>割り勘</LargeTitle> : <SectionPageHeader title={section === 'members' ? 'メンバー' : section === 'sharing' ? '共有の招待・承認' : '清算履歴'} parentLabel={parentSection === 'members' ? 'メンバー' : '割り勘'} onBack={goBack} />}
+      {section === 'overview' ? <LargeTitle>割り勘</LargeTitle> : <SectionPageHeader title={section === 'members' ? 'メンバー' : section === 'sharing' ? '共有の招待・承認' : '清算履歴'} parentLabel={parentSection === 'members' ? 'メンバー' : '割り勘'} onParentChange={onParentChange} />}
       {section === 'overview' && <>
       {payable.length > 0 && <>
         <SectionHeader>あなたが払う分</SectionHeader>
