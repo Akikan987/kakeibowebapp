@@ -38,8 +38,6 @@ export default defineConfig(({ mode }) => ({
     tailwindcss(),
     VitePWA({
       disable: mode === 'native',
-      // 入力中に突然再読込しないよう、新版は画面上で案内してから切り替える
-      registerType: 'prompt',
       // Cloudflareに古いsw.jsが残っても、ビルド固有URLで必ず新版を確認する
       injectRegister: false,
       includeAssets: ['icon.svg', 'apple-touch-icon.png'],
@@ -89,6 +87,9 @@ export default defineConfig(({ mode }) => ({
         ],
       },
       workbox: {
+        // 旧版を使う画面が閉じたら、ブラウザが待機中の新版を有効にする。
+        skipWaiting: false,
+        clientsClaim: false,
         importScripts: ['/push-events.js'],
         // アプリ本体（HTML/JS/CSS/アイコン）を端末に保存し、サーバーが止まっていても起動できるようにする
         globPatterns: ['**/*.{js,css,html,svg,png}'],

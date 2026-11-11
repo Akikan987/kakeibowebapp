@@ -1,7 +1,6 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './App'
-import { PwaUpdatePrompt } from './components/PwaUpdatePrompt'
 import { StoreProvider } from './store'
 import { setupOffline } from './offline'
 import { AppThemeProvider } from './theme'
@@ -24,7 +23,6 @@ if (import.meta.env.DEV && new URLSearchParams(location.search).get('design-prev
           <BrowserNativeApproval />
           <App />
           <NativeIntegration />
-          {!isHybridNative() && <PwaUpdatePrompt />}
         </StoreProvider>
       </AppThemeProvider>
     </StrictMode>,
