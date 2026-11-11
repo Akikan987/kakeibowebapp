@@ -111,8 +111,8 @@ export function SettingsScreen({ onImport, onOpenGmailCandidates, requestedSecti
           <Stack direction="row" spacing={1.5} alignItems="center">
             <Avatar src={s.account?.avatarDataUrl || undefined} alt={s.account ? `${s.account.nickname}のプロフィール画像` : undefined} sx={{ width: 48, height: 48, bgcolor: 'action.selected', color: 'primary.main' }}><PersonRoundedIcon /></Avatar>
             <Box sx={{ minWidth: 0, flex: 1 }}>
-              <Typography fontWeight={700} noWrap>{s.loggedIn && s.account ? s.account.nickname : 'ゲスト利用'}</Typography>
-              <Typography variant="body2" color="text.secondary">{s.loggedIn && s.account ? s.syncing ? '同期中…' : s.hasPendingChanges ? '未同期の変更があります' : '変更は自動で同期されます' : 'この端末のみでオフライン利用中'}</Typography>
+              <Typography fontWeight={700} noWrap>{s.loggedIn && s.account ? s.account.nickname : 'アカウントなしで利用中'}</Typography>
+              <Typography variant="body2" color="text.secondary">{s.loggedIn && s.account ? s.syncing ? '同期中…' : s.hasPendingChanges ? '未同期の変更があります' : '変更は自動で同期されます' : '記録はこの端末に保存されます'}</Typography>
             </Box>
           </Stack>
           {s.loggedIn && s.account && <Box sx={{ mt: 1.5 }}>

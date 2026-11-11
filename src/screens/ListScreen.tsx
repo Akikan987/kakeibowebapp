@@ -11,6 +11,7 @@ import {
   AccordionDetails,
   AccordionSummary,
   Box,
+  CardContent,
   Checkbox,
   FormControl,
   FormControlLabel,
@@ -62,7 +63,8 @@ const PAGE_SIZE = 50
 const historyDate = new Intl.DateTimeFormat('ja-JP', { month: 'long', day: 'numeric', weekday: 'short' })
 const historyTime = new Intl.DateTimeFormat('ja-JP', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
 
-export function ListScreen({ onEdit, onDuplicate }: {
+export function ListScreen({ onAddExpense, onEdit, onDuplicate }: {
+  onAddExpense: () => void
   onEdit: (draft: ExpenseDraft) => void
   onDuplicate: (draft: ExpenseDraft) => void
 }) {
@@ -84,17 +86,19 @@ export function ListScreen({ onEdit, onDuplicate }: {
       .sort((a, b) => a.localeCompare(b, 'ja')),
     [s.expenses],
   )
-  const filteredExpenses = useMemo(() => {
+  const monthExpenses = useMemo(() => {
     const monthStartMillis = new Date(s.month.year, s.month.month - 1, 1).getTime()
-    const monthEndMillis = new Date(s.month.year, s.month.month, 1).getTime() - 1
+    const monthEndMillis = new Date(s.month.year, s.month.month, 1).getTime()
+    return s.expenses.filter(({ purchasedAtMillis }) => purchasedAtMillis >= monthStartMillis && purchasedAtMillis < monthEndMillis)
+  }, [s.expenses, s.month.year, s.month.month])
+
+  const filteredExpenses = useMemo(() => {
     const query = filters.query.trim().toLocaleLowerCase('ja-JP')
     const fromMillis = filters.from ? new Date(`${filters.from}T00:00:00`).getTime() : 0
     const toMillis = filters.to ? new Date(`${filters.to}T23:59:59.999`).getTime() : Number.MAX_SAFE_INTEGER
     const minAmount = filters.minAmount === '' ? 0 : Number(filters.minAmount)
     const maxAmount = filters.maxAmount === '' ? Number.MAX_SAFE_INTEGER : Number(filters.maxAmount)
-    return s.expenses.filter((expense) => {
-      if (!Number.isFinite(expense.purchasedAtMillis)) return false
-      if (expense.purchasedAtMillis < monthStartMillis || expense.purchasedAtMillis > monthEndMillis) return false
+    return monthExpenses.filter((expense) => {
       const searchable = `${expense.title} ${expense.category} ${s.paymentMethodName(expense.paymentMethodId)}`
         .toLocaleLowerCase('ja-JP')
       if (query && !searchable.includes(query)) return false
@@ -106,7 +110,7 @@ export function ListScreen({ onEdit, onDuplicate }: {
       if (filters.splitOnly && s.splitSumOf(expense.id) <= 0) return false
       return true
     })
-  }, [filters, s])
+  }, [filters, monthExpenses, s])
   const visibleExpenses = filteredExpenses.slice(0, visibleCount)
   const remainingCount = filteredExpenses.length - visibleExpenses.length
   const historyDays = useMemo(() => groupHistoryDays(filteredExpenses, s.netAmount, visibleCount), [filteredExpenses, s.netAmount, visibleCount])
@@ -138,84 +142,98 @@ export function ListScreen({ onEdit, onDuplicate }: {
     <Screen>
       <LargeTitle>履歴</LargeTitle>
       <MonthSwitcher year={s.month.year} month={s.month.month} onPrevious={s.prevMonth} onNext={s.nextMonth} sx={{ mb: 2 }} />
-      <TextField
-        fullWidth
-        value={filters.query}
-        onChange={(event) => setFilters({ ...filters, query: event.target.value })}
-        placeholder="店名・品目・決済方法を検索"
-        slotProps={{
-          input: {
-            startAdornment: <InputAdornment position="start"><SearchRoundedIcon /></InputAdornment>,
-          },
-        }}
-      />
-      <Accordion
-        disableGutters
-        elevation={0}
-        sx={{ mt: 1.5, bgcolor: 'action.hover', borderRadius: '14px !important', '&::before': { display: 'none' } }}
-      >
-        <AccordionSummary expandIcon={<FilterListRoundedIcon />}>
-          <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1} sx={{ width: '100%', pr: 1 }}>
-            <Typography variant="body2" fontWeight={700}>絞り込み{activeFilterCount > 0 && `（${activeFilterCount}件指定）`}</Typography>
-            {s.expenses.length > 0 && (
+      {monthExpenses.length > 0 && <>
+        <TextField
+          fullWidth
+          value={filters.query}
+          onChange={(event) => setFilters({ ...filters, query: event.target.value })}
+          placeholder="店名・品目・決済方法を検索"
+          slotProps={{
+            input: {
+              startAdornment: <InputAdornment position="start"><SearchRoundedIcon /></InputAdornment>,
+            },
+          }}
+        />
+        <Accordion
+          disableGutters
+          elevation={0}
+          sx={{ mt: 1.5, bgcolor: 'action.hover', borderRadius: '14px !important', '&::before': { display: 'none' } }}
+        >
+          <AccordionSummary expandIcon={<FilterListRoundedIcon />}>
+            <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1} sx={{ width: '100%', pr: 1 }}>
+              <Typography variant="body2" fontWeight={700}>絞り込み{activeFilterCount > 0 && `（${activeFilterCount}件指定）`}</Typography>
               <Typography variant="caption" color="text.secondary">
                 {remainingCount > 0
                   ? `${filteredExpenses.length}件中 ${visibleExpenses.length}件表示`
                   : `${filteredExpenses.length}件表示`}
               </Typography>
-            )}
-          </Stack>
-        </AccordionSummary>
-        <AccordionDetails>
-          <Stack spacing={1.5}>
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
+            </Stack>
+          </AccordionSummary>
+          <AccordionDetails>
+            <Stack spacing={1.5}>
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
+                <FormControl fullWidth>
+                  <InputLabel>種類</InputLabel>
+                  <Select label="種類" value={filters.type} onChange={(event) => setFilters({ ...filters, type: event.target.value })}>
+                    <MenuItem value="">すべて</MenuItem>
+                    <MenuItem value={TYPE_EXPENSE}>支出</MenuItem>
+                    <MenuItem value={TYPE_INCOME}>収入</MenuItem>
+                  </Select>
+                </FormControl>
+                <FormControl fullWidth>
+                  <InputLabel>品目</InputLabel>
+                  <Select label="品目" value={filters.category} onChange={(event) => setFilters({ ...filters, category: event.target.value })}>
+                    <MenuItem value="">すべて</MenuItem>
+                    {categories.map((category) => <MenuItem key={category} value={category}>{category}</MenuItem>)}
+                  </Select>
+                </FormControl>
+              </Stack>
               <FormControl fullWidth>
-                <InputLabel>種類</InputLabel>
-                <Select label="種類" value={filters.type} onChange={(event) => setFilters({ ...filters, type: event.target.value })}>
+                <InputLabel>決済方法</InputLabel>
+                <Select label="決済方法" value={filters.paymentMethodId} onChange={(event) => setFilters({ ...filters, paymentMethodId: event.target.value })}>
                   <MenuItem value="">すべて</MenuItem>
-                  <MenuItem value={TYPE_EXPENSE}>支出</MenuItem>
-                  <MenuItem value={TYPE_INCOME}>収入</MenuItem>
+                  {s.paymentMethods.map((method) => <MenuItem key={method.id} value={method.id}>{method.name}</MenuItem>)}
                 </Select>
               </FormControl>
-              <FormControl fullWidth>
-                <InputLabel>品目</InputLabel>
-                <Select label="品目" value={filters.category} onChange={(event) => setFilters({ ...filters, category: event.target.value })}>
-                  <MenuItem value="">すべて</MenuItem>
-                  {categories.map((category) => <MenuItem key={category} value={category}>{category}</MenuItem>)}
-                </Select>
-              </FormControl>
+              <Stack direction="row" spacing={1.5}>
+                <TextField fullWidth label="開始日" type="date" value={filters.from} onChange={(event) => setFilters({ ...filters, from: event.target.value })} slotProps={{ inputLabel: { shrink: true } }} />
+                <TextField fullWidth label="終了日" type="date" value={filters.to} onChange={(event) => setFilters({ ...filters, to: event.target.value })} slotProps={{ inputLabel: { shrink: true } }} />
+              </Stack>
+              <Stack direction="row" spacing={1.5}>
+                <Field onCalculate={(value) => setFilters({ ...filters, minAmount: value })} label="最低金額" type="number" value={filters.minAmount} onChange={(event) => setFilters({ ...filters, minAmount: event.target.value })} />
+                <Field onCalculate={(value) => setFilters({ ...filters, maxAmount: value })} label="最高金額" type="number" value={filters.maxAmount} onChange={(event) => setFilters({ ...filters, maxAmount: event.target.value })} />
+              </Stack>
+              <FormControlLabel
+                control={<Checkbox checked={filters.splitOnly} onChange={(event) => setFilters({ ...filters, splitOnly: event.target.checked })} />}
+                label="割り勘がある明細だけ"
+              />
+              {activeFilterCount > 0 && <Button variant="outline" onClick={() => setFilters(initialFilters)}>絞り込みを解除</Button>}
             </Stack>
-            <FormControl fullWidth>
-              <InputLabel>決済方法</InputLabel>
-              <Select label="決済方法" value={filters.paymentMethodId} onChange={(event) => setFilters({ ...filters, paymentMethodId: event.target.value })}>
-                <MenuItem value="">すべて</MenuItem>
-                {s.paymentMethods.map((method) => <MenuItem key={method.id} value={method.id}>{method.name}</MenuItem>)}
-              </Select>
-            </FormControl>
-            <Stack direction="row" spacing={1.5}>
-              <TextField fullWidth label="開始日" type="date" value={filters.from} onChange={(event) => setFilters({ ...filters, from: event.target.value })} slotProps={{ inputLabel: { shrink: true } }} />
-              <TextField fullWidth label="終了日" type="date" value={filters.to} onChange={(event) => setFilters({ ...filters, to: event.target.value })} slotProps={{ inputLabel: { shrink: true } }} />
-            </Stack>
-            <Stack direction="row" spacing={1.5}>
-              <Field onCalculate={(value) => setFilters({ ...filters, minAmount: value })} label="最低金額" type="number" value={filters.minAmount} onChange={(event) => setFilters({ ...filters, minAmount: event.target.value })} />
-              <Field onCalculate={(value) => setFilters({ ...filters, maxAmount: value })} label="最高金額" type="number" value={filters.maxAmount} onChange={(event) => setFilters({ ...filters, maxAmount: event.target.value })} />
-            </Stack>
-            <FormControlLabel
-              control={<Checkbox checked={filters.splitOnly} onChange={(event) => setFilters({ ...filters, splitOnly: event.target.checked })} />}
-              label="割り勘がある明細だけ"
-            />
-            {activeFilterCount > 0 && <Button variant="outline" onClick={() => setFilters(initialFilters)}>絞り込みを解除</Button>}
-          </Stack>
-        </AccordionDetails>
-      </Accordion>
+          </AccordionDetails>
+        </Accordion>
+      </>}
 
-      {s.expenses.length === 0 ? (
-        <Typography color="text.secondary" sx={{ mt: 2 }}>まだ明細がありません</Typography>
+      {monthExpenses.length === 0 ? (
+        <Card sx={{ mt: 2 }}>
+          <CardContent>
+            <Stack spacing={1.5} alignItems="flex-start">
+              <Typography component="h2" variant="subtitle1" fontWeight={700}>
+                {s.expenses.length > 0 ? 'この月はまだ明細がありません' : 'まだ明細がありません'}
+              </Typography>
+              <Button onClick={onAddExpense} sx={{ width: 'auto', minHeight: 44 }}>最初の支出を記録する</Button>
+            </Stack>
+          </CardContent>
+        </Card>
       ) : (
         <>
           {filteredExpenses.length === 0 ? (
             <Card sx={{ mt: 1 }}>
-              <Typography color="text.secondary" sx={{ p: 3 }}>この月に条件と一致する明細はありません</Typography>
+              <CardContent>
+                <Stack spacing={1.5} alignItems="flex-start">
+                  <Typography color="text.secondary">この月に条件と一致する明細はありません</Typography>
+                  <Button variant="outline" onClick={() => setFilters(initialFilters)} sx={{ width: 'auto', minHeight: 44 }}>条件をクリア</Button>
+                </Stack>
+              </CardContent>
             </Card>
           ) : (
             <Stack spacing={1.25} sx={{ mt: 1 }}>

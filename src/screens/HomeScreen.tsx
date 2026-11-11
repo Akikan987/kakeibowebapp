@@ -1,14 +1,19 @@
 import PersonRoundedIcon from '@mui/icons-material/PersonRounded'
 import { Avatar, Box, CardContent, Stack, Typography } from '@mui/material'
 import { CategoryChart, DailyChart } from '../components/Charts'
-import { Card, LargeTitle, MonthSwitcher, Screen, SectionHeader } from '../components/ui'
+import { Button, Card, LargeTitle, MonthSwitcher, Screen, SectionHeader } from '../components/ui'
 import { useStore } from '../store'
 import { MonthlySummary } from '../components/MonthlySummary'
 
-export function HomeScreen() {
+export function HomeScreen({ onAddExpense }: { onAddExpense: () => void }) {
   const s = useStore()
   const { summary, month } = s
   const daysInMonth = new Date(month.year, month.month, 0).getDate()
+  const monthStart = new Date(month.year, month.month - 1, 1).getTime()
+  const monthEnd = new Date(month.year, month.month, 1).getTime()
+  const hasMonthlyRecords = summary.dailyTotals.size > 0 || s.expenses.some(
+    (expense) => expense.purchasedAtMillis >= monthStart && expense.purchasedAtMillis < monthEnd,
+  )
 
   return (
     <Screen>
@@ -31,11 +36,20 @@ export function HomeScreen() {
       <SectionHeader>今月のサマリー</SectionHeader>
       <MonthlySummary balance={summary.balance} incomeTotal={summary.incomeTotal} expenseTotal={summary.expenseTotal} />
 
-      <SectionHeader>支出：日付別</SectionHeader>
-      <Card><CardContent><DailyChart data={summary.dailyTotals} daysInMonth={daysInMonth} /></CardContent></Card>
+      {hasMonthlyRecords ? <>
+        <SectionHeader>支出：日付別</SectionHeader>
+        <Card><CardContent><DailyChart data={summary.dailyTotals} daysInMonth={daysInMonth} /></CardContent></Card>
 
-      <SectionHeader>支出：品目別</SectionHeader>
-      <Card><CardContent><CategoryChart data={summary.categoryTotals} /></CardContent></Card>
+        <SectionHeader>支出：品目別</SectionHeader>
+        <Card><CardContent><CategoryChart data={summary.categoryTotals} /></CardContent></Card>
+      </> : <Card sx={{ mt: 2 }}>
+        <CardContent>
+          <Stack spacing={1.5} alignItems="flex-start">
+            <Typography component="h2" variant="subtitle1" fontWeight={700}>この月はまだ記録がありません</Typography>
+            <Button onClick={onAddExpense} sx={{ width: 'auto', minHeight: 44 }}>最初の支出を記録する</Button>
+          </Stack>
+        </CardContent>
+      </Card>}
       <Box sx={{ height: 1 }} />
     </Screen>
   )

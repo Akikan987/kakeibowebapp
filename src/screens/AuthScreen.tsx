@@ -69,6 +69,10 @@ export function AuthScreen({ socialSignup = false, onCancel }: { socialSignup?: 
       <Typography variant="h4" component="h1" fontWeight={800}>家計簿</Typography>
       <Typography variant="body2" color="text.secondary">毎日のお金を、ひとつの場所で。</Typography>
     </Stack>
+    {!socialSignup && <Stack spacing={0.75} sx={{ mb: 2.5, textAlign: 'center' }}>
+      <Button variant="outlined" disabled={busy} onClick={s.enterOffline} sx={{ minHeight: 44 }}>アカウントなしで使う</Button>
+      <Typography variant="caption" color="text.secondary">記録はこの端末に保存します。あとから登録して同期できます。</Typography>
+    </Stack>}
     <Paper elevation={0} sx={(theme) => ({ ...glassSurface(theme.palette.mode === 'dark'), p: { xs: 3, sm: 4 }, borderRadius: '24px' })}>
       <Stack spacing={3}>
         {!socialSignup && (step === 'login' || step === 'register') ? <>
@@ -117,9 +121,5 @@ export function AuthScreen({ socialSignup = false, onCancel }: { socialSignup?: 
         </Box>
       </Stack>
     </Paper>
-    {!socialSignup && <Stack spacing={0.5} sx={{ mt: 2.5, textAlign: 'center' }}>
-      <Button disabled={busy} onClick={s.enterOffline} sx={{ color: 'text.secondary' }}>アカウントなしで試す</Button>
-      <Typography variant="caption" color="text.secondary">記録はこの端末に保存。あとから登録して同期できます。</Typography>
-    </Stack>}
   </Container>
 }

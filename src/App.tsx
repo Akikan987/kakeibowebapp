@@ -131,6 +131,21 @@ export default function App() {
     setTab(addReturnTab)
   }
 
+  const openEntry = (returnTab: MainTab, firstExpense = false) => {
+    setNativeImport(null)
+    setGmailImport(null)
+    setAddReturnTab(returnTab)
+    if (firstExpense) {
+      const today = new Date()
+      const { year, month } = s.month
+      const date = today.getFullYear() === year && today.getMonth() === month - 1
+        ? today
+        : new Date(year, month - 1, 1, 12)
+      setEditDraft({ ...emptyDraft(), type: TYPE_EXPENSE, purchasedAtMillis: date.getTime() })
+    } else setEditDraft(null)
+    setTab('add')
+  }
+
   const openGmailCandidates = () => {
     setGmailPrompt(null)
     if (editDraft?.editingId) {
@@ -325,10 +340,10 @@ export default function App() {
           </Typography>
           <Typography
             variant="caption"
-            color={s.syncError ? 'error.main' : 'text.secondary'}
+            color={s.loggedIn && s.syncError ? 'error.main' : 'text.secondary'}
             aria-live="polite"
           >
-            {s.syncing
+            {!s.loggedIn ? 'この端末に保存' : s.syncing
               ? '同期中…'
               : s.syncError && s.hasPendingChanges
                 ? '未同期（接続待ち）'
@@ -352,10 +367,11 @@ export default function App() {
       <Container component="main" maxWidth="sm" disableGutters>
         {gmailCompletionBanner}
         <Suspense fallback={<Box sx={{ p: 4, textAlign: 'center' }}><Typography color="text.secondary">画面を読み込み中…</Typography></Box>}>
-          {tab === 'home' && <HomeScreen />}
+          {tab === 'home' && <HomeScreen onAddExpense={() => openEntry('home', true)} />}
           {tab === 'planning' && <PlanningScreen />}
           {tab === 'list' && (
             <ListScreen
+              onAddExpense={() => openEntry('list', true)}
               onEdit={(draft) => {
                 setNativeImport(null)
                 setGmailImport(null)
@@ -455,13 +471,7 @@ export default function App() {
             color="primary"
             size="medium"
             aria-label="収入・支出を追加"
-            onClick={() => {
-              setNativeImport(null)
-              setGmailImport(null)
-              setEditDraft(null)
-              setAddReturnTab(tab as MainTab)
-              setTab('add')
-            }}
+            onClick={() => openEntry(tab as MainTab)}
             sx={{ position: 'absolute', right: 4, top: -68 }}
           >
             <AddRoundedIcon />
