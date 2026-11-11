@@ -1,3 +1,5 @@
+import { MAX_ENTRY_YEN, parseYenAmount } from '../entries/amount.ts'
+import { financialMessageSource } from './source.ts'
 import { apiFetch } from '../native/http.ts'
 import type { FinancialMessageCandidate } from './smbc.ts'
 import type { PaymentMethod } from '../types.ts'
@@ -31,7 +33,7 @@ export function gmailAiStatusSummary(status: GmailStatus | null): GmailAiStatusS
   }
   if (status.discoveryEnabled && status.discoveryAvailable === true && status.aiEnabled) return {
     kind: 'discovery-enabled', label: 'AI明細検出ON', severity: 'success',
-    description: '三井住友を含むカード・銀行・電子マネーの明細メールをAIで確認します。件名と必要部分を加工してOpenAIへ送信し、有効化後に届いた新着メールだけを対象にします。過去メールの一括解析はしません。',
+    description: 'カード・銀行・電子マネーの明細メールをAIで確認します。件名と取引に関する本文を加工してOpenAIへ送信し、有効化後に届いた新着メールだけを対象にします。過去メールの一括解析はしません。',
   }
   if (status.discoveryAvailable !== true) return {
     kind: 'server-setup', label: 'AI明細検出の設定待ち', severity: 'warning',
@@ -44,6 +46,7 @@ export function gmailAiStatusSummary(status: GmailStatus | null): GmailAiStatusS
 }
 export interface GmailCandidate { id: string; candidate: FinancialMessageCandidate; createdAt: number }
 export interface ReviewedGmailCandidate extends GmailCandidate { source: string }
+export const GMAIL_MERCHANT_LIMIT = 160
 const JST_OFFSET = 9 * 60 * 60 * 1000
 export function gmailDateToInput(millis: number | null): string {
   if (millis === null || !Number.isFinite(millis) || !Number.isFinite(new Date(millis + JST_OFFSET).getTime())) return ''
@@ -56,6 +59,14 @@ export function gmailReviewTimestamp(original: number | null, input: string): nu
   const expanded = input.length === 16 ? `${input}:00` : input
   if (!Number.isFinite(millis) || new Date(millis + JST_OFFSET).toISOString().slice(0, 19) !== expanded) return Number.NaN
   return millis
+}
+export function gmailCardReviewDetails(candidate: FinancialMessageCandidate, merchantInput: string, amountInput: string, dateInput: string) {
+  const merchant = merchantInput.trim()
+  const { amount } = parseYenAmount(amountInput, MAX_ENTRY_YEN)
+  const purchasedAtMillis = gmailReviewTimestamp(candidate.purchasedAtMillis, dateInput)
+  if (candidate.kind !== 'card_usage' || !merchant || merchant.length > GMAIL_MERCHANT_LIMIT || /\p{Cc}/u.test(merchant) || amount === undefined ||
+      !Number.isSafeInteger(purchasedAtMillis) || purchasedAtMillis <= 0 || !Number.isFinite(new Date(purchasedAtMillis).getTime())) return null
+  return { merchant, amountYen: amount, purchasedAtMillis }
 }
 export const GMAIL_CONNECTIONS_URL = 'https://myaccount.google.com/connections'
 export interface GmailDisconnectOutcome { disconnected: boolean; revoked: boolean; message: string }
@@ -115,16 +126,22 @@ export async function gmailRequest<T>(token: string, path: string, body?: unknow
 export const gmailCandidateAction = (token: string, id: string, action: 'dismiss' | 'imported', expenseId?: string) =>
   gmailRequest(token, `gmail/candidates/${encodeURIComponent(id)}/action`, { action, ...(action === 'imported' && expenseId ? { expenseId } : {}) })
 
-export async function reviewGmailCandidate(token: string, id: string, purchasedAtMillis: number, expectedSource: string): Promise<ReviewedGmailCandidate> {
+export async function reviewGmailCandidate(token: string, id: string, purchasedAtMillis: number, expectedSource: string, corrections: { merchant?: string; amountYen?: number } = {}): Promise<ReviewedGmailCandidate> {
   if (!Number.isSafeInteger(purchasedAtMillis) || purchasedAtMillis <= 0 || !Number.isFinite(new Date(purchasedAtMillis).getTime()) || !/^financial-message:v1:[a-f0-9]{64}$/u.test(expectedSource)) {
     throw new Error('日時を確認してください')
   }
-  const value = record(await gmailRequest<unknown>(token, `gmail/candidates/${encodeURIComponent(id)}/review`, { purchasedAtMillis, expectedSource }))
+  const { merchant, amountYen } = corrections
+  if (merchant !== undefined && (!merchant.trim() || merchant !== merchant.trim() || merchant.length > GMAIL_MERCHANT_LIMIT || /\p{Cc}/u.test(merchant))) throw new Error('利用先を確認してください')
+  if (amountYen !== undefined && (!Number.isSafeInteger(amountYen) || amountYen < 1 || amountYen > MAX_ENTRY_YEN)) throw new Error('金額を確認してください')
+  const value = record(await gmailRequest<unknown>(token, `gmail/candidates/${encodeURIComponent(id)}/review`, { purchasedAtMillis, expectedSource, merchant, amountYen }))
   if (value.id !== id || typeof value.source !== 'string' || !/^financial-message:v1:[a-f0-9]{64}$/u.test(value.source) || typeof value.createdAt !== 'number' || !Number.isFinite(value.createdAt)) {
     throw new Error('更新後のGmail候補を確認できませんでした。候補一覧を更新してください')
   }
   const [validated] = gmailCandidates({ items: [{ id: value.id, createdAt: value.createdAt, candidate: value.candidate }] })
-  if (!validated || validated.candidate.kind !== 'card_usage' || validated.candidate.purchasedAtMillis !== purchasedAtMillis) {
+  if (!validated || validated.candidate.kind !== 'card_usage' || validated.candidate.purchasedAtMillis !== purchasedAtMillis ||
+      (merchant !== undefined && validated.candidate.merchant !== merchant) ||
+      (amountYen !== undefined && validated.candidate.amountYen !== amountYen) ||
+      await financialMessageSource(validated.candidate) !== value.source) {
     throw new Error('更新後のGmail候補を確認できませんでした。候補一覧を更新してください')
   }
   return { ...validated, source: value.source }

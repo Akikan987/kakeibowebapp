@@ -5,7 +5,7 @@ import { emptyDraft, useStore, type ExpenseDraft } from '../store'
 import { PAYMENT_TYPE_LABELS, TYPE_EXPENSE } from '../types'
 import { matchSmbcPayment } from '../imports/smbc'
 import { financialMessageSource } from '../imports/source'
-import { GMAIL_CONNECTIONS_URL, gmailAiStatusSummary, gmailCandidateAction, gmailCandidates, gmailDateToInput, gmailDisconnectOutcome, gmailPaymentOptions, gmailPaymentTypeMismatch, gmailRequest, gmailReviewTimestamp, googleAuthorizationUrl, pushApplicationKey, pushDeviceId, reviewGmailCandidate, sendPushTest, type GmailCandidate, type GmailDisconnectOutcome, type GmailStatus } from '../imports/gmail'
+import { GMAIL_CONNECTIONS_URL, GMAIL_MERCHANT_LIMIT, gmailAiStatusSummary, gmailCandidateAction, gmailCandidates, gmailCardReviewDetails, gmailDateToInput, gmailDisconnectOutcome, gmailPaymentOptions, gmailPaymentTypeMismatch, gmailRequest, googleAuthorizationUrl, pushApplicationKey, pushDeviceId, reviewGmailCandidate, sendPushTest, type GmailCandidate, type GmailDisconnectOutcome, type GmailStatus } from '../imports/gmail'
 import { isAndroidNative } from '../native/notifications'
 import { isHybridNative } from '../native/runtime'
 import { NativeBrowserAccountButton } from './NativeIntegration'
@@ -24,6 +24,8 @@ export function GmailImport({ onImport, mode = 'settings', onOpenCandidates, foc
   const [statusError, setStatusError] = useState(false)
   const [items, setItems] = useState<GmailCandidate[]>([])
   const [selected, setSelected] = useState<GmailCandidate | null>(null)
+  const [reviewMerchant, setReviewMerchant] = useState('')
+  const [reviewAmount, setReviewAmount] = useState('')
   const [reviewDate, setReviewDate] = useState('')
   const [methodId, setMethodId] = useState('')
   const [paymentOverrideConfirmed, setPaymentOverrideConfirmed] = useState(false)
@@ -159,40 +161,45 @@ export function GmailImport({ onImport, mode = 'settings', onOpenCandidates, foc
     const matched = item.candidate.kind === 'card_usage' ? matchSmbcPayment(item.candidate, s.paymentMethods) : { id: '', message: '' }
     const recommended = s.paymentMethods.find((method) => method.id === matched.id)
     const message = recommended ? `自動照合のおすすめ：${recommended.name}。${matched.message}` : matched.message
+    setReviewMerchant(item.candidate.merchant)
+    setReviewAmount(item.candidate.amountYen === null ? '' : String(item.candidate.amountYen))
     setSelected(item); setReviewDate(gmailDateToInput(item.candidate.purchasedAtMillis)); setMethodId(matched.id); setPaymentOverrideConfirmed(false); setMatchNotice(message); setError('')
   }
   const continueToEntry = async () => {
     if (!selected) return
     const current = generation.current
     let reviewed = selected
-    let reviewedSource: string | null = null
     const candidateBeforeReview = selected.candidate
     const method = s.paymentMethods.find((row) => !row.deleted && row.id === methodId)
     if (!method || !gmailPaymentOptions([method]).length) throw new Error('記録する決済方法を選択してください')
     if (gmailPaymentTypeMismatch(candidateBeforeReview, method) && !paymentOverrideConfirmed) throw new Error('AIの推定と異なる決済方法です。実際の支払いを確認してください')
-    const purchasedAtMillis = gmailReviewTimestamp(candidateBeforeReview.purchasedAtMillis, reviewDate)
-    if (purchasedAtMillis === null || !Number.isSafeInteger(purchasedAtMillis) || purchasedAtMillis <= 0 || !Number.isFinite(new Date(purchasedAtMillis).getTime())) throw new Error('日時を入力してください。メールと照合して日付を確認してください')
-    if (purchasedAtMillis !== candidateBeforeReview.purchasedAtMillis) {
+    const details = gmailCardReviewDetails(candidateBeforeReview, reviewMerchant, reviewAmount, reviewDate)
+    if (!details) throw new Error('利用先・金額・日時を確認してください')
+    const { merchant, amountYen, purchasedAtMillis } = details
+    const corrections = {
+      ...(merchant !== candidateBeforeReview.merchant ? { merchant } : {}),
+      ...(amountYen !== candidateBeforeReview.amountYen ? { amountYen } : {}),
+    }
+    if (purchasedAtMillis !== candidateBeforeReview.purchasedAtMillis || Object.keys(corrections).length > 0) {
       if (!token) throw new Error('Gmailにログインしてください')
       const expectedSource = await financialMessageSource(candidateBeforeReview)
       if (current !== generation.current) return
-      const response = await reviewGmailCandidate(token, selected.id, purchasedAtMillis, expectedSource)
+      const response = await reviewGmailCandidate(token, selected.id, purchasedAtMillis, expectedSource, corrections)
       if (current !== generation.current) return
+      const expectedReviewedSource = await financialMessageSource({ ...candidateBeforeReview, ...details })
+      if (current !== generation.current) return
+      if (response.source !== expectedReviewedSource) throw new Error('更新後の候補と記録元を確認できませんでした。候補一覧を更新してください')
       reviewed = response
-      reviewedSource = response.source
-      setItems((rows) => rows.map((row) => row.id === reviewed.id ? reviewed : row))
+      setItems((rows) => rows.map((row) => row.id === response.id ? response : row))
       setSelected(reviewed)
     }
-    const candidate = reviewed.candidate
-    if (candidate.kind !== 'card_usage' || !candidate.merchant || candidate.amountYen === null || candidate.amountYen < 1 || !candidate.purchasedAtMillis ||
-        !['credit', 'debit', 'prepaid'].includes(method.type)) throw new Error('日時・金額・利用先と、対応する決済方法を確認してください')
-    const source = await financialMessageSource(candidate)
+    const source = await financialMessageSource(reviewed.candidate)
     if (current !== generation.current) return
-    if (reviewedSource && reviewedSource !== source) throw new Error('更新後の候補と記録元を確認できませんでした。候補一覧を更新してください')
     if (s.expenses.some((row) => !row.deleted && row.source === source)) throw new Error('同じ内容は登録済みです。履歴を確認し、この候補を除外してください')
-    onImport({ ...emptyDraft(), type: TYPE_EXPENSE, title: candidate.merchant, amountYen: String(candidate.amountYen), purchasedAtMillis: candidate.purchasedAtMillis, paymentMethodId: method.id, cashAccountId: method.cashAccountId ?? '', source }, undefined, reviewed.id)
+    onImport({ ...emptyDraft(), type: TYPE_EXPENSE, title: merchant, amountYen: String(amountYen), purchasedAtMillis, paymentMethodId: method.id, cashAccountId: method.cashAccountId ?? '', source }, undefined, reviewed.id)
   }
   const candidate = selected?.candidate
+  const validReview = candidate && gmailCardReviewDetails(candidate, reviewMerchant, reviewAmount, reviewDate)
   const methods = gmailPaymentOptions(s.paymentMethods)
   const selectedMethod = methods.find((method) => method.id === methodId)
   const paymentMismatch = !!candidate && gmailPaymentTypeMismatch(candidate, selectedMethod)
@@ -271,13 +278,13 @@ export function GmailImport({ onImport, mode = 'settings', onOpenCandidates, foc
           </>}
           <Typography variant="subtitle2">AIで明細メールを検出</Typography>
           {status.discoveryEnabled ? <>
-            <Alert severity="success"><strong>AI明細検出ON：</strong>三井住友を含むカード・銀行・電子マネーの明細メールをまとめて候補にします。新着メールだけが対象です。</Alert>
+            <Alert severity="success"><strong>AI明細検出ON：</strong>カード・銀行・電子マネーの明細メールをまとめて候補にします。新着メールだけが対象です。</Alert>
             <Typography variant="caption" color="text.secondary">AI利用状況：本日 UTC {status.aiUsedToday ?? 0} / {status.aiDailyLimit ?? 20} 回（UTC 0時にリセット）</Typography>
             {!!status.discoveryFailedCount && <Alert severity="warning">AIでの処理に失敗したメールが{status.discoveryFailedCount}件あります。メールの詳細は表示しません。必要な場合は元メールを手動取込に貼り付けて確認してください。</Alert>}
             <Button variant="outline" disabled={busy} onClick={() => void run(() => settings(status.enabled, false, false, false))}>AI明細検出を停止する</Button>
           </> : <>
-            <Typography variant="caption" color="text.secondary">有効にすると、三井住友を含むカード・銀行・電子マネーの明細メールをAIで判定し、候補を作ります。件名と必要な本文部分を加工してOpenAIへ送信します。人名やリンク等を除きますが匿名化は完全ではなく、誤判定もあり得ます。現在のAPI費用は運営負担で、1利用者あたりUTC日次{status.aiDailyLimit ?? 20}回までです。有効化後に届く新着メールだけが対象で、過去メールを一括解析したり、Gmail全体をAIへ送ったりしません。AIの利用・検出はこの同意をして有効化するまで待機します。</Typography>
-            <FormControlLabel control={<Checkbox checked={discoveryConsent} disabled={busy || status.discoveryAvailable !== true} onChange={(_, checked) => setDiscoveryConsent(checked)} />} label="対象範囲、OpenAIへの件名・必要本文の送信、匿名化の限界、精度、費用と上限を理解して同意する" />
+            <Typography variant="caption" color="text.secondary">有効にすると、カード・銀行・電子マネーの明細メールをAIで判定し、候補を作ります。件名と取引に関する本文を加工してOpenAIへ送信します。人名やリンク等を除きますが匿名化は完全ではなく、誤判定もあり得ます。現在のAPI費用は運営負担で、1利用者あたりUTC日次{status.aiDailyLimit ?? 20}回までです。有効化後に届く新着メールだけが対象で、過去メールを一括解析したり、Gmail全体をAIへ送ったりしません。AIの利用・検出はこの同意をして有効化するまで待機します。</Typography>
+            <FormControlLabel control={<Checkbox checked={discoveryConsent} disabled={busy || status.discoveryAvailable !== true} onChange={(_, checked) => setDiscoveryConsent(checked)} />} label="対象範囲、加工した件名・取引に関する本文のOpenAIへの送信、匿名化の限界、精度、費用と上限を理解して同意する" />
             <Button variant="outline" disabled={busy || !discoveryConsent || status.discoveryAvailable !== true} onClick={() => void run(async () => {
               if (!token) return
               await gmailRequest(token, 'gmail/settings', { enabled: status.enabled, aiEnabled: true, aiConsent: true, discoveryEnabled: true, discoveryConsent: true })
@@ -344,29 +351,33 @@ export function GmailImport({ onImport, mode = 'settings', onOpenCandidates, foc
         {error && !selected && <Alert severity="error">{error}</Alert>}
       </>}
     </Stack></CardContent></Card>
-    {!restricted && candidate && <Modal title="Gmailの明細候補（未保存）" onClose={() => { setSelected(null); setError('') }}><Stack spacing={2}>
+    {!restricted && candidate && <Modal title="Gmailの明細候補（未保存）" onClose={() => { if (!busy) { setSelected(null); setError('') } }}><Stack spacing={2}>
       <Chip size="small" label={candidateKindLabels[candidate.kind]} sx={{ alignSelf: 'flex-start' }} />
-      <Typography>利用先：{candidate.merchant || '不明'}</Typography>
-      <Typography>金額：{candidate.amountYen === null ? '不明' : yen(candidate.amountYen)}</Typography>
       {candidate.kind === 'card_usage' ? <>
-        <Field label="利用日時（日本時間）" type="datetime-local" value={reviewDate} onChange={(event) => setReviewDate(event.target.value)} />
-        <Typography variant="caption" color="text.secondary">メールの日付が不明な場合は空欄のままです。元メールと照合して、正しい日時を入力してください。入力した日時は候補にも保存されます。</Typography>
-      </> : <Typography>日時：{candidate.purchasedAtMillis ? new Intl.DateTimeFormat('ja-JP', { timeZone: 'Asia/Tokyo', dateStyle: 'short', timeStyle: 'medium' }).format(candidate.purchasedAtMillis) : '不明'}（日本時間）</Typography>}
+        <Field label="利用先" value={reviewMerchant} disabled={busy} onChange={(event) => setReviewMerchant(event.target.value)} maxLength={GMAIL_MERCHANT_LIMIT} />
+        <Field label="金額（円）" value={reviewAmount} disabled={busy} onChange={(event) => setReviewAmount(event.target.value)} inputMode="numeric" />
+        <Field label="利用日時（日本時間）" type="datetime-local" value={reviewDate} disabled={busy} onChange={(event) => setReviewDate(event.target.value)} />
+        <Typography variant="caption" color="text.secondary">空欄や誤りがある場合は、元メールと照合して入力してください。修正は候補にも保存されます。</Typography>
+      </> : <>
+        <Typography>利用先：{candidate.merchant || '不明'}</Typography>
+        <Typography>金額：{candidate.amountYen === null ? '不明' : yen(candidate.amountYen)}</Typography>
+        <Typography>日時：{candidate.purchasedAtMillis ? new Intl.DateTimeFormat('ja-JP', { timeZone: 'Asia/Tokyo', dateStyle: 'short', timeStyle: 'medium' }).format(candidate.purchasedAtMillis) : '不明'}（日本時間）</Typography>
+      </>}
       <Typography variant="body2">AIの推定：{candidate.paymentType === 'unknown' ? '決済種別は不明' : PAYMENT_TYPE_LABELS[candidate.paymentType]}（手動で変更できます）</Typography>
       {candidate.cardLastFour && <Typography variant="body2">カード末尾：{candidate.cardLastFour}</Typography>}
       {candidate.kind !== 'card_usage' && <Alert severity="info">{candidateKindNotes[candidate.kind]}</Alert>}
       {candidate.warnings.map((warning, index) => <Typography key={index} variant="caption" color="text.secondary">・{warning}</Typography>)}
       {matchNotice && <Typography variant="caption" color="text.secondary">{matchNotice}</Typography>}
-      {candidate.kind === 'card_usage' && <TextField select fullWidth label="記録する決済方法" value={methodId} onChange={(event) => { setMethodId(event.target.value); setPaymentOverrideConfirmed(false) }}><MenuItem value="">選択してください</MenuItem>{methods.map((method) => <MenuItem key={method.id} value={method.id}>{method.name}（{PAYMENT_TYPE_LABELS[method.type]}）</MenuItem>)}</TextField>}
+      {candidate.kind === 'card_usage' && <TextField select fullWidth disabled={busy} label="記録する決済方法" value={methodId} onChange={(event) => { setMethodId(event.target.value); setPaymentOverrideConfirmed(false) }}><MenuItem value="">選択してください</MenuItem>{methods.map((method) => <MenuItem key={method.id} value={method.id}>{method.name}（{PAYMENT_TYPE_LABELS[method.type]}）</MenuItem>)}</TextField>}
       {paymentMismatch && <Alert severity="warning"><Stack spacing={1}>
         <Typography variant="body2">AIの推定は「{candidate.paymentType === 'unknown' ? '不明' : PAYMENT_TYPE_LABELS[candidate.paymentType]}」ですが、「{selectedMethod?.name}」を選択しています。元メールと実際に利用した決済方法を確認してください。プリペイドの利用と、チャージ元カードの支払いは別の記録です。</Typography>
-        <FormControlLabel control={<Checkbox checked={paymentOverrideConfirmed} onChange={(_, checked) => setPaymentOverrideConfirmed(checked)} />} label="実際の支払いを確認し、この決済方法で記録します" />
+        <FormControlLabel control={<Checkbox disabled={busy} checked={paymentOverrideConfirmed} onChange={(_, checked) => setPaymentOverrideConfirmed(checked)} />} label="実際の支払いを確認し、この決済方法で記録します" />
       </Stack></Alert>}
       {candidate.kind === 'card_usage' && !methods.length && <Alert severity="warning">先に決済タブで対応するカード・デビット・プリペイドを登録してください。</Alert>}
       {candidate.kind === 'card_usage' && <Alert severity="info">元のメール・実際の支払いと照合してください。次の入力画面で確認してから保存できます。</Alert>}
       {error && <Alert severity="error">{error}</Alert>}
-      {candidate.kind === 'card_usage' ? <Button disabled={busy || !selectedMethod || (paymentMismatch && !paymentOverrideConfirmed) || candidate.amountYen === null || candidate.amountYen < 1 || !candidate.merchant || !reviewDate || !Number.isFinite(gmailReviewTimestamp(candidate.purchasedAtMillis, reviewDate))} onClick={() => void run(continueToEntry)}>入力画面で確認する</Button> : <Typography variant="caption" color="text.secondary">この候補は確認専用で、支出入力には進めません。</Typography>}
-      <Button variant="text" onClick={() => { setSelected(null); setError('') }}>閉じる</Button>
+      {candidate.kind === 'card_usage' ? <Button disabled={busy || !selectedMethod || (paymentMismatch && !paymentOverrideConfirmed) || !validReview} onClick={() => void run(continueToEntry)}>入力画面で確認する</Button> : <Typography variant="caption" color="text.secondary">この候補は確認専用で、支出入力には進めません。</Typography>}
+      <Button variant="text" disabled={busy} onClick={() => { setSelected(null); setError('') }}>閉じる</Button>
     </Stack></Modal>}
   </>
 }

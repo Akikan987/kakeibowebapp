@@ -2,7 +2,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFile } from 'node:fs/promises'
 import vm from 'node:vm'
-import { createGmailCompletion, GMAIL_COMPLETION_KEY, GMAIL_CONNECTIONS_URL, gmailAiStatusSummary, gmailCandidates, gmailDateToInput, gmailCompletionPending, gmailDisconnectOutcome, gmailOpenReason, gmailPaymentOptions, gmailPaymentTypeMismatch, gmailRequest, gmailReviewTimestamp, googleAuthorizationUrl, pushApplicationKey, pushDeviceId, reviewGmailCandidate, sendPushTest } from '../src/imports/gmail.ts'
+import { createGmailCompletion, GMAIL_COMPLETION_KEY, GMAIL_CONNECTIONS_URL, gmailAiStatusSummary, gmailCandidates, gmailCardReviewDetails, gmailDateToInput, gmailCompletionPending, gmailDisconnectOutcome, gmailOpenReason, gmailPaymentOptions, gmailPaymentTypeMismatch, gmailRequest, gmailReviewTimestamp, googleAuthorizationUrl, pushApplicationKey, pushDeviceId, reviewGmailCandidate, sendPushTest } from '../src/imports/gmail.ts'
+import { financialMessageSource } from '../src/imports/source.ts'
 import type { PaymentMethod } from '../src/types.ts'
 
 test('Gmail review uses JST, preserves unchanged seconds, and rejects missing or impossible dates', () => {
@@ -17,6 +18,18 @@ test('Gmail review uses JST, preserves unchanged seconds, and rejects missing or
 })
 
 const candidate = { kind: 'card_usage', provider: 'smbc_card', paymentType: 'debit', merchant: '<script>not executed</script>', amountYen: 980, purchasedAtMillis: 1790825696000, cardLastFour: '', warnings: [] }
+test('card usage can proceed after merchant, amount and JST date are filled in', () => {
+  const incomplete = { ...candidate, merchant: '', amountYen: null, purchasedAtMillis: null }
+  const date = '2026-10-17T18:09'
+  assert.equal(gmailCardReviewDetails(incomplete, '', '1200', date), null)
+  assert.equal(gmailCardReviewDetails(incomplete, '商店', '0', date), null)
+  assert.equal(gmailCardReviewDetails(incomplete, '商店', '2000000001', date), null)
+  assert.equal(gmailCardReviewDetails(incomplete, '商店', '1200', ''), null)
+  assert.deepEqual(gmailCardReviewDetails(incomplete, ' 商店 ', '１，２００', date), {
+    merchant: '商店', amountYen: 1200, purchasedAtMillis: Date.parse('2026-10-17T18:09:00+09:00'),
+  })
+  assert.equal(gmailCardReviewDetails({ ...incomplete, kind: 'refund' }, '商店', '1200', date), null)
+})
 const paymentMethod = (id: string, type: PaymentMethod['type'], deleted = false): PaymentMethod => ({ id, type, deleted, updatedAt: 1, name: id, closingDay: 0, paymentDay: 0 })
 test('Gmail payment options include each active card type and exclude cash, other, and deleted methods', () => {
   const methods = [paymentMethod('credit', 'credit'), paymentMethod('debit', 'debit'), paymentMethod('prepaid', 'prepaid'), paymentMethod('cash', 'cash'), paymentMethod('other', 'other'), paymentMethod('deleted-credit', 'credit', true)]
@@ -93,7 +106,7 @@ test('Gmail AI status separates connection, discovery setup, new consent, and ac
   assert.match(discovery.description, /OpenAI/u)
   assert.match(discovery.description, /過去メールの一括解析/u)
   assert.match(discovery.label, /AI明細検出ON/u)
-  assert.match(discovery.description, /三井住友を含む/u)
+  assert.match(discovery.description, /カード・銀行・電子マネー/u)
   assert.equal(gmailAiStatusSummary({ ...base, aiEnabled: true, discoveryEnabled: true, discoveryAvailable: false }).kind, 'server-setup')
 })
 test('Gmail disconnect reports remote revocation only when explicitly confirmed', () => {
@@ -181,25 +194,35 @@ test('Integration API is uncached same-origin authenticated and exposes only bou
     await assert.rejects(gmailRequest('cookie', 'gmail/status'), /Gmail連携の操作に失敗しました/u)
   } finally { globalThis.fetch = original }
 })
-test('Gmail candidate review posts an explicit date and validates the returned candidate and source', async () => {
+test('Gmail candidate review posts an explicit date and validates corrected fields and source', async () => {
   const original = globalThis.fetch
   const expectedSource = `financial-message:v1:${'c'.repeat(64)}`
+  const corrected = { ...candidate, merchant: '修正した利用先', amountYen: 1500, purchasedAtMillis: 1790825696000 }
+  const source = await financialMessageSource(corrected)
   let input = '', init: RequestInit | undefined
   try {
     globalThis.fetch = async (url, options) => {
       input = String(url); init = options
-      return new Response(JSON.stringify({ id: 'candidate-1', createdAt: 12, candidate: { ...candidate, purchasedAtMillis: 1790825696000 }, source: `financial-message:v1:${'a'.repeat(64)}` }), { status: 200 })
+      return new Response(JSON.stringify({ id: 'candidate-1', createdAt: 12, candidate: corrected, source }), { status: 200 })
     }
-    const reviewed = await reviewGmailCandidate('session', 'candidate-1', 1790825696000, expectedSource)
+    const corrections = { merchant: corrected.merchant, amountYen: corrected.amountYen }
+    const reviewed = await reviewGmailCandidate('session', 'candidate-1', 1790825696000, expectedSource, corrections)
     assert.equal(input, '/integrations/gmail/candidates/candidate-1/review')
-    assert.deepEqual(JSON.parse(String(init?.body)), { purchasedAtMillis: 1790825696000, expectedSource })
+    assert.deepEqual(JSON.parse(String(init?.body)), { purchasedAtMillis: 1790825696000, expectedSource, ...corrections })
     assert.equal(reviewed.candidate.purchasedAtMillis, 1790825696000)
-    assert.equal(reviewed.source, `financial-message:v1:${'a'.repeat(64)}`)
+    assert.deepEqual(reviewed.candidate, corrected)
+    assert.equal(reviewed.source, source)
     await assert.rejects(reviewGmailCandidate('session', 'candidate-1', NaN, expectedSource), /日時/u)
     globalThis.fetch = async () => new Response(JSON.stringify({ id: 'candidate-1', createdAt: 12, candidate, source: 'not-a-source' }), { status: 200 })
     await assert.rejects(reviewGmailCandidate('session', 'candidate-1', 1790825696000, expectedSource), /更新後/u)
     globalThis.fetch = async () => new Response(JSON.stringify({ id: 'candidate-1', createdAt: 12, candidate: { ...candidate, purchasedAtMillis: 1790825695000 }, source: `financial-message:v1:${'a'.repeat(64)}` }), { status: 200 })
     await assert.rejects(reviewGmailCandidate('session', 'candidate-1', 1790825696000, expectedSource), /更新後/u)
+    const wrong = { ...corrected, amountYen: 1400 }
+    const wrongSource = await financialMessageSource(wrong)
+    globalThis.fetch = async () => new Response(JSON.stringify({ id: 'candidate-1', createdAt: 12, candidate: wrong, source: wrongSource }))
+    await assert.rejects(reviewGmailCandidate('session', 'candidate-1', 1790825696000, expectedSource, corrections), /更新後/u)
+    globalThis.fetch = async () => new Response(JSON.stringify({ id: 'candidate-1', createdAt: 12, candidate: corrected, source: wrongSource }))
+    await assert.rejects(reviewGmailCandidate('session', 'candidate-1', 1790825696000, expectedSource, corrections), /更新後/u)
     globalThis.fetch = async () => new Response('{}', { status: 409 })
     await assert.rejects(reviewGmailCandidate('session', 'candidate-1', 1790825696000, expectedSource), /候補一覧を更新/u)
   } finally { globalThis.fetch = original }
