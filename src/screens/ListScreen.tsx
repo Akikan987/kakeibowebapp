@@ -1,16 +1,17 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useState } from 'react'
 import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import FilterListRoundedIcon from '@mui/icons-material/FilterListRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import UndoRoundedIcon from '@mui/icons-material/UndoRounded'
+import MoreVertRoundedIcon from '@mui/icons-material/MoreVertRounded'
 import { RefundHistory, RefundModal } from '../components/Refunds'
 import {
   Accordion,
   AccordionDetails,
   AccordionSummary,
+  Box,
   Checkbox,
-  Chip,
   FormControl,
   FormControlLabel,
   IconButton,
@@ -19,15 +20,19 @@ import {
   List,
   ListItemButton,
   ListItemText,
+  ListItemIcon,
+  Menu,
   MenuItem,
   Select,
   Stack,
   TextField,
   Typography,
 } from '@mui/material'
-import { Button, Card, Divider, Field, LargeTitle, Modal, MonthSwitcher, Screen, formatDate, yen } from '../components/ui'
+import { Button, Card, Field, LargeTitle, Modal, MonthSwitcher, Screen, yen } from '../components/ui'
 import { useStore, type ExpenseDraft } from '../store'
 import { TYPE_EXPENSE, TYPE_INCOME, now, type Expense } from '../types'
+import { groupHistoryDays } from '../entries/history'
+import { registerModalBackHandler } from '../sectionNavigation'
 
 type Filters = {
   query: string
@@ -54,6 +59,8 @@ const initialFilters: Filters = {
 }
 
 const PAGE_SIZE = 50
+const historyDate = new Intl.DateTimeFormat('ja-JP', { month: 'long', day: 'numeric', weekday: 'short' })
+const historyTime = new Intl.DateTimeFormat('ja-JP', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
 
 export function ListScreen({ onEdit, onDuplicate }: {
   onEdit: (draft: ExpenseDraft) => void
@@ -65,6 +72,12 @@ export function ListScreen({ onEdit, onDuplicate }: {
   const [refundTarget, setRefundTarget] = useState<Expense | null>(null)
   const [filters, setFilters] = useState<Filters>(initialFilters)
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
+  const [entryMenu, setEntryMenu] = useState<{ id: string; anchor: HTMLElement } | null>(null)
+  const menuExpense = entryMenu ? s.expenses.find((expense) => expense.id === entryMenu.id) : undefined
+  const menuOpen = !!menuExpense
+  useLayoutEffect(() => {
+    if (menuOpen) return registerModalBackHandler(() => setEntryMenu(null))
+  }, [menuOpen])
 
   const categories = useMemo(
     () => [...new Set(s.expenses.map(({ category }) => category).filter(Boolean))]
@@ -80,6 +93,7 @@ export function ListScreen({ onEdit, onDuplicate }: {
     const minAmount = filters.minAmount === '' ? 0 : Number(filters.minAmount)
     const maxAmount = filters.maxAmount === '' ? Number.MAX_SAFE_INTEGER : Number(filters.maxAmount)
     return s.expenses.filter((expense) => {
+      if (!Number.isFinite(expense.purchasedAtMillis)) return false
       if (expense.purchasedAtMillis < monthStartMillis || expense.purchasedAtMillis > monthEndMillis) return false
       const searchable = `${expense.title} ${expense.category} ${s.paymentMethodName(expense.paymentMethodId)}`
         .toLocaleLowerCase('ja-JP')
@@ -95,10 +109,13 @@ export function ListScreen({ onEdit, onDuplicate }: {
   }, [filters, s])
   const visibleExpenses = filteredExpenses.slice(0, visibleCount)
   const remainingCount = filteredExpenses.length - visibleExpenses.length
+  const historyDays = useMemo(() => groupHistoryDays(filteredExpenses, s.netAmount, visibleCount), [filteredExpenses, s.netAmount, visibleCount])
 
   useEffect(() => {
     setVisibleCount(PAGE_SIZE)
+    setEntryMenu(null)
   }, [filters, s.month.year, s.month.month])
+  useEffect(() => { if (!menuExpense) setEntryMenu(null) }, [menuExpense])
 
   const activeFilterCount = Object.entries(filters)
     .filter(([, value]) => value !== '' && value !== false).length
@@ -138,7 +155,16 @@ export function ListScreen({ onEdit, onDuplicate }: {
         sx={{ mt: 1.5, bgcolor: 'action.hover', borderRadius: '14px !important', '&::before': { display: 'none' } }}
       >
         <AccordionSummary expandIcon={<FilterListRoundedIcon />}>
-          <Typography fontWeight={700}>絞り込み{activeFilterCount > 0 && `（${activeFilterCount}件指定）`}</Typography>
+          <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1} sx={{ width: '100%', pr: 1 }}>
+            <Typography variant="body2" fontWeight={700}>絞り込み{activeFilterCount > 0 && `（${activeFilterCount}件指定）`}</Typography>
+            {s.expenses.length > 0 && (
+              <Typography variant="caption" color="text.secondary">
+                {remainingCount > 0
+                  ? `${filteredExpenses.length}件中 ${visibleExpenses.length}件表示`
+                  : `${filteredExpenses.length}件表示`}
+              </Typography>
+            )}
+          </Stack>
         </AccordionSummary>
         <AccordionDetails>
           <Stack spacing={1.5}>
@@ -187,47 +213,69 @@ export function ListScreen({ onEdit, onDuplicate }: {
         <Typography color="text.secondary" sx={{ mt: 2 }}>まだ明細がありません</Typography>
       ) : (
         <>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 2.5, px: 0.5 }}>
-            {remainingCount > 0
-              ? `${filteredExpenses.length}件中 ${visibleExpenses.length}件表示`
-              : `${filteredExpenses.length}件表示`}
-          </Typography>
           {filteredExpenses.length === 0 ? (
             <Card sx={{ mt: 1 }}>
               <Typography color="text.secondary" sx={{ p: 3 }}>この月に条件と一致する明細はありません</Typography>
             </Card>
           ) : (
-            <Card sx={{ mt: 1 }}>
-              <List disablePadding>
-                {visibleExpenses.map((expense, index) => {
-                  const isIncome = expense.type === TYPE_INCOME
-                  const split = s.splitSumOf(expense.id)
-                  return (
-                    <Stack key={expense.id} component="li">
-                      {index > 0 && <Divider />}
-                        <ListItemButton onClick={() => onEdit(draftOf(expense))} sx={{ px: 3, pt: 2.5, pb: 1 }}>
-                          <ListItemText
-                            disableTypography
-                            primary={<Stack spacing={0.5}><Typography fontWeight={600}>{expense.title}</Typography><Typography fontWeight={600} sx={{ fontSize: '1.25rem' }} color={isIncome ? 'success.main' : 'text.primary'}>{isIncome ? '+' : '-'}{yen(expense.amountYen)}</Typography></Stack>}
-                            secondary={
-                              <Stack spacing={0.4} sx={{ mt: 0.5 }}>
-                                <Typography variant="body2" color="text.secondary">{isIncome ? '収入' : '支出'} ・ {expense.category} ・ {formatDate(expense.purchasedAtMillis)}</Typography>
-                                {!isIncome && <Typography variant="caption" color="text.secondary">決済: {s.paymentMethodName(expense.paymentMethodId)}</Typography>}
-                                {split > 0 && <Chip size="small" color="primary" variant="outlined" label={`自分の負担 ${yen(s.netAmount(expense))}（割り勘 ${yen(split)}）`} sx={{ alignSelf: 'flex-start', maxWidth: '100%', height: 'auto', '& .MuiChip-label': { whiteSpace: 'normal', py: 0.5 } }} />}
-                              </Stack>
-                            }
-                          />
-                        </ListItemButton>
-                      <Stack direction="row" justifyContent="flex-end" spacing={0.5} sx={{ px: 2.5, pb: 1.5 }}>
-                        {!isIncome && <IconButton onClick={() => setRefundTarget(expense)} aria-label={`${expense.title}の返金を記録`}><UndoRoundedIcon fontSize="small" /></IconButton>}
-                        <IconButton onClick={() => onDuplicate(draftOf(expense, true))} aria-label={`${expense.title}を複製`}><ContentCopyRoundedIcon fontSize="small" /></IconButton>
-                        <IconButton onClick={() => setPendingDelete(expense)} aria-label="削除"><DeleteOutlineRoundedIcon fontSize="small" /></IconButton>
-                      </Stack>
-                    </Stack>
-                  )
-                })}
-              </List>
-            </Card>
+            <Stack spacing={1.25} sx={{ mt: 1 }}>
+              {historyDays.map((day) => (
+                <Card key={day.dateMillis}>
+                  <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1} useFlexGap flexWrap="wrap" sx={{ px: 2, py: 1, bgcolor: 'action.hover' }}>
+                    <Typography component="h2" variant="subtitle2" fontWeight={700}>
+                      {historyDate.format(day.dateMillis)}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                      {day.hasExpense ? `本人負担（返金前） ${yen(day.expenseTotal)}` : `収入 ${yen(day.incomeTotal)}`}
+                    </Typography>
+                  </Stack>
+                  <List disablePadding aria-label={historyDate.format(day.dateMillis)}>
+                    {day.expenses.map((expense) => {
+                      const isIncome = expense.type === TYPE_INCOME
+                      const split = s.splitSumOf(expense.id)
+                      const details = [
+                        expense.category,
+                        !isIncome && s.paymentMethodName(expense.paymentMethodId),
+                        split > 0 && `本人 ${yen(s.netAmount(expense))}（割り勘 ${yen(split)}）`,
+                        historyTime.format(expense.purchasedAtMillis),
+                      ].filter(Boolean).join(' ・ ')
+                      const amount = `${isIncome ? '+' : '-'}${yen(expense.amountYen)}`
+                      return (
+                        <Box key={expense.id} component="li" sx={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          pr: 0.75,
+                          '&:not(:last-child)': { borderBottom: 1, borderColor: 'divider' },
+                        }}>
+                          <ListItemButton
+                            onClick={() => onEdit(draftOf(expense))}
+                            aria-label={`${expense.title}を編集、${amount}、${details}`}
+                            sx={{ flex: 1, minWidth: 0, minHeight: 56, pl: 2, pr: 0.75, py: 0.75 }}
+                          >
+                            <ListItemText
+                              disableTypography
+                              sx={{ m: 0, minWidth: 0 }}
+                              primary={<Stack direction="row" alignItems="baseline" spacing={1}>
+                                <Typography variant="body2" fontWeight={600} noWrap title={expense.title} sx={{ flex: 1, minWidth: 0 }}>{expense.title}</Typography>
+                                <Typography variant="body2" fontWeight={700} color={isIncome ? 'success.main' : 'text.primary'} sx={{ flexShrink: 0, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{amount}</Typography>
+                              </Stack>}
+                              secondary={<Typography component="div" variant="caption" color="text.secondary" noWrap title={details}>{details}</Typography>}
+                            />
+                          </ListItemButton>
+                          <IconButton
+                            aria-label={`${expense.title}の操作`}
+                            aria-haspopup="menu"
+                            aria-expanded={entryMenu?.id === expense.id}
+                            onClick={(event) => setEntryMenu({ id: expense.id, anchor: event.currentTarget })}
+                            sx={{ width: 44, height: 44, flexShrink: 0 }}
+                          ><MoreVertRoundedIcon /></IconButton>
+                        </Box>
+                      )
+                    })}
+                  </List>
+                </Card>
+              ))}
+            </Stack>
           )}
           {remainingCount > 0 && (
             <Button
@@ -241,6 +289,28 @@ export function ListScreen({ onEdit, onDuplicate }: {
         </>
       )}
 
+      <Menu
+        anchorEl={entryMenu?.anchor}
+        open={menuOpen}
+        onClose={() => setEntryMenu(null)}
+        slotProps={{ list: { 'aria-label': menuExpense ? `${menuExpense.title}の操作` : '明細の操作' } }}
+      >
+        {menuExpense && menuExpense.type !== TYPE_INCOME && (
+          <MenuItem onClick={() => { setEntryMenu(null); setRefundTarget(menuExpense) }}>
+            <ListItemIcon><UndoRoundedIcon fontSize="small" /></ListItemIcon>返金を記録
+          </MenuItem>
+        )}
+        {menuExpense && (
+          <MenuItem onClick={() => { setEntryMenu(null); onDuplicate(draftOf(menuExpense, true)) }}>
+            <ListItemIcon><ContentCopyRoundedIcon fontSize="small" /></ListItemIcon>複製
+          </MenuItem>
+        )}
+        {menuExpense && (
+          <MenuItem onClick={() => { setEntryMenu(null); setPendingDelete(menuExpense) }} sx={{ color: 'error.main' }}>
+            <ListItemIcon sx={{ color: 'inherit' }}><DeleteOutlineRoundedIcon fontSize="small" /></ListItemIcon>削除
+          </MenuItem>
+        )}
+      </Menu>
       <RefundHistory />
       {refundTarget && <RefundModal expense={refundTarget} onClose={() => setRefundTarget(null)} />}
       {pendingDelete && (
