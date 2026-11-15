@@ -453,7 +453,12 @@ export function AddScreen({ initial, importKey, onDone, onDiscard, onGmailImport
           selectProps={fieldNavigation.selectProps('account')}
           onSelect={() => fieldNavigation.advanceAfterSelection('date')}
         />}
-        <Field label="記録日時" type="datetime-local" inputRef={fieldNavigation.dateRef} value={toLocalInput(draft.purchasedAtMillis)} onChange={(e) => patch({ purchasedAtMillis: fromLocalInput(e.target.value) })} />
+        <Stack spacing={1}>
+          <Field label="記録日時" type="datetime-local" inputRef={fieldNavigation.dateRef} value={toLocalInput(draft.purchasedAtMillis)} onChange={(e) => patch({ purchasedAtMillis: fromLocalInput(e.target.value) })} />
+          <Button variant="outline" sx={{ width: 'auto', alignSelf: 'flex-start' }} onClick={() => patch({ purchasedAtMillis: now() })}>
+            現在の日時を入力
+          </Button>
+        </Stack>
       </Stack></CardContent></Card>
 
       {!isIncome && (
