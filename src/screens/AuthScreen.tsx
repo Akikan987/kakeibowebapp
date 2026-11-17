@@ -1,10 +1,13 @@
 import { useState } from 'react'
 import CalculateRoundedIcon from '@mui/icons-material/CalculateRounded'
+import PasskeyRoundedIcon from '@mui/icons-material/KeyRounded'
 import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded'
 import VisibilityOffRoundedIcon from '@mui/icons-material/VisibilityOffRounded'
 import { Alert, Avatar, Box, Button, Container, Divider, IconButton, InputAdornment, Link, Paper, Stack, Tab, Tabs, TextField, Typography } from '@mui/material'
 import { SocialLogin, socialError } from '../components/SocialLogin'
-import { apiConfirmRegistration, apiSocialRegister } from '../api'
+import { apiCompletePasskeyLogin, apiConfirmRegistration, apiPasskeyLoginOptions, apiSocialRegister, type MfaChallenge } from '../api'
+import { MfaChallengeForm } from '../components/MfaChallengeForm'
+import { getPasskey, passkeyError, passkeysSupported } from '../passkeys'
 import { useStore } from '../store'
 import { glassSurface } from '../glass'
 import { APP_ORIGIN, isHybridNative } from '../native/runtime'
@@ -37,6 +40,7 @@ export function AuthScreen({ socialSignup = false, onCancel }: { socialSignup?: 
   const [verificationId, setVerificationId] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [mfa, setMfa] = useState<MfaChallenge | null>(null)
   const go = (next: Step) => { s.clearMessage(); setError(''); setPassword(''); setPasswordConfirm(''); setStep(next) }
   const mismatch = passwordConfirm !== '' && password !== passwordConfirm
   const creating = step === 'register' || step === 'resetConfirm'
@@ -46,7 +50,13 @@ export function AuthScreen({ socialSignup = false, onCancel }: { socialSignup?: 
     setBusy(true)
     setError('')
     try {
-      if (step === 'login') await s.login(identifier, password)
+      if (step === 'login') {
+        const challenge = await s.login(identifier, password)
+        if (challenge) {
+          setPassword('')
+          setMfa(challenge)
+        }
+      }
       if (step === 'register') {
         const challenge = socialSignup
           ? await apiSocialRegister(phone, email, nickname, password)
@@ -65,22 +75,41 @@ export function AuthScreen({ socialSignup = false, onCancel }: { socialSignup?: 
     } catch (err) { setError(socialError(err)) } finally { setBusy(false) }
   }
 
+  const loginWithPasskey = async () => {
+    if (busy || !passkeysSupported()) return
+    setBusy(true)
+    setError('')
+    s.clearMessage()
+    try {
+      const { challenge, options } = await apiPasskeyLoginOptions()
+      const credential = await getPasskey(options)
+      await s.acceptSocialAccount(await apiCompletePasskeyLogin(challenge, credential))
+    } catch (err) {
+      setError(passkeyError(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return <Container maxWidth="sm" sx={{ minHeight: '100%', py: { xs: 3, sm: 6 } }}>
     <Stack alignItems="center" spacing={1} sx={{ mb: 3, textAlign: 'center' }}>
       <Avatar sx={{ width: 56, height: 56, bgcolor: 'primary.main', mb: 0.5 }}><CalculateRoundedIcon fontSize="large" /></Avatar>
       <Typography variant="h4" component="h1" fontWeight={800}>家計簿</Typography>
       <Typography variant="body2" color="text.secondary">毎日のお金を、ひとつの場所で。</Typography>
     </Stack>
-    {!socialSignup && <Stack spacing={0.75} sx={{ mb: 2.5, textAlign: 'center' }}>
+    {!socialSignup && !mfa && <Stack spacing={0.75} sx={{ mb: 2.5, textAlign: 'center' }}>
       <Button variant="outlined" disabled={busy} onClick={s.enterOffline} sx={{ minHeight: 44 }}>アカウントなしで使う</Button>
       <Typography variant="caption" color="text.secondary">記録はこの端末に保存します。あとから登録して同期できます。</Typography>
     </Stack>}
     <Paper elevation={0} sx={(theme) => ({ ...glassSurface(theme.palette.mode === 'dark'), p: { xs: 3, sm: 4 }, borderRadius: '24px' })}>
-      <Stack spacing={3}>
+      {mfa ? <MfaChallengeForm challenge={mfa} onAuthenticated={s.acceptSocialAccount} onCancel={() => setMfa(null)} /> : <Stack spacing={3}>
         {!socialSignup && (step === 'login' || step === 'register') ? <>
           <Tabs value={step} variant="fullWidth" onChange={(_, value: Step) => { if (!busy) go(value) }} aria-label="ログインまたは新規登録">
             <Tab label="ログイン" value="login" disabled={busy} /><Tab label="新規登録" value="register" disabled={busy} />
           </Tabs>
+          {step === 'login' && passkeysSupported() && <Button variant="outlined" startIcon={<PasskeyRoundedIcon />} disabled={busy} onClick={() => void loginWithPasskey()} sx={{ minHeight: 44 }}>
+            パスキーでログイン
+          </Button>}
           <SocialLogin disabled={busy} onBusyChange={setBusy} />
           <Divider><Typography variant="caption" color="text.secondary">またはメールなどで{step === 'login' ? 'ログイン' : '登録'}</Typography></Divider>
         </> : <Typography variant="h6" component="h2">{socialSignup ? '初回の登録を完了する' : step === 'verifyRegistration' ? 'メールアドレスを確認' : 'パスワードを再設定'}</Typography>}
@@ -122,7 +151,7 @@ export function AuthScreen({ socialSignup = false, onCancel }: { socialSignup?: 
             {(step.startsWith('reset') || socialSignup) && <Button disabled={busy} onClick={() => { if (socialSignup) onCancel?.(); else go('login') }}>ログイン画面に戻る</Button>}
           </Stack>
         </Box>
-      </Stack>
+      </Stack>}
     </Paper>
     <Stack component="nav" aria-label="利用条件" direction="row" useFlexGap flexWrap="wrap" justifyContent="center" spacing={2.5} sx={{ mt: 1 }}>
       <Link href={`${legalBase}/pr/terms.html`} target="_blank" rel="noopener noreferrer" variant="body2" sx={{ display: 'inline-flex', alignItems: 'center', minHeight: 44 }}>利用規約</Link>

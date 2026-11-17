@@ -12,6 +12,7 @@ import {
 import {
   ApiError,
   apiLogin,
+  type MfaChallenge,
   apiUpgradeSession,
   apiConfirmEmailChange,
   apiDeleteAccount,
@@ -216,7 +217,7 @@ interface Store {
   clearMessage: () => void
   notify: (text: string, kind?: 'ok' | 'error') => void
   // 認証
-  login: (identifier: string, password: string) => Promise<void>
+  login: (identifier: string, password: string) => Promise<MfaChallenge | undefined>
   acceptSocialAccount: (account: Account, isNewAccount?: boolean) => Promise<void>
   register: (
     phone: string,
@@ -617,7 +618,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const login = useCallback(
     async (identifier: string, password: string) => {
       try {
-        const acc = await apiLogin(identifier, password)
+        const acc = await apiLogin(identifier, password, true)
+        if ('challenge' in acc) return acc
         pendingLoginSync.current = true
         await applyLogin(acc)
         notify('ログインしました')

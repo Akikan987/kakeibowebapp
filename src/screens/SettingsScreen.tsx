@@ -13,6 +13,7 @@ import SettingsBrightnessRoundedIcon from '@mui/icons-material/SettingsBrightnes
 import { Avatar, Box, Button as MuiButton, CardContent, Chip, IconButton, Stack, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material'
 import { Button, Card, Divider, Field, LargeTitle, Modal, Screen, SectionHeader, formatDateTime } from '../components/ui'
 import { NavigationRow, SectionPageHeader, useSectionNavigation } from '../components/SectionNavigation'
+import { AccountSecurity } from '../components/AccountSecurity'
 import { refreshAppShell, storageStatus } from '../offline'
 import { useStore } from '../store'
 import type { Category } from '../types'
@@ -24,7 +25,7 @@ import { NativeSettings } from '../components/NativeIntegration'
 import type { ExpenseDraft } from '../entries/draft'
 import { useAppTheme, type AppThemeMode } from '../theme'
 
-type SettingsSection = 'index' | 'account' | 'appearance' | 'categories' | 'integrations' | 'data' | 'danger'
+type SettingsSection = 'index' | 'account' | 'appearance' | 'categories' | 'integrations' | 'data' | 'danger' | 'security'
 const sectionTitles: Record<SettingsSection, string> = {
   index: '設定',
   account: 'アカウント',
@@ -33,6 +34,7 @@ const sectionTitles: Record<SettingsSection, string> = {
   integrations: '連携・通知',
   data: 'データ管理',
   danger: 'アカウントの削除',
+  security: 'ログインとセキュリティ',
 }
 
 export function SettingsScreen({ onImport, onOpenGmailCandidates, requestedSection, requestRevision, onParentChange }: {
@@ -173,7 +175,11 @@ export function SettingsScreen({ onImport, onOpenGmailCandidates, requestedSecti
               <SocialLogin token={s.account.token} />
             </Stack> : <Stack spacing={2}><Typography variant="body2" color="text.secondary">この端末のみでオフライン利用中です。</Typography><Button onClick={s.backToAuth}>ログイン / 新規登録</Button><Typography variant="caption" color="text.secondary">登録すると、今のデータもサーバーに同期され、他の端末からも使えます。</Typography></Stack>}
           </CardContent></Card>
-          {s.loggedIn && <Card sx={{ mt: 1.5, overflow: 'hidden' }}><NavigationRow title="アカウントと全データを削除" description="取り消せない操作" badge="注意" onClick={() => openSection('danger')} /></Card>}
+          {s.loggedIn && <Card sx={{ mt: 1.5, overflow: 'hidden' }}>
+            <NavigationRow title="ログインとセキュリティ" description="パスキー・2段階認証" onClick={() => openSection('security')} />
+            <Divider />
+            <NavigationRow title="アカウントと全データを削除" description="取り消せない操作" badge="注意" onClick={() => openSection('danger')} />
+          </Card>}
         </>}
 
         {section === 'appearance' && <>
@@ -234,6 +240,7 @@ export function SettingsScreen({ onImport, onOpenGmailCandidates, requestedSecti
           <input ref={fileRef} type="file" accept="application/json" hidden onChange={async (event) => { const file = event.target.files?.[0]; if (file) await s.importJson(file, replaceRef.current); event.target.value = '' }} />
         </>}
 
+        {section === 'security' && s.account?.token && <AccountSecurity key={s.account.uid} token={s.account.token} />}
         {section === 'danger' && s.loggedIn && <>
           <SectionHeader>アカウントの削除</SectionHeader>
           <Card><CardContent><Typography variant="body2" color="text.secondary">アカウント、明細、決済方法、割り勘、予算など、サーバーとこの端末にある自分の全データを削除します。この操作は元に戻せません。</Typography><MuiButton color="error" sx={{ mt: 2 }} onClick={() => { setDeletePassword(''); setDeleteConfirmation(''); setDeleteDialogOpen(true) }}>アカウントと全データを削除</MuiButton></CardContent></Card>

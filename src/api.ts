@@ -1,6 +1,7 @@
 import { apiFetch } from './native/http.ts'
 import { normalizePaymentNetworks } from './paymentNetworks.ts'
 import { readReceiptItems } from './receiptItems.ts'
+import type { CreationOptionsJSON, RequestOptionsJSON } from './passkeys.ts'
 import type {
   Account,
   CashAccount, AccountTransfer, ExpenseRefund, SplitInvitation,
@@ -108,10 +109,12 @@ export const apiSocialStart = (provider: SocialProviderId, token?: string, passw
 export const apiSocialUnlink = (provider: SocialProviderId, token: string, password: string) =>
   request<{ ok: boolean }>(`/auth/social/${provider}/connection`, { method: 'DELETE', token, body: { current_password: password } })
 export const apiSocialCancel = () => request<{ ok: boolean }>('/auth/social/cancel', { method: 'POST', body: {} })
-export const apiSocialComplete = async (token?: string) => {
+export interface MfaChallenge { status: 'mfa_required'; challenge: string }
+
+export const apiSocialComplete = async (token?: string, supportsMfa = false) => {
   const response = await request<
-    { status: 'authenticated'; account: AuthRaw } | { status: 'signup'; provider: SocialProviderId } | { status: 'linked' }
-  >('/auth/social/complete', { method: 'POST', token, body: {} })
+    { status: 'authenticated'; account: AuthRaw } | { status: 'signup'; provider: SocialProviderId } | { status: 'linked' } | MfaChallenge
+  >('/auth/social/complete', { method: 'POST', token, body: supportsMfa ? { supports_mfa: true } : {} })
   return response.status === 'authenticated' ? { status: 'authenticated' as const, account: toAccount(response.account) } : response
 }
 export const apiSocialRegister = async (phone: string, email: string, nickname: string, password: string) =>
@@ -139,16 +142,50 @@ export const apiConfirmRegistration = async (verificationId: string, code: strin
     body: { verification_id: verificationId, code },
   }))
 
-export const apiLogin = async (
-  identifier: string,
-  password: string,
-): Promise<Account> =>
-  toAccount(
-    await request<AuthRaw>('/auth/login', {
-      method: 'POST',
-      body: { identifier, password },
-    }),
-  )
+export function apiLogin(identifier: string, password: string): Promise<Account>
+export function apiLogin(identifier: string, password: string, supportsMfa: true): Promise<Account | MfaChallenge>
+export async function apiLogin(identifier: string, password: string, supportsMfa = false): Promise<Account | MfaChallenge> {
+  const result = await request<AuthRaw | MfaChallenge>('/auth/login', {
+    method: 'POST',
+    body: supportsMfa ? { identifier, password, supports_mfa: true } : { identifier, password },
+  })
+  return 'status' in result ? result : toAccount(result)
+}
+
+export const apiCompleteMfa = async (challenge: string, code: string) =>
+  toAccount(await request<AuthRaw>('/auth/mfa/complete', { method: 'POST', body: { challenge, code } }))
+
+export interface SecurityStatus {
+  passkeys: { id: string; name: string; created_at: number }[]
+  totp_enabled: boolean
+  totp_available: boolean
+}
+
+export const apiSecurityStatus = (token: string) => request<SecurityStatus>('/auth/security', { token })
+
+export const apiPasskeyOptions = (token: string, password: string, code?: string) =>
+  request<{ challenge: string; options: CreationOptionsJSON }>('/auth/security/passkeys/options', { method: 'POST', token, body: { password, code } })
+
+export const apiVerifyPasskey = (token: string, challenge: string, credential: Record<string, unknown>, name: string) =>
+  request<{ ok: boolean }>('/auth/security/passkeys/verify', { method: 'POST', token, body: { challenge, credential, name } })
+
+export const apiRemovePasskey = (token: string, id: string, password: string, code?: string) =>
+  request<{ ok: boolean }>('/auth/security/passkeys/remove', { method: 'POST', token, body: { id, password, code } })
+
+export const apiPasskeyLoginOptions = () =>
+  request<{ challenge: string; options: RequestOptionsJSON }>('/auth/security/passkeys/login/options', { method: 'POST', body: {} })
+
+export const apiCompletePasskeyLogin = async (challenge: string, credential: Record<string, unknown>) =>
+  toAccount(await request<AuthRaw>('/auth/security/passkeys/login/verify', { method: 'POST', body: { challenge, credential } }))
+
+export const apiTotpOptions = (token: string, password: string) =>
+  request<{ challenge: string; secret: string; qr_data_url: string }>('/auth/security/totp/options', { method: 'POST', token, body: { password } })
+
+export const apiEnableTotp = (token: string, challenge: string, code: string) =>
+  request<{ recovery_codes: string[] }>('/auth/security/totp/enable', { method: 'POST', token, body: { challenge, code } })
+
+export const apiDisableTotp = (token: string, password: string, code: string) =>
+  request<{ ok: boolean }>('/auth/security/totp/disable', { method: 'POST', token, body: { password, code } })
 
 /** Upgrade a previously saved bearer token to the HttpOnly-cookie session. */
 export const apiUpgradeSession = async (legacyToken: string): Promise<Account> =>

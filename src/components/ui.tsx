@@ -178,21 +178,23 @@ export function Modal({
   title,
   children,
   onClose,
+  dismissible = true,
 }: {
   title: string
   children: ReactNode
   onClose: () => void
+  dismissible?: boolean
 }) {
   const titleId = useId()
   const close = useRef(onClose)
-  close.current = onClose
+  close.current = () => { if (dismissible) onClose() }
   useLayoutEffect(() => registerModalBackHandler(() => close.current()), [])
   return (
-    <Dialog open onClose={onClose} aria-labelledby={titleId} fullWidth maxWidth="xs" scroll="paper">
+    <Dialog open onClose={dismissible ? onClose : undefined} disableEscapeKeyDown={!dismissible} aria-labelledby={titleId} fullWidth maxWidth="xs" scroll="paper">
       <DialogTitle component="div" id={`${titleId}-header`} sx={{ px: 3, pt: 2.5, pb: 2, maxHeight: '40dvh', overflowY: 'auto', overscrollBehavior: 'contain', flexShrink: 0 }}>
         <Stack direction="row" alignItems="flex-start" spacing={1.5}>
           <Typography id={titleId} component="h2" variant="h6" sx={{ flex: 1, minWidth: 0, pt: 1, overflowWrap: 'anywhere' }}>{title}</Typography>
-          <IconButton aria-label="閉じる" onClick={onClose} sx={{ mr: -1, position: 'sticky', top: 0 }}><CloseRoundedIcon /></IconButton>
+          {dismissible && <IconButton aria-label="閉じる" onClick={onClose} sx={{ mr: -1, position: 'sticky', top: 0 }}><CloseRoundedIcon /></IconButton>}
         </Stack>
       </DialogTitle>
       <DialogContent sx={{ px: 3, pt: '8px !important', pb: 3 }}>
